@@ -584,33 +584,63 @@ app.get('/api/analisis-operadores', authMiddleware, (req, res) => {
   if (sinLogeo.length) diagnosticoLineas.push(`${sinLogeo.length} operador(es) sin logeo registrado — validar ausencia, atraso extremo o falla de registro.`);
   if (logeadosSinAsignacion.length) diagnosticoLineas.push(`${logeadosSinAsignacion.length} operador(es) logeados sin asignación aún — revisar cola de despacho.`);
   if (atrasadosCriticos.length) diagnosticoLineas.push(`${atrasadosCriticos.length} operador(es) con atraso crítico respecto al turno.`);
-  if (resumen.esperaAsignacionPromedioMin !== null) diagnosticoLineas.push(`Espera promedio logeo → asignación: ${resumen.esperaAsignacionPromedioMin} min.`);
+  if (resumen.esperaAsignacionPromedioMin !== null) diagnosticoLineas.push(`Tiempo muerto promedio (logeo → asignación): ${resumen.esperaAsignacionPromedioMin} min.`);
 
-  // Ranking de mayores desviaciones (para identificar operadores problemáticos)
+  // Ranking de mayores desviaciones respecto al turno (para identificar operadores problemáticos)
   const ranking = [...operadores]
     .filter((o) => o.atrasoTurnoMin !== null)
     .sort((a, b) => Math.abs(b.atrasoTurnoMin) - Math.abs(a.atrasoTurnoMin))
     .slice(0, 15);
 
-  res.json({ planta: plantaFiltro, resumen, diagnostico, diagnosticoLineas, ranking, operadores });
+  // Ranking de TIEMPO MUERTO: operadores que más esperaron entre logeo y su
+  // primera asignación (objetivo ≤30 min, igual umbral que el resto de la app).
+  const UMBRAL_TIEMPO_MUERTO_OK = 30;
+  const UMBRAL_TIEMPO_MUERTO_ATENCION = 60;
+  function clasificarTiempoMuerto(min) {
+    if (min === null) return 'sin_dato';
+    if (min <= UMBRAL_TIEMPO_MUERTO_OK) return 'ok';
+    if (min <= UMBRAL_TIEMPO_MUERTO_ATENCION) return 'atencion';
+    return 'critico';
+  }
+  const rankingTiempoMuerto = [...operadores]
+    .filter((o) => o.esperaAsignacionMin !== null)
+    .map((o) => ({ ...o, tiempoMuertoCategoria: clasificarTiempoMuerto(o.esperaAsignacionMin) }))
+    .sort((a, b) => b.esperaAsignacionMin - a.esperaAsignacionMin)
+    .slice(0, 15);
+  const logeadosEsperandoAhora = conLogeo.filter((o) => o.esperaAsignacionMin === null); // logeados, aún sin asignar (tiempo muerto en curso)
+
+  res.json({
+    planta: plantaFiltro,
+    resumen,
+    diagnostico,
+    diagnosticoLineas,
+    ranking,
+    rankingTiempoMuerto,
+    logeadosEsperandoAhora: logeadosEsperandoAhora.length,
+    operadores,
+  });
 });
 
 app.get('/api/reporte', authMiddleware, (req, res) => {
 
-  const nombresPlantas = [...plantas.keys()];
+  const zonaFiltro = req.query.zona || null;
+  const nombresPlantas = [...plantas.keys()].filter((n) => !zonaFiltro || plantas.get(n).zona === zonaFiltro);
 
   // --- Turnos y Logeo: se calculan a partir del mismo análisis por operador
   // que usa /api/analisis-operadores (deduplicado a la semana correcta, y
   // contando OPERADORES ÚNICOS con logeo, no cada evento crudo de estado). ---
-  const operadoresNacional = construirAnalisisOperadores(null);
+  const operadoresNacional = construirAnalisisOperadores(null).filter((o) => nombresPlantas.includes(o.planta));
   const turnosPorPlantaOp = {}; // conteo de operadores exigibles por planta
   const conLogeoPorPlanta = {}; // conteo de operadores con logeo por planta
-  for (const nombre of nombresPlantas) { turnosPorPlantaOp[nombre] = 0; conLogeoPorPlanta[nombre] = 0; }
+  const esperasPorPlanta = {}; // arreglo de esperaAsignacionMin por planta (para promedio de tiempo muerto)
+  for (const nombre of nombresPlantas) { turnosPorPlantaOp[nombre] = 0; conLogeoPorPlanta[nombre] = 0; esperasPorPlanta[nombre] = []; }
   for (const o of operadoresNacional) {
     if (!turnosPorPlantaOp.hasOwnProperty(o.planta)) continue;
     turnosPorPlantaOp[o.planta]++;
     if (o.logeo !== null) conLogeoPorPlanta[o.planta]++;
+    if (o.esperaAsignacionMin !== null) esperasPorPlanta[o.planta].push(o.esperaAsignacionMin);
   }
+  const promedioArr = (arr) => (arr.length ? Math.round((arr.reduce((s, v) => s + v, 0) / arr.length) * 10) / 10 : null);
 
   // --- Citaciones: siguen siendo conteo de filas (son registros de despacho/
   // carga programada, no turnos de operador, así que no se deduplican igual). ---
@@ -620,6 +650,7 @@ app.get('/api/reporte', authMiddleware, (req, res) => {
     let sinPlantaReconocida = 0;
     for (const r of ingestas[tipo].registros) {
       const match = resolverPlantaCanonica(r);
+      if (zonaFiltro && match && plantas.get(match)?.zona !== zonaFiltro) continue;
       if (match && conteo.hasOwnProperty(match)) conteo[match]++;
       else sinPlantaReconocida++;
     }
@@ -636,12 +667,17 @@ app.get('/api/reporte', authMiddleware, (req, res) => {
     const adherenciaLogeo = turnos > 0 ? Math.round((logeo / turnos) * 1000) / 10 : null;
     const adherenciaCitacion =
       plantas.get(nombre).citacion === 'si' && turnos > 0 ? Math.round((citaciones / turnos) * 1000) / 10 : null;
-    return { planta: nombre, zona: plantas.get(nombre).zona, turnos, citaciones, logeo, adherenciaLogeo, adherenciaCitacion };
+    const tiempoMuertoPromedioMin = promedioArr(esperasPorPlanta[nombre]);
+    return { planta: nombre, zona: plantas.get(nombre).zona, turnos, citaciones, logeo, adherenciaLogeo, adherenciaCitacion, tiempoMuertoPromedioMin };
   });
 
   const totalTurnos = operadoresNacional.length; // operadores exigibles hoy (deduplicado), no filas crudas
-  const totalCitaciones = ingestas.citaciones.registros.length;
+  const totalCitaciones = zonaFiltro
+    ? Object.values(citacionesPorPlanta.conteo).reduce((s, v) => s + v, 0)
+    : ingestas.citaciones.registros.length;
   const totalLogeo = operadoresNacional.filter((o) => o.logeo !== null).length; // operadores con logeo, no eventos crudos
+  const tiempoMuertoPromedioNacionalMin = promedioArr(operadoresNacional.filter((o) => o.esperaAsignacionMin !== null).map((o) => o.esperaAsignacionMin));
+  const plantasTiempoMuertoAlto = filasPlanta.filter((f) => f.tiempoMuertoPromedioMin !== null && f.tiempoMuertoPromedioMin > 30);
 
   const plantasSinDatos = filasPlanta.filter((f) => f.turnos === 0).map((f) => f.planta);
   const plantasBajaAdherencia = filasPlanta.filter((f) => f.adherenciaLogeo !== null && f.adherenciaLogeo < 90);
@@ -663,6 +699,14 @@ app.get('/api/reporte', authMiddleware, (req, res) => {
   } else if (totalTurnos > 0) {
     lineas.push('Todas las plantas con datos muestran adherencia de logeo igual o superior a 90%.');
   }
+  if (tiempoMuertoPromedioNacionalMin !== null) {
+    lineas.push(`Tiempo muerto promedio (logeo → asignación): ${tiempoMuertoPromedioNacionalMin} min (objetivo ≤ 30 min).`);
+  }
+  if (plantasTiempoMuertoAlto.length) {
+    lineas.push(
+      `Tiempo muerto sobre 30 min: ${plantasTiempoMuertoAlto.map((f) => `${f.planta} (${f.tiempoMuertoPromedioMin} min)`).join(', ')}.`
+    );
+  }
   const totalSinReconocer = citacionesPorPlanta.sinPlantaReconocida + logeoFilasCrudas.sinPlantaReconocida;
   if (totalSinReconocer > 0) {
     lineas.push(
@@ -676,7 +720,15 @@ app.get('/api/reporte', authMiddleware, (req, res) => {
   res.json({
     generado_en: new Date().toISOString(),
     generado_por: req.user.nombre,
-    resumen: { totalTurnos, totalCitaciones, totalLogeo, totalPlantas: nombresPlantas.length, filasSinReconocer: totalSinReconocer },
+    zona: zonaFiltro,
+    resumen: {
+      totalTurnos,
+      totalCitaciones,
+      totalLogeo,
+      totalPlantas: nombresPlantas.length,
+      filasSinReconocer: totalSinReconocer,
+      tiempoMuertoPromedioMin: tiempoMuertoPromedioNacionalMin,
+    },
     porPlanta: filasPlanta,
     narrativa: lineas,
   });
