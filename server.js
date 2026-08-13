@@ -29,12 +29,53 @@ let nextAuditoriaId = 1;
 
 const usuarios = new Map(); // nombre -> usuario
 
-const plantas = new Map([
-  ['Til Til', { id: 1, nombre: 'Til Til', zona: 'RM', region: 'Metropolitana', tol_v: 5, tol_a: 15, tol_asig: 30, tol_carga: 45, citacion: 'no', actualizado_por: 'seed', actualizado_en: new Date().toISOString() }],
-  ['Viña del Mar', { id: 2, nombre: 'Viña del Mar', zona: 'Centro', region: 'Valparaíso', tol_v: 5, tol_a: 15, tol_asig: 30, tol_carga: 45, citacion: 'no', actualizado_por: 'seed', actualizado_en: new Date().toISOString() }],
-  ['Los Andes', { id: 3, nombre: 'Los Andes', zona: 'Centro', region: 'Valparaíso', tol_v: 5, tol_a: 15, tol_asig: 30, tol_carga: 45, citacion: 'no', actualizado_por: 'seed', actualizado_en: new Date().toISOString() }],
-  ['Antofagasta', { id: 4, nombre: 'Antofagasta', zona: 'Norte', region: 'Antofagasta', tol_v: 5, tol_a: 15, tol_asig: 30, tol_carga: 45, citacion: 'no', actualizado_por: 'seed', actualizado_en: new Date().toISOString() }],
-]);
+// ---------------------------------------------------------------------------
+// Homologación de plantas: nombre canónico (el que usan los Turnos) + alias por
+// código de planta (los que usan Citaciones/Logeo, ej. '1U' = Curicó). Extraído
+// directamente de datos reales de Polpaico. Zona es una asignación razonable por
+// ubicación geográfica — revisar/ajustar si no calza con la zonificación interna.
+// ---------------------------------------------------------------------------
+const PLANTAS_REALES = [
+  ['Arica', 'Norte', 'Arica y Parinacota', ['3B']],
+  ['Iquique AH', 'Norte', 'Tarapacá', ['1A']],
+  ['Copiapó', 'Norte', 'Atacama', ['1K']],
+  ['Coquimbo', 'Norte', 'Coquimbo', ['1L']],
+  ['Ovalle', 'Norte', 'Coquimbo', ['1M']],
+  ['Lo Espejo', 'RM', 'Metropolitana', ['410', '411']],
+  ['La Divisa Oriente', 'RM', 'Metropolitana', ['422']],
+  ['La Divisa Poniente', 'RM', 'Metropolitana', ['401']],
+  ['Divisa Central Mix', 'RM', 'Metropolitana', ['451']],
+  ['Melipilla', 'RM', 'Metropolitana', ['2U']],
+  ['Viña del Mar', 'Centro', 'Valparaíso', ['1Q']],
+  ['Los Andes', 'Centro', 'Valparaíso', ['52']],
+  ['Santo Domingo', 'Centro', 'Valparaíso', ['1P']],
+  ['Rancagua', 'Centro', "O'Higgins", ['1R']],
+  ['San Vicente', 'Centro', "O'Higgins", ['1S']],
+  ['Curicó', 'Centro', 'Maule', ['1U']],
+  ['Talca', 'Centro', 'Maule', ['1V']],
+  ['Linares', 'Centro', 'Maule', ['1T']],
+  ['Chillán', 'Sur', 'Ñuble', ['3D']],
+  ['Concepción Hualpén', 'Sur', 'Biobío', ['1W']],
+  ['Coronel', 'Sur', 'Biobío', ['2C']],
+  ['Los Ángeles', 'Sur', 'Biobío', ['2X']],
+  ['Temuco', 'Sur', 'Araucanía', ['2Y']],
+  ['Villarrica', 'Sur', 'Araucanía', ['2G']],
+  ['Castro', 'Sur', 'Los Lagos', ['2H']],
+  ['Puerto Montt', 'Sur', 'Los Lagos', ['2I']],
+];
+
+const plantas = new Map(
+  PLANTAS_REALES.map(([nombre, zona, region], idx) => [
+    nombre,
+    { id: idx + 1, nombre, zona, region, tol_v: 5, tol_a: 15, tol_asig: 30, tol_carga: 45, citacion: 'no', actualizado_por: 'seed', actualizado_en: new Date().toISOString() },
+  ])
+);
+
+// Código de planta -> nombre canónico (para Citaciones/Logeo, que suelen traer código en vez de nombre)
+const ALIAS_CODIGO_PLANTA = {};
+PLANTAS_REALES.forEach(([nombre, , , codigos]) => {
+  (codigos || []).forEach((c) => { ALIAS_CODIGO_PLANTA[c.toUpperCase()] = nombre; });
+});
 
 let bitacora = []; // más reciente primero
 let auditoria = []; // más reciente primero
@@ -73,8 +114,37 @@ function buscarCampo(registro, candidatos) {
   return null;
 }
 
-function nombrePlantaDeRegistro(registro) {
-  return buscarCampo(registro, ['planta', 'plant', 'nombre planta', 'sitio']);
+function normalizarNombre(s) {
+  return String(s || '')
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Resuelve el nombre canónico de planta de un registro probando, en orden: nombre de
+// planta directo, código de planta (vía tabla de alias). Usa coincidencia EXACTA tras
+// normalizar (no "contiene"), para evitar falsos positivos como "ARICA" calzando dentro
+// de "VILLARICA".
+function resolverPlantaCanonica(registro) {
+  const nombresCanonicosNorm = new Map([...plantas.keys()].map((n) => [normalizarNombre(n), n]));
+
+  const candidatoNombre = buscarCampo(registro, ['planta', 'plant', 'nombre planta', 'sitio', 'descripcion planta', 'descripción planta']);
+  if (candidatoNombre) {
+    const norm = normalizarNombre(candidatoNombre);
+    if (nombresCanonicosNorm.has(norm)) return nombresCanonicosNorm.get(norm);
+    const porCodigo = ALIAS_CODIGO_PLANTA[String(candidatoNombre).toUpperCase().trim()];
+    if (porCodigo) return porCodigo;
+  }
+
+  const candidatoCodigo = buscarCampo(registro, ['numero planta', 'número planta', 'codigo planta', 'código planta']);
+  if (candidatoCodigo) {
+    const porCodigo = ALIAS_CODIGO_PLANTA[String(candidatoCodigo).toUpperCase().trim()];
+    if (porCodigo) return porCodigo;
+  }
+
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -100,7 +170,7 @@ function puedeEditarConfigGlobal(user) {
 // ---------------------------------------------------------------------------
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
@@ -294,17 +364,14 @@ app.get('/api/ingesta/estado', authMiddleware, (req, res) => {
 app.get('/api/reporte', authMiddleware, (req, res) => {
   const nombresPlantas = [...plantas.keys()];
 
-  // Agrupa cada tipo de registro por planta (usando coincidencia flexible de nombre)
+  // Agrupa cada tipo de registro por planta canónica (nombre o código homologado)
   function contarPorPlanta(tipo) {
     const conteo = {};
     for (const nombre of nombresPlantas) conteo[nombre] = 0;
     let sinPlantaReconocida = 0;
     for (const r of ingestas[tipo].registros) {
-      const nombrePlantaCruda = nombrePlantaDeRegistro(r);
-      const match = nombresPlantas.find(
-        (p) => nombrePlantaCruda && String(nombrePlantaCruda).trim().toLowerCase() === p.trim().toLowerCase()
-      );
-      if (match) conteo[match]++;
+      const match = resolverPlantaCanonica(r);
+      if (match && conteo.hasOwnProperty(match)) conteo[match]++;
       else sinPlantaReconocida++;
     }
     return { conteo, sinPlantaReconocida };
@@ -348,6 +415,12 @@ app.get('/api/reporte', authMiddleware, (req, res) => {
   } else if (totalTurnos > 0) {
     lineas.push('Todas las plantas con datos muestran adherencia de logeo igual o superior a 90%.');
   }
+  const totalSinReconocer = turnosPorPlanta.sinPlantaReconocida + citacionesPorPlanta.sinPlantaReconocida + logeoPorPlanta.sinPlantaReconocida;
+  if (totalSinReconocer > 0) {
+    lineas.push(
+      `Atención: ${totalSinReconocer} filas no se pudieron cruzar a ninguna planta conocida (nombre o código no reconocido en la tabla de homologación).`
+    );
+  }
   if (bitacora.length) {
     lineas.push(`Eventos registrados en bitácora en este período: ${bitacora.length}.`);
   }
@@ -355,7 +428,7 @@ app.get('/api/reporte', authMiddleware, (req, res) => {
   res.json({
     generado_en: new Date().toISOString(),
     generado_por: req.user.nombre,
-    resumen: { totalTurnos, totalCitaciones, totalLogeo, totalPlantas: nombresPlantas.length },
+    resumen: { totalTurnos, totalCitaciones, totalLogeo, totalPlantas: nombresPlantas.length, filasSinReconocer: totalSinReconocer },
     porPlanta: filasPlanta,
     narrativa: lineas,
   });
