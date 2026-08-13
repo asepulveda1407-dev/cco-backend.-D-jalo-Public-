@@ -361,7 +361,232 @@ app.get('/api/ingesta/estado', authMiddleware, (req, res) => {
 //    estructura vacía para que el frontend no truene.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// 6.5 Análisis de operadores: compara Turno (hora programada) vs Logeo real vs
+//     Primera asignación real, detectando atrasos/adelantos en minutos.
+//     Basado en la máquina de estados real de Logeo: LOGIN/PRE-VIAJE (inicio
+//     de turno) -> ... -> ASIGNADO (primera asignación de carga).
+// ---------------------------------------------------------------------------
+
+// Convierte una hora en cualquier formato común (Date/ISO, "HH:MM", "HH:MM:SS",
+// "YYYY-MM-DD HH:MM:SS") a minutos desde medianoche. Devuelve null si no se pudo.
+function horaAMinutos(valor) {
+  if (valor === null || valor === undefined || valor === '') return null;
+  // Date real o string ISO con fecha y hora
+  if (valor instanceof Date || /^\d{4}-\d{2}-\d{2}[ T]\d{1,2}:\d{2}/.test(String(valor))) {
+    const d = new Date(valor);
+    if (!isNaN(d.getTime())) return d.getUTCHours() * 60 + d.getUTCMinutes();
+  }
+  // "HH:MM" o "HH:MM:SS"
+  const m = String(valor).trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (m) return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+  return null;
+}
+
+function formatoHHMM(minutos) {
+  if (minutos === null || minutos === undefined) return null;
+  const m = ((minutos % 1440) + 1440) % 1440;
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return String(h).padStart(2, '0') + ':' + String(mm).padStart(2, '0');
+}
+
+function idOperadorDeRegistro(registro) {
+  const v = buscarCampo(registro, ['id operador', 'id_operador', 'numero funcionario', 'número funcionario']);
+  return v !== null && v !== undefined ? String(v).trim() : null;
+}
+
+function nombreOperadorDeRegistro(registro) {
+  return (
+    buscarCampo(registro, ['conductor', 'operador', 'nombre operador']) ||
+    [buscarCampo(registro, ['primero empleado']), buscarCampo(registro, ['ultimo empleado', 'último empleado'])]
+      .filter(Boolean)
+      .join(' ') ||
+    null
+  );
+}
+
+// Clasifica la comparación turno vs logeo en categorías CON NOMBRE EXPLÍCITO
+// (no solo color), usando las tolerancias configuradas para la planta.
+function clasificarPuntualidad(atrasoMin, tolerancias) {
+  if (atrasoMin === null) return { categoria: 'sin_logeo', etiqueta: 'Sin logeo registrado' };
+  if (atrasoMin < -5) return { categoria: 'adelantado', etiqueta: `Adelantado ${Math.abs(atrasoMin)} min` };
+  if (atrasoMin <= tolerancias.tol_v) return { categoria: 'a_tiempo', etiqueta: 'A tiempo' };
+  if (atrasoMin <= tolerancias.tol_a) return { categoria: 'atraso_leve', etiqueta: `Atraso leve (${atrasoMin} min)` };
+  return { categoria: 'atraso_critico', etiqueta: `Atraso crítico (${atrasoMin} min)` };
+}
+
+// Construye, para cada operador presente en Turnos, su comparación real
+// contra Logeo (hora de LOGIN/PRE-VIAJE) y primera asignación (hora del
+// primer estado ASIGNADO posterior al logeo).
+//
+// IMPORTANTE: los Turnos suelen venir en un archivo con VARIAS semanas (cada
+// operador aparece una vez por semana). El Logeo, en cambio, normalmente es
+// de UN día puntual. Si comparáramos contra todas las semanas, la mayoría
+// saldría "sin logeo" solo porque esa fila es de otra semana. Por eso, se
+// detecta automáticamente la fecha real del logeo cargado y se usa SOLO la
+// fila de Turno cuya semana (Fecha_inicio_semana/Fecha_fin_semana) contiene
+// esa fecha.
+function fechaLogeoDetectada() {
+  for (const r of ingestas.logeo.registros) {
+    const horaStr = buscarCampo(r, ['hora inicio', 'hora']);
+    if (!horaStr) continue;
+    const d = new Date(horaStr);
+    if (!isNaN(d.getTime())) return d;
+  }
+  return null;
+}
+
+function construirAnalisisOperadores(nombrePlantaFiltro) {
+  const fechaRef = fechaLogeoDetectada();
+
+  // 1) Elegir, por operador+planta, UNA sola fila de turno: la de la semana
+  //    que contiene fechaRef (si se pudo determinar), o si no, la más reciente.
+  const turnosPorOperador = new Map(); // key = planta|id -> fila de turno elegida
+  for (const r of ingestas.turnos.registros) {
+    const planta = resolverPlantaCanonica(r);
+    const id = idOperadorDeRegistro(r);
+    if (!planta || !id) continue;
+    const key = planta + '|' + id;
+
+    const inicioSemana = buscarCampo(r, ['fecha_inicio_semana', 'fecha inicio semana']);
+    const finSemana = buscarCampo(r, ['fecha_fin_semana', 'fecha fin semana']);
+    let coincideSemana = true;
+    if (fechaRef && inicioSemana && finSemana) {
+      const ini = new Date(inicioSemana);
+      const fin = new Date(finSemana);
+      fin.setHours(23, 59, 59, 999);
+      coincideSemana = fechaRef >= ini && fechaRef <= fin;
+    }
+
+    const existente = turnosPorOperador.get(key);
+    if (coincideSemana) {
+      // La semana correcta siempre gana, sin importar qué había antes
+      if (!existente || !existente._coincideSemana) turnosPorOperador.set(key, { ...r, _coincideSemana: true });
+    } else if (!existente) {
+      // Si aún no hay nada para este operador, guardar esta fila como respaldo
+      turnosPorOperador.set(key, { ...r, _coincideSemana: false });
+    }
+  }
+
+  // 2) Agrupar logeo por operador (planta+id), ordenado cronológicamente
+  const eventosPorOperador = new Map(); // key = planta|id -> [{minutos, estado}]
+  for (const r of ingestas.logeo.registros) {
+    const planta = resolverPlantaCanonica(r);
+    const id = idOperadorDeRegistro(r);
+    if (!planta || !id) continue;
+    const horaStr = buscarCampo(r, ['hora inicio', 'hora']);
+    const minutos = horaAMinutos(horaStr);
+    if (minutos === null) continue;
+    const estado = String(buscarCampo(r, ['descripcion estado', 'descripción estado', 'estado']) || '').toUpperCase();
+    const key = planta + '|' + id;
+    if (!eventosPorOperador.has(key)) eventosPorOperador.set(key, []);
+    eventosPorOperador.get(key).push({ minutos, estado });
+  }
+  for (const eventos of eventosPorOperador.values()) eventos.sort((a, b) => a.minutos - b.minutos);
+
+  function primerEvento(eventos, patron, desdeMinutos) {
+    for (const e of eventos) {
+      if (desdeMinutos !== undefined && e.minutos < desdeMinutos) continue;
+      if (e.estado.includes(patron)) return e.minutos;
+    }
+    return null;
+  }
+
+  // 3) Recorrer la selección de un turno por operador (ya filtrada a la semana correcta)
+  const operadores = [];
+  for (const [key, r] of turnosPorOperador) {
+    const planta = resolverPlantaCanonica(r);
+    if (nombrePlantaFiltro && planta !== nombrePlantaFiltro) continue;
+    const id = idOperadorDeRegistro(r);
+    if (!planta || !id) continue;
+
+    const nombre = nombreOperadorDeRegistro(r) || id;
+    const horaTurnoStr = buscarCampo(r, ['hora ingreso', 'hora_ingreso', 'turno asignado']);
+    const turnoMin = horaAMinutos(horaTurnoStr);
+
+    const eventos = eventosPorOperador.get(key) || [];
+    const logeoMin = primerEvento(eventos, 'LOGIN');
+    const asignacionMin = logeoMin !== null ? primerEvento(eventos, 'ASIGNADO', logeoMin) : null;
+
+    const atrasoTurnoMin = turnoMin !== null && logeoMin !== null ? logeoMin - turnoMin : null;
+    const esperaAsignacionMin = logeoMin !== null && asignacionMin !== null ? asignacionMin - logeoMin : null;
+
+    const planta_cfg = plantas.get(planta) || { tol_v: 5, tol_a: 15 };
+    const puntualidad = clasificarPuntualidad(atrasoTurnoMin, planta_cfg);
+
+    operadores.push({
+      planta,
+      id,
+      nombre,
+      turno: formatoHHMM(turnoMin),
+      logeo: formatoHHMM(logeoMin),
+      asignacion: formatoHHMM(asignacionMin),
+      atrasoTurnoMin,
+      esperaAsignacionMin,
+      categoria: puntualidad.categoria,
+      etiqueta: puntualidad.etiqueta,
+    });
+  }
+  return operadores;
+}
+
+app.get('/api/analisis-operadores', authMiddleware, (req, res) => {
+  const plantaFiltro = req.query.planta || null;
+  if (plantaFiltro && !plantas.has(plantaFiltro)) {
+    return res.status(404).json({ error: 'Planta no encontrada' });
+  }
+  const operadores = construirAnalisisOperadores(plantaFiltro);
+
+  const conLogeo = operadores.filter((o) => o.logeo !== null);
+  const sinLogeo = operadores.filter((o) => o.logeo === null);
+  const atrasados = operadores.filter((o) => o.categoria === 'atraso_critico' || o.categoria === 'atraso_leve');
+  const atrasadosCriticos = operadores.filter((o) => o.categoria === 'atraso_critico');
+  const adelantados = operadores.filter((o) => o.categoria === 'adelantado');
+  const conAsignacion = operadores.filter((o) => o.esperaAsignacionMin !== null);
+  const logeadosSinAsignacion = conLogeo.filter((o) => o.esperaAsignacionMin === null);
+
+  const promedio = (arr, campo) => (arr.length ? Math.round((arr.reduce((s, o) => s + o[campo], 0) / arr.length) * 10) / 10 : null);
+
+  const resumen = {
+    totalOperadores: operadores.length,
+    conLogeo: conLogeo.length,
+    sinLogeo: sinLogeo.length,
+    adherenciaTurnoPct: operadores.length ? Math.round(((operadores.length - atrasados.length - sinLogeo.length) / operadores.length) * 1000) / 10 : null,
+    atrasadosPct: operadores.length ? Math.round((atrasados.length / operadores.length) * 1000) / 10 : null,
+    atrasadosCriticos: atrasadosCriticos.length,
+    adelantadosPct: operadores.length ? Math.round((adelantados.length / operadores.length) * 1000) / 10 : null,
+    logeadosSinAsignacion: logeadosSinAsignacion.length,
+    esperaAsignacionPromedioMin: promedio(conAsignacion, 'esperaAsignacionMin'),
+    atrasoPromedioMin: promedio(operadores.filter((o) => o.atrasoTurnoMin !== null), 'atrasoTurnoMin'),
+  };
+
+  // Diagnóstico automático (basado en reglas, no en un modelo externo) — mismo
+  // espíritu que el motor de "Inteligencia operacional" del HTML original.
+  let diagnostico = 'ESTABLE';
+  if (resumen.totalOperadores > 0) {
+    const coberturaPct = (resumen.conLogeo / resumen.totalOperadores) * 100;
+    if (coberturaPct < 50 || resumen.atrasadosCriticos > resumen.totalOperadores * 0.2) diagnostico = 'CRÍTICO';
+    else if (coberturaPct < 85 || resumen.atrasadosCriticos > 0) diagnostico = 'ATENCIÓN';
+  }
+
+  const diagnosticoLineas = [];
+  if (sinLogeo.length) diagnosticoLineas.push(`${sinLogeo.length} operador(es) sin logeo registrado — validar ausencia, atraso extremo o falla de registro.`);
+  if (logeadosSinAsignacion.length) diagnosticoLineas.push(`${logeadosSinAsignacion.length} operador(es) logeados sin asignación aún — revisar cola de despacho.`);
+  if (atrasadosCriticos.length) diagnosticoLineas.push(`${atrasadosCriticos.length} operador(es) con atraso crítico respecto al turno.`);
+  if (resumen.esperaAsignacionPromedioMin !== null) diagnosticoLineas.push(`Espera promedio logeo → asignación: ${resumen.esperaAsignacionPromedioMin} min.`);
+
+  // Ranking de mayores desviaciones (para identificar operadores problemáticos)
+  const ranking = [...operadores]
+    .filter((o) => o.atrasoTurnoMin !== null)
+    .sort((a, b) => Math.abs(b.atrasoTurnoMin) - Math.abs(a.atrasoTurnoMin))
+    .slice(0, 15);
+
+  res.json({ planta: plantaFiltro, resumen, diagnostico, diagnosticoLineas, ranking, operadores });
+});
+
 app.get('/api/reporte', authMiddleware, (req, res) => {
+
   const nombresPlantas = [...plantas.keys()];
 
   // Agrupa cada tipo de registro por planta canónica (nombre o código homologado)
