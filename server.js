@@ -217,8 +217,12 @@ app.post('/api/auth/login', (req, res) => {
       rol,
       zona: zona || null,
     };
-    usuarios.set(nombre, user);
+  } else {
+    // Actualiza rol/zona en cada login: si alguien vuelve a entrar con otro
+    // rol o zona, debe reflejarse (antes quedaba "pegado" al primer login).
+    user = { ...user, rol, zona: zona || null };
   }
+  usuarios.set(nombre, user);
   const token = jwt.sign({ id: user.id, nombre: user.nombre, rol: user.rol, zona: user.zona }, JWT_SECRET, {
     expiresIn: '8h',
   });
@@ -437,11 +441,13 @@ function fechaLogeoDetectada() {
   return null;
 }
 
-function construirAnalisisOperadores(nombrePlantaFiltro) {
+// Devuelve, por operador+planta, UNA sola fila de Turno: la de la semana que
+// contiene la fecha real del Logeo cargado (evita sumar/comparar contra
+// varias semanas a la vez cuando el archivo de Turnos cubre un rango largo).
+// La reutilizan tanto /api/reporte como /api/analisis-operadores para que
+// ambos cuenten exactamente lo mismo.
+function turnosDelDiaCorrespondiente() {
   const fechaRef = fechaLogeoDetectada();
-
-  // 1) Elegir, por operador+planta, UNA sola fila de turno: la de la semana
-  //    que contiene fechaRef (si se pudo determinar), o si no, la más reciente.
   const turnosPorOperador = new Map(); // key = planta|id -> fila de turno elegida
   for (const r of ingestas.turnos.registros) {
     const planta = resolverPlantaCanonica(r);
@@ -461,13 +467,17 @@ function construirAnalisisOperadores(nombrePlantaFiltro) {
 
     const existente = turnosPorOperador.get(key);
     if (coincideSemana) {
-      // La semana correcta siempre gana, sin importar qué había antes
       if (!existente || !existente._coincideSemana) turnosPorOperador.set(key, { ...r, _coincideSemana: true });
     } else if (!existente) {
-      // Si aún no hay nada para este operador, guardar esta fila como respaldo
       turnosPorOperador.set(key, { ...r, _coincideSemana: false });
     }
   }
+  return turnosPorOperador; // Map key -> fila
+}
+
+function construirAnalisisOperadores(nombrePlantaFiltro) {
+  // 1) Una sola fila de turno por operador, ya filtrada a la semana correcta
+  const turnosPorOperador = turnosDelDiaCorrespondiente();
 
   // 2) Agrupar logeo por operador (planta+id), ordenado cronológicamente
   const eventosPorOperador = new Map(); // key = planta|id -> [{minutos, estado}]
@@ -589,8 +599,22 @@ app.get('/api/reporte', authMiddleware, (req, res) => {
 
   const nombresPlantas = [...plantas.keys()];
 
-  // Agrupa cada tipo de registro por planta canónica (nombre o código homologado)
-  function contarPorPlanta(tipo) {
+  // --- Turnos y Logeo: se calculan a partir del mismo análisis por operador
+  // que usa /api/analisis-operadores (deduplicado a la semana correcta, y
+  // contando OPERADORES ÚNICOS con logeo, no cada evento crudo de estado). ---
+  const operadoresNacional = construirAnalisisOperadores(null);
+  const turnosPorPlantaOp = {}; // conteo de operadores exigibles por planta
+  const conLogeoPorPlanta = {}; // conteo de operadores con logeo por planta
+  for (const nombre of nombresPlantas) { turnosPorPlantaOp[nombre] = 0; conLogeoPorPlanta[nombre] = 0; }
+  for (const o of operadoresNacional) {
+    if (!turnosPorPlantaOp.hasOwnProperty(o.planta)) continue;
+    turnosPorPlantaOp[o.planta]++;
+    if (o.logeo !== null) conLogeoPorPlanta[o.planta]++;
+  }
+
+  // --- Citaciones: siguen siendo conteo de filas (son registros de despacho/
+  // carga programada, no turnos de operador, así que no se deduplican igual). ---
+  function contarFilasPorPlanta(tipo) {
     const conteo = {};
     for (const nombre of nombresPlantas) conteo[nombre] = 0;
     let sinPlantaReconocida = 0;
@@ -601,24 +625,23 @@ app.get('/api/reporte', authMiddleware, (req, res) => {
     }
     return { conteo, sinPlantaReconocida };
   }
-
-  const turnosPorPlanta = contarPorPlanta('turnos');
-  const citacionesPorPlanta = contarPorPlanta('citaciones');
-  const logeoPorPlanta = contarPorPlanta('logeo');
+  const citacionesPorPlanta = contarFilasPorPlanta('citaciones');
+  // sinPlantaReconocida de logeo/turnos ahora se mide a nivel de operador, no de fila cruda:
+  const logeoFilasCrudas = contarFilasPorPlanta('logeo'); // solo para el conteo de filas sin homologar
 
   const filasPlanta = nombresPlantas.map((nombre) => {
-    const turnos = turnosPorPlanta.conteo[nombre] || 0;
+    const turnos = turnosPorPlantaOp[nombre] || 0;
     const citaciones = citacionesPorPlanta.conteo[nombre] || 0;
-    const logeo = logeoPorPlanta.conteo[nombre] || 0;
+    const logeo = conLogeoPorPlanta[nombre] || 0;
     const adherenciaLogeo = turnos > 0 ? Math.round((logeo / turnos) * 1000) / 10 : null;
     const adherenciaCitacion =
       plantas.get(nombre).citacion === 'si' && turnos > 0 ? Math.round((citaciones / turnos) * 1000) / 10 : null;
     return { planta: nombre, zona: plantas.get(nombre).zona, turnos, citaciones, logeo, adherenciaLogeo, adherenciaCitacion };
   });
 
-  const totalTurnos = ingestas.turnos.registros.length;
+  const totalTurnos = operadoresNacional.length; // operadores exigibles hoy (deduplicado), no filas crudas
   const totalCitaciones = ingestas.citaciones.registros.length;
-  const totalLogeo = ingestas.logeo.registros.length;
+  const totalLogeo = operadoresNacional.filter((o) => o.logeo !== null).length; // operadores con logeo, no eventos crudos
 
   const plantasSinDatos = filasPlanta.filter((f) => f.turnos === 0).map((f) => f.planta);
   const plantasBajaAdherencia = filasPlanta.filter((f) => f.adherenciaLogeo !== null && f.adherenciaLogeo < 90);
@@ -628,7 +651,7 @@ app.get('/api/reporte', authMiddleware, (req, res) => {
   const fecha = new Date().toLocaleString('es-CL', { dateStyle: 'long', timeStyle: 'short' });
   lineas.push(`Reporte ejecutivo CCO — generado ${fecha} por ${req.user.nombre}.`);
   lineas.push(
-    `Datos cargados: ${totalTurnos} turnos, ${totalCitaciones} citaciones, ${totalLogeo} registros de logeo, sobre ${nombresPlantas.length} plantas configuradas.`
+    `Datos cargados: ${totalTurnos} operadores exigibles (turno correspondiente al día del logeo), ${totalCitaciones} citaciones, ${totalLogeo} operadores con logeo registrado, sobre ${nombresPlantas.length} plantas configuradas.`
   );
   if (plantasSinDatos.length) {
     lineas.push(`Sin datos de turno cargados: ${plantasSinDatos.join(', ')}.`);
@@ -640,7 +663,7 @@ app.get('/api/reporte', authMiddleware, (req, res) => {
   } else if (totalTurnos > 0) {
     lineas.push('Todas las plantas con datos muestran adherencia de logeo igual o superior a 90%.');
   }
-  const totalSinReconocer = turnosPorPlanta.sinPlantaReconocida + citacionesPorPlanta.sinPlantaReconocida + logeoPorPlanta.sinPlantaReconocida;
+  const totalSinReconocer = citacionesPorPlanta.sinPlantaReconocida + logeoFilasCrudas.sinPlantaReconocida;
   if (totalSinReconocer > 0) {
     lineas.push(
       `Atención: ${totalSinReconocer} filas no se pudieron cruzar a ninguna planta conocida (nombre o código no reconocido en la tabla de homologación).`
