@@ -39,6 +39,44 @@ const plantas = new Map([
 let bitacora = []; // más reciente primero
 let auditoria = []; // más reciente primero
 
+// Datos de ingesta: turnos (programación), citaciones (hora citada por Syncrotess/similar),
+// logeo (marcación real del operador). Cada uno es un array de registros "crudos" tal cual
+// vinieron del Excel, más metadatos de quién/cuándo se subió.
+let ingestas = {
+  turnos: { registros: [], subido_por: null, subido_en: null, archivo: null },
+  citaciones: { registros: [], subido_por: null, subido_en: null, archivo: null },
+  logeo: { registros: [], subido_por: null, subido_en: null, archivo: null },
+};
+
+// Intenta encontrar, entre las llaves de un registro, la que mejor calza con una lista de
+// nombres de columna candidatos (insensible a mayúsculas/acentos/espacios), igual que hacía
+// el HTML original con su función col(). Devuelve el VALOR de esa columna, o null.
+function buscarCampo(registro, candidatos) {
+  const normalizar = (s) =>
+    String(s || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/g, '');
+  const llaves = Object.keys(registro || {});
+  for (const cand of candidatos) {
+    const candNorm = normalizar(cand);
+    const encontrada = llaves.find((k) => normalizar(k) === candNorm);
+    if (encontrada) return registro[encontrada];
+  }
+  // Segundo intento: coincidencia parcial (contiene)
+  for (const cand of candidatos) {
+    const candNorm = normalizar(cand);
+    const encontrada = llaves.find((k) => normalizar(k).includes(candNorm));
+    if (encontrada) return registro[encontrada];
+  }
+  return null;
+}
+
+function nombrePlantaDeRegistro(registro) {
+  return buscarCampo(registro, ['planta', 'plant', 'nombre planta', 'sitio']);
+}
+
 // ---------------------------------------------------------------------------
 // 2. Auth de demo
 // ---------------------------------------------------------------------------
@@ -181,6 +219,146 @@ app.post('/api/bitacora', authMiddleware, (req, res) => {
 app.get('/api/auditoria', authMiddleware, (req, res) => {
   if (!puedeEditarConfigGlobal(req.user)) return res.status(403).json({ error: 'Sin permiso' });
   res.json(auditoria.slice(0, 100));
+});
+
+// ---------------------------------------------------------------------------
+// 5. Ingesta de datos (Turnos / Citaciones / Logeo) — recibe filas ya parseadas
+//    en el navegador desde el Excel (SheetJS), no el archivo binario. Esto evita
+//    tener que procesar XLSX en el servidor.
+// ---------------------------------------------------------------------------
+
+const TIPOS_INGESTA = ['turnos', 'citaciones', 'logeo'];
+
+app.post('/api/ingesta', authMiddleware, (req, res) => {
+  const { tipo, registros, archivo } = req.body;
+  if (!TIPOS_INGESTA.includes(tipo)) {
+    return res.status(400).json({ error: `tipo debe ser uno de: ${TIPOS_INGESTA.join(', ')}` });
+  }
+  if (!Array.isArray(registros) || registros.length === 0) {
+    return res.status(400).json({ error: 'registros debe ser un arreglo no vacío' });
+  }
+
+  const anterior = { cantidad: ingestas[tipo].registros.length, archivo: ingestas[tipo].archivo };
+  ingestas[tipo] = {
+    registros,
+    subido_por: req.user.nombre,
+    subido_en: new Date().toISOString(),
+    archivo: archivo || null,
+  };
+
+  registrarAuditoria({
+    usuario: req.user.nombre,
+    entidad: 'ingesta_' + tipo,
+    entidad_id: archivo || tipo,
+    accion: 'upload',
+    anterior,
+    nuevo: { cantidad: registros.length, archivo: archivo || null },
+  });
+
+  broadcast('nacional', 'ingesta:actualizada', {
+    tipo,
+    cantidad: registros.length,
+    subido_por: req.user.nombre,
+    subido_en: ingestas[tipo].subido_en,
+    archivo: archivo || null,
+  });
+
+  res.status(201).json({
+    tipo,
+    cantidad: registros.length,
+    subido_por: req.user.nombre,
+    subido_en: ingestas[tipo].subido_en,
+  });
+});
+
+// Estado actual de las 3 ingestas (para pintar la pestaña de Automatización/Carga de datos)
+app.get('/api/ingesta/estado', authMiddleware, (req, res) => {
+  const estado = {};
+  for (const tipo of TIPOS_INGESTA) {
+    estado[tipo] = {
+      cantidad: ingestas[tipo].registros.length,
+      subido_por: ingestas[tipo].subido_por,
+      subido_en: ingestas[tipo].subido_en,
+      archivo: ingestas[tipo].archivo,
+    };
+  }
+  res.json(estado);
+});
+
+// ---------------------------------------------------------------------------
+// 6. Reporte ejecutivo — calculado a partir de las 3 ingestas + la lista de
+//    plantas/configuración ya existente. Sin datos, igual responde con la
+//    estructura vacía para que el frontend no truene.
+// ---------------------------------------------------------------------------
+
+app.get('/api/reporte', authMiddleware, (req, res) => {
+  const nombresPlantas = [...plantas.keys()];
+
+  // Agrupa cada tipo de registro por planta (usando coincidencia flexible de nombre)
+  function contarPorPlanta(tipo) {
+    const conteo = {};
+    for (const nombre of nombresPlantas) conteo[nombre] = 0;
+    let sinPlantaReconocida = 0;
+    for (const r of ingestas[tipo].registros) {
+      const nombrePlantaCruda = nombrePlantaDeRegistro(r);
+      const match = nombresPlantas.find(
+        (p) => nombrePlantaCruda && String(nombrePlantaCruda).trim().toLowerCase() === p.trim().toLowerCase()
+      );
+      if (match) conteo[match]++;
+      else sinPlantaReconocida++;
+    }
+    return { conteo, sinPlantaReconocida };
+  }
+
+  const turnosPorPlanta = contarPorPlanta('turnos');
+  const citacionesPorPlanta = contarPorPlanta('citaciones');
+  const logeoPorPlanta = contarPorPlanta('logeo');
+
+  const filasPlanta = nombresPlantas.map((nombre) => {
+    const turnos = turnosPorPlanta.conteo[nombre] || 0;
+    const citaciones = citacionesPorPlanta.conteo[nombre] || 0;
+    const logeo = logeoPorPlanta.conteo[nombre] || 0;
+    const adherenciaLogeo = turnos > 0 ? Math.round((logeo / turnos) * 1000) / 10 : null;
+    const adherenciaCitacion =
+      plantas.get(nombre).citacion === 'si' && turnos > 0 ? Math.round((citaciones / turnos) * 1000) / 10 : null;
+    return { planta: nombre, zona: plantas.get(nombre).zona, turnos, citaciones, logeo, adherenciaLogeo, adherenciaCitacion };
+  });
+
+  const totalTurnos = ingestas.turnos.registros.length;
+  const totalCitaciones = ingestas.citaciones.registros.length;
+  const totalLogeo = ingestas.logeo.registros.length;
+
+  const plantasSinDatos = filasPlanta.filter((f) => f.turnos === 0).map((f) => f.planta);
+  const plantasBajaAdherencia = filasPlanta.filter((f) => f.adherenciaLogeo !== null && f.adherenciaLogeo < 90);
+
+  // Narrativa automática breve, en español, estilo ejecutivo
+  const lineas = [];
+  const fecha = new Date().toLocaleString('es-CL', { dateStyle: 'long', timeStyle: 'short' });
+  lineas.push(`Reporte ejecutivo CCO — generado ${fecha} por ${req.user.nombre}.`);
+  lineas.push(
+    `Datos cargados: ${totalTurnos} turnos, ${totalCitaciones} citaciones, ${totalLogeo} registros de logeo, sobre ${nombresPlantas.length} plantas configuradas.`
+  );
+  if (plantasSinDatos.length) {
+    lineas.push(`Sin datos de turno cargados: ${plantasSinDatos.join(', ')}.`);
+  }
+  if (plantasBajaAdherencia.length) {
+    lineas.push(
+      `Adherencia de logeo bajo 90%: ${plantasBajaAdherencia.map((f) => `${f.planta} (${f.adherenciaLogeo}%)`).join(', ')}.`
+    );
+  } else if (totalTurnos > 0) {
+    lineas.push('Todas las plantas con datos muestran adherencia de logeo igual o superior a 90%.');
+  }
+  if (bitacora.length) {
+    lineas.push(`Eventos registrados en bitácora en este período: ${bitacora.length}.`);
+  }
+
+  res.json({
+    generado_en: new Date().toISOString(),
+    generado_por: req.user.nombre,
+    resumen: { totalTurnos, totalCitaciones, totalLogeo, totalPlantas: nombresPlantas.length },
+    porPlanta: filasPlanta,
+    narrativa: lineas,
+  });
 });
 
 server.listen(PORT, () => {
