@@ -560,7 +560,14 @@ function construirAnalisisOperadores(nombrePlantaFiltro) {
     const eventos = eventosPorOperador.get(key) || [];
     const logeoMin = primerEvento(eventos, 'LOGIN');
     const asignacionMin = logeoMin !== null ? primerEvento(eventos, 'ASIGNADO', logeoMin) : null;
-    const citacionMin = citacionPorOperador.has(key) ? citacionPorOperador.get(key) : null;
+    // La hora de citación solo se muestra/considera si la planta tiene el
+    // flag "citacion" en 'si' (configurable en Ajustes → Plantas). Si está
+    // en 'no' (como Divisa Central Mix, La Divisa Oriente/Poniente, Lo
+    // Espejo, Melipilla en la config actual de RM), la citación nunca se usa
+    // aunque el archivo de Citaciones traiga datos para esa planta — sale
+    // siempre null/"—", tal como pide Alberto.
+    const plantaUsaCitacion = plantas.get(planta)?.citacion === 'si';
+    const citacionMin = plantaUsaCitacion && citacionPorOperador.has(key) ? citacionPorOperador.get(key) : null;
 
     const atrasoTurnoMin = turnoMin !== null && logeoMin !== null ? logeoMin - turnoMin : null;
     const esperaAsignacionMin = logeoMin !== null && asignacionMin !== null ? asignacionMin - logeoMin : null;
