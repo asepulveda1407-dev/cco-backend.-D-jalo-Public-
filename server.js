@@ -216,7 +216,7 @@ function registrarAuditoria({ usuario, entidad, entidad_id, accion, anterior, nu
 // 4. Endpoints (mismo contrato que la versión con base de datos)
 // ---------------------------------------------------------------------------
 
-const VERSION_BACKEND = '2026-08-14-v5-citacion-estricta-4plantas';
+const VERSION_BACKEND = '2026-08-14-v6-tabla-operadores';
 app.get('/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString(), version: VERSION_BACKEND }));
 
 app.post('/api/auth/login', (req, res) => {
@@ -386,12 +386,6 @@ app.get('/api/ingesta/estado', authMiddleware, (req, res) => {
   }
   res.json(estado);
 });
-
-// ---------------------------------------------------------------------------
-// 6. Reporte ejecutivo — calculado a partir de las 3 ingestas + la lista de
-//    plantas/configuración ya existente. Sin datos, igual responde con la
-//    estructura vacía para que el frontend no truene.
-// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // 6.5 Análisis de operadores: compara Turno (hora programada) vs Logeo real vs
@@ -667,6 +661,57 @@ app.get('/api/analisis-operadores', authMiddleware, (req, res) => {
     ranking,
     rankingTiempoMuerto,
     logeadosEsperandoAhora: logeadosEsperandoAhora.length,
+    operadores,
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6.6 Tabla completa de operadores para el Reporte Ejecutivo — mismas columnas
+//     que exige Alberto: id, nombre, planta, hora turno, hora citación, hora
+//     logeo, hora asignación, tiempo muerto, atraso/adelanto. Es la misma data
+//     de construirAnalisisOperadores(), solo expuesta completa (no Top 10) y
+//     ordenable, para que el reporte pueda mostrar la tabla íntegra si se pide.
+// ---------------------------------------------------------------------------
+app.get('/api/tabla-operadores', authMiddleware, (req, res) => {
+  const zonaFiltro = req.query.zona || null;
+  const plantaFiltro = req.query.planta || null;
+  const ordenarPor = req.query.orden || 'planta'; // planta | atraso | tiempoMuerto | nombre
+  const soloProblemas = req.query.soloProblemas === '1'; // si true: excluye "a_tiempo"
+
+  if (plantaFiltro && !plantas.has(plantaFiltro)) return res.status(404).json({ error: 'Planta no encontrada' });
+
+  let operadores = construirAnalisisOperadores(plantaFiltro);
+
+  if (zonaFiltro) operadores = operadores.filter((o) => plantas.get(o.planta)?.zona === zonaFiltro);
+  if (soloProblemas) operadores = operadores.filter((o) => o.categoria !== 'a_tiempo');
+
+  operadores = operadores.map((o) => ({
+    id: o.id,
+    nombre: o.nombre,
+    planta: o.planta,
+    zona: plantas.get(o.planta)?.zona || null,
+    horaTurno: o.turno,
+    horaCitacion: o.citacion,
+    horaLogeo: o.logeo,
+    horaAsignacion: o.asignacion,
+    tiempoMuertoMin: o.esperaAsignacionMin,
+    desviacionMin: o.atrasoTurnoMin, // negativo = adelantado, positivo = atrasado
+    estado: o.etiqueta,
+    categoria: o.categoria,
+  }));
+
+  const comparadores = {
+    planta: (a, b) => a.planta.localeCompare(b.planta) || a.nombre.localeCompare(b.nombre),
+    nombre: (a, b) => a.nombre.localeCompare(b.nombre),
+    atraso: (a, b) => (b.desviacionMin ?? -9999) - (a.desviacionMin ?? -9999),
+    tiempoMuerto: (a, b) => (b.tiempoMuertoMin ?? -1) - (a.tiempoMuertoMin ?? -1),
+  };
+  operadores.sort(comparadores[ordenarPor] || comparadores.planta);
+
+  res.json({
+    zona: zonaFiltro,
+    planta: plantaFiltro,
+    total: operadores.length,
     operadores,
   });
 });
