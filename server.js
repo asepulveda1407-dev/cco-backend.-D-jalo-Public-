@@ -216,7 +216,7 @@ function registrarAuditoria({ usuario, entidad, entidad_id, accion, anterior, nu
 // 4. Endpoints (mismo contrato que la versión con base de datos)
 // ---------------------------------------------------------------------------
 
-const VERSION_BACKEND = '2026-08-14-v6-tabla-operadores';
+const VERSION_BACKEND = '2026-08-14-v7-citacion-flag-bitacora-cl';
 app.get('/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString(), version: VERSION_BACKEND }));
 
 app.post('/api/auth/login', (req, res) => {
