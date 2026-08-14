@@ -38,6 +38,10 @@ const usuarios = new Map(); // nombre -> usuario
 const PLANTAS_REALES = [
   ['Arica', 'Norte', 'Arica y Parinacota', ['3B']],
   ['Iquique AH', 'Norte', 'Tarapacá', ['1A']],
+  ['Minera Escondida', 'Norte', 'Antofagasta', ['1B']],
+  ['Antofagasta', 'Norte', 'Antofagasta', ['1C']],
+  ['Calama', 'Norte', 'Antofagasta', ['1D']],
+  ['Diego de Almagro', 'Norte', 'Atacama', ['1J']],
   ['Copiapó', 'Norte', 'Atacama', ['1K']],
   ['Coquimbo', 'Norte', 'Coquimbo', ['1L']],
   ['Ovalle', 'Norte', 'Coquimbo', ['1M']],
@@ -124,18 +128,26 @@ function normalizarNombre(s) {
 }
 
 // Resuelve el nombre canónico de planta de un registro probando, en orden: nombre de
-// planta directo, código de planta (vía tabla de alias). Usa coincidencia EXACTA tras
-// normalizar (no "contiene"), para evitar falsos positivos como "ARICA" calzando dentro
-// de "VILLARICA".
+// planta directo, código de planta (vía tabla de alias), o el formato "CÓDIGO - Nombre"
+// (ej. "1W - Planta Concepcionhualpen", como trae el archivo de Citación_Operadores).
+// Usa coincidencia EXACTA tras normalizar (no "contiene"), para evitar falsos positivos
+// como "ARICA" calzando dentro de "VILLARICA".
 function resolverPlantaCanonica(registro) {
   const nombresCanonicosNorm = new Map([...plantas.keys()].map((n) => [normalizarNombre(n), n]));
 
   const candidatoNombre = buscarCampo(registro, ['planta', 'plant', 'nombre planta', 'sitio', 'descripcion planta', 'descripción planta']);
   if (candidatoNombre) {
-    const norm = normalizarNombre(candidatoNombre);
+    const bruto = String(candidatoNombre).trim();
+    const norm = normalizarNombre(bruto);
     if (nombresCanonicosNorm.has(norm)) return nombresCanonicosNorm.get(norm);
-    const porCodigo = ALIAS_CODIGO_PLANTA[String(candidatoNombre).toUpperCase().trim()];
+    const porCodigo = ALIAS_CODIGO_PLANTA[bruto.toUpperCase()];
     if (porCodigo) return porCodigo;
+    // Formato "CÓDIGO - Nombre" (ej. "1W - Planta Concepcionhualpen"): probar solo el código
+    const matchCodigoPrefijo = bruto.match(/^([A-Za-z0-9]{1,4})\s*-/);
+    if (matchCodigoPrefijo) {
+      const porCodigoPrefijo = ALIAS_CODIGO_PLANTA[matchCodigoPrefijo[1].toUpperCase()];
+      if (porCodigoPrefijo) return porCodigoPrefijo;
+    }
   }
 
   const candidatoCodigo = buscarCampo(registro, ['numero planta', 'número planta', 'codigo planta', 'código planta']);
@@ -267,7 +279,7 @@ app.get('/api/bitacora', authMiddleware, (req, res) => {
 });
 
 app.post('/api/bitacora', authMiddleware, (req, res) => {
-  const { planta, tipo, detalle, fecha_hora } = req.body;
+  const { planta, tipo, detalle, operador_id, operador_nombre, fecha_hora } = req.body;
   if (!planta || !tipo || !detalle) return res.status(400).json({ error: 'planta, tipo y detalle son requeridos' });
 
   const registro = {
@@ -277,6 +289,8 @@ app.post('/api/bitacora', authMiddleware, (req, res) => {
     rol: req.user.rol,
     planta,
     tipo,
+    operador_id: operador_id || null,
+    operador_nombre: operador_nombre || null,
     detalle,
     creado_en: new Date().toISOString(),
   };
@@ -288,6 +302,18 @@ app.post('/api/bitacora', authMiddleware, (req, res) => {
   broadcast('planta:' + planta, 'bitacora:nueva', registro);
 
   res.status(201).json(registro);
+});
+
+// Lista liviana de operadores de una planta (para el selector de la Bitácora),
+// tomada de la misma fuente que Análisis de operadores (Turnos, semana correcta).
+app.get('/api/operadores', authMiddleware, (req, res) => {
+  const plantaFiltro = req.query.planta || null;
+  if (!plantaFiltro || !plantas.has(plantaFiltro)) {
+    return res.status(400).json({ error: 'Debes indicar una planta válida (?planta=...)' });
+  }
+  const operadores = construirAnalisisOperadores(plantaFiltro).map((o) => ({ id: o.id, nombre: o.nombre }));
+  operadores.sort((a, b) => a.nombre.localeCompare(b.nombre));
+  res.json(operadores);
 });
 
 app.get('/api/auditoria', authMiddleware, (req, res) => {
@@ -503,6 +529,22 @@ function construirAnalisisOperadores(nombrePlantaFiltro) {
     return null;
   }
 
+  // 2.5) Citación por operador — SOLO disponible si el archivo de Citaciones
+  // cargado trae columna de ID de operador (formato "Citación_Operadores": ID
+  // Operador + Citación sugerida). El formato antiguo de despachos/pedidos no
+  // tiene esta columna, así que para esos casos simplemente no hay dato.
+  const citacionPorOperador = new Map(); // key = planta|id -> minutos
+  for (const r of ingestas.citaciones.registros) {
+    const id = idOperadorDeRegistro(r);
+    if (!id) continue; // este archivo no trae ID de operador, se omite
+    const planta = resolverPlantaCanonica(r);
+    if (!planta) continue;
+    const horaStr = buscarCampo(r, ['citacion sugerida', 'citación sugerida', 'hora citada', 'hora citacion', 'hora citación']);
+    const minutos = horaAMinutos(horaStr);
+    if (minutos === null) continue;
+    citacionPorOperador.set(planta + '|' + id, minutos);
+  }
+
   // 3) Recorrer la selección de un turno por operador (ya filtrada a la semana correcta)
   const operadores = [];
   for (const [key, r] of turnosPorOperador) {
@@ -518,6 +560,7 @@ function construirAnalisisOperadores(nombrePlantaFiltro) {
     const eventos = eventosPorOperador.get(key) || [];
     const logeoMin = primerEvento(eventos, 'LOGIN');
     const asignacionMin = logeoMin !== null ? primerEvento(eventos, 'ASIGNADO', logeoMin) : null;
+    const citacionMin = citacionPorOperador.has(key) ? citacionPorOperador.get(key) : null;
 
     const atrasoTurnoMin = turnoMin !== null && logeoMin !== null ? logeoMin - turnoMin : null;
     const esperaAsignacionMin = logeoMin !== null && asignacionMin !== null ? asignacionMin - logeoMin : null;
@@ -530,6 +573,7 @@ function construirAnalisisOperadores(nombrePlantaFiltro) {
       id,
       nombre,
       turno: formatoHHMM(turnoMin),
+      citacion: formatoHHMM(citacionMin),
       logeo: formatoHHMM(logeoMin),
       asignacion: formatoHHMM(asignacionMin),
       atrasoTurnoMin,
@@ -653,11 +697,23 @@ app.get('/api/reporte', authMiddleware, (req, res) => {
     : null;
 
   // Ranking nacional de mayor ADELANTO (para Operaciones: quiénes llegan más
-  // temprano de lo esperado, útil para replanificar turnos/citaciones)
+  // temprano de lo esperado, útil para replanificar turnos/citaciones).
+  // "citacionHora" viene poblado SOLO si el archivo de Citaciones cargado trae
+  // columna de ID de operador (formato "Citación_Operadores"). El formato
+  // antiguo de despachos/pedidos por planta no la tiene, y queda en null.
   const rankingAdelantados = [...adelantadosNacional]
     .sort((a, b) => a.atrasoTurnoMin - b.atrasoTurnoMin) // más negativo primero = más adelanto
     .slice(0, 10)
-    .map((o) => ({ nombre: o.nombre, id: o.id, planta: o.planta, turno: o.turno, logeo: o.logeo, adelantoMin: Math.abs(o.atrasoTurnoMin) }));
+    .map((o) => ({
+      id: o.id,
+      nombre: o.nombre,
+      planta: o.planta,
+      turno: o.turno,
+      citacionHora: o.citacion,
+      logeo: o.logeo,
+      asignacion: o.asignacion,
+      adelantoMin: Math.abs(o.atrasoTurnoMin),
+    }));
 
   // Ranking nacional de mayor TIEMPO MUERTO (para Despacho: dónde se pierden
   // más minutos entre que el operador logea y recibe su primera carga)
@@ -665,21 +721,40 @@ app.get('/api/reporte', authMiddleware, (req, res) => {
     .filter((o) => o.esperaAsignacionMin !== null)
     .sort((a, b) => b.esperaAsignacionMin - a.esperaAsignacionMin)
     .slice(0, 10)
-    .map((o) => ({ nombre: o.nombre, id: o.id, planta: o.planta, logeo: o.logeo, asignacion: o.asignacion, esperaMin: o.esperaAsignacionMin }));
+    .map((o) => ({
+      id: o.id,
+      nombre: o.nombre,
+      planta: o.planta,
+      turno: o.turno,
+      citacionHora: o.citacion,
+      logeo: o.logeo,
+      asignacion: o.asignacion,
+      esperaMin: o.esperaAsignacionMin,
+    }));
 
   // --- Citaciones: siguen siendo conteo de filas (son registros de despacho/
-  // carga programada, no turnos de operador, así que no se deduplican igual). ---
+  // carga programada, no turnos de operador, así que no se deduplican igual).
+  // IMPORTANTE: Citaciones no tiene columna de ID de operador — es un archivo
+  // de pedidos/despachos por planta, no de personas, así que nunca se puede
+  // cruzar contra un operador específico (solo agregado por planta). ---
   function contarFilasPorPlanta(tipo) {
     const conteo = {};
     for (const nombre of nombresPlantas) conteo[nombre] = 0;
-    let sinPlantaReconocida = 0;
+    let sinPlantaVacia = 0; // el campo planta viene vacío (ej. pedido anulado)
+    let sinPlantaCodigoDesconocido = 0; // trae un código que nunca apareció en Logeo (sin nombre posible)
     for (const r of ingestas[tipo].registros) {
+      const crudo = buscarCampo(r, ['planta', 'plant', 'nombre planta', 'sitio', 'descripcion planta', 'numero planta', 'número planta']);
       const match = resolverPlantaCanonica(r);
       if (zonaFiltro && match && plantas.get(match)?.zona !== zonaFiltro) continue;
-      if (match && conteo.hasOwnProperty(match)) conteo[match]++;
-      else sinPlantaReconocida++;
+      if (match && conteo.hasOwnProperty(match)) {
+        conteo[match]++;
+      } else if (!crudo || String(crudo).trim() === '') {
+        sinPlantaVacia++;
+      } else {
+        sinPlantaCodigoDesconocido++;
+      }
     }
-    return { conteo, sinPlantaReconocida };
+    return { conteo, sinPlantaVacia, sinPlantaCodigoDesconocido, sinPlantaReconocida: sinPlantaVacia + sinPlantaCodigoDesconocido };
   }
   const citacionesPorPlanta = contarFilasPorPlanta('citaciones');
   // sinPlantaReconocida de logeo/turnos ahora se mide a nivel de operador, no de fila cruda:
@@ -697,9 +772,10 @@ app.get('/api/reporte', authMiddleware, (req, res) => {
   });
 
   const totalTurnos = operadoresNacional.length; // operadores exigibles hoy (deduplicado), no filas crudas
-  const totalCitaciones = zonaFiltro
-    ? Object.values(citacionesPorPlanta.conteo).reduce((s, v) => s + v, 0)
-    : ingestas.citaciones.registros.length;
+  // OJO: totalCitaciones ahora es la SUMA de lo que aparece en la tabla por planta
+  // (antes mostraba el total crudo del archivo, que incluía filas sin planta
+  // reconocible, y por eso no cuadraba con la suma de la tabla).
+  const totalCitaciones = Object.values(citacionesPorPlanta.conteo).reduce((s, v) => s + v, 0);
   const totalLogeo = operadoresNacional.filter((o) => o.logeo !== null).length; // operadores con logeo, no eventos crudos
   const tiempoMuertoPromedioNacionalMin = promedioArr(operadoresNacional.filter((o) => o.esperaAsignacionMin !== null).map((o) => o.esperaAsignacionMin));
   const plantasTiempoMuertoAlto = filasPlanta.filter((f) => f.tiempoMuertoPromedioMin !== null && f.tiempoMuertoPromedioMin > 30);
@@ -732,11 +808,14 @@ app.get('/api/reporte', authMiddleware, (req, res) => {
       `Tiempo muerto sobre 30 min: ${plantasTiempoMuertoAlto.map((f) => `${f.planta} (${f.tiempoMuertoPromedioMin} min)`).join(', ')}.`
     );
   }
-  const totalSinReconocer = citacionesPorPlanta.sinPlantaReconocida + logeoFilasCrudas.sinPlantaReconocida;
+  const sinPlantaVaciaTotal = citacionesPorPlanta.sinPlantaVacia + logeoFilasCrudas.sinPlantaVacia;
+  const sinPlantaCodigoTotal = citacionesPorPlanta.sinPlantaCodigoDesconocido + logeoFilasCrudas.sinPlantaCodigoDesconocido;
+  const totalSinReconocer = sinPlantaVaciaTotal + sinPlantaCodigoTotal;
   if (totalSinReconocer > 0) {
-    lineas.push(
-      `Atención: ${totalSinReconocer} filas no se pudieron cruzar a ninguna planta conocida (nombre o código no reconocido en la tabla de homologación).`
-    );
+    const detalle = [];
+    if (sinPlantaVaciaTotal) detalle.push(`${sinPlantaVaciaTotal} con el campo planta vacío (ej. pedidos anulados)`);
+    if (sinPlantaCodigoTotal) detalle.push(`${sinPlantaCodigoTotal} con un código de planta desconocido (nunca visto en Logeo, sin nombre posible)`);
+    lineas.push(`Atención: ${totalSinReconocer} filas de Citaciones/Logeo no se pudieron cruzar a ninguna planta — ${detalle.join(' y ')}.`);
   }
   if (bitacora.length) {
     lineas.push(`Eventos registrados en bitácora en este período: ${bitacora.length}.`);
@@ -753,6 +832,7 @@ app.get('/api/reporte', authMiddleware, (req, res) => {
       totalLogeo,
       totalPlantas: nombresPlantas.length,
       filasSinReconocer: totalSinReconocer,
+      filasSinReconocerDetalle: { plantaVacia: sinPlantaVaciaTotal, codigoDesconocido: sinPlantaCodigoTotal },
       tiempoMuertoPromedioMin: tiempoMuertoPromedioNacionalMin,
       adelantadosPct: adelantadosPctNacional,
       adelantadosCantidad: adelantadosNacional.length,
