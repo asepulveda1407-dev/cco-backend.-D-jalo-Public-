@@ -624,7 +624,10 @@ app.get('/api/analisis-operadores', authMiddleware, (req, res) => {
 app.get('/api/reporte', authMiddleware, (req, res) => {
 
   const zonaFiltro = req.query.zona || null;
-  const nombresPlantas = [...plantas.keys()].filter((n) => !zonaFiltro || plantas.get(n).zona === zonaFiltro);
+  const plantasFiltro = req.query.plantas ? req.query.plantas.split(',').filter(Boolean) : null;
+  const nombresPlantas = [...plantas.keys()].filter(
+    (n) => (!zonaFiltro || plantas.get(n).zona === zonaFiltro) && (!plantasFiltro || plantasFiltro.includes(n))
+  );
 
   // --- Turnos y Logeo: se calculan a partir del mismo análisis por operador
   // que usa /api/analisis-operadores (deduplicado a la semana correcta, y
@@ -641,6 +644,28 @@ app.get('/api/reporte', authMiddleware, (req, res) => {
     if (o.esperaAsignacionMin !== null) esperasPorPlanta[o.planta].push(o.esperaAsignacionMin);
   }
   const promedioArr = (arr) => (arr.length ? Math.round((arr.reduce((s, v) => s + v, 0) / arr.length) * 10) / 10 : null);
+
+  // --- KPIs nacionales exclusivos: Adelantamiento al turno y Tiempo muerto ---
+  // (dentro del alcance de zona/plantas filtradas, no todo el país siempre)
+  const adelantadosNacional = operadoresNacional.filter((o) => o.categoria === 'adelantado');
+  const adelantadosPctNacional = operadoresNacional.length
+    ? Math.round((adelantadosNacional.length / operadoresNacional.length) * 1000) / 10
+    : null;
+
+  // Ranking nacional de mayor ADELANTO (para Operaciones: quiénes llegan más
+  // temprano de lo esperado, útil para replanificar turnos/citaciones)
+  const rankingAdelantados = [...adelantadosNacional]
+    .sort((a, b) => a.atrasoTurnoMin - b.atrasoTurnoMin) // más negativo primero = más adelanto
+    .slice(0, 10)
+    .map((o) => ({ nombre: o.nombre, id: o.id, planta: o.planta, turno: o.turno, logeo: o.logeo, adelantoMin: Math.abs(o.atrasoTurnoMin) }));
+
+  // Ranking nacional de mayor TIEMPO MUERTO (para Despacho: dónde se pierden
+  // más minutos entre que el operador logea y recibe su primera carga)
+  const rankingTiempoMuertoNacional = operadoresNacional
+    .filter((o) => o.esperaAsignacionMin !== null)
+    .sort((a, b) => b.esperaAsignacionMin - a.esperaAsignacionMin)
+    .slice(0, 10)
+    .map((o) => ({ nombre: o.nombre, id: o.id, planta: o.planta, logeo: o.logeo, asignacion: o.asignacion, esperaMin: o.esperaAsignacionMin }));
 
   // --- Citaciones: siguen siendo conteo de filas (son registros de despacho/
   // carga programada, no turnos de operador, así que no se deduplican igual). ---
@@ -721,6 +746,7 @@ app.get('/api/reporte', authMiddleware, (req, res) => {
     generado_en: new Date().toISOString(),
     generado_por: req.user.nombre,
     zona: zonaFiltro,
+    plantasFiltro,
     resumen: {
       totalTurnos,
       totalCitaciones,
@@ -728,9 +754,13 @@ app.get('/api/reporte', authMiddleware, (req, res) => {
       totalPlantas: nombresPlantas.length,
       filasSinReconocer: totalSinReconocer,
       tiempoMuertoPromedioMin: tiempoMuertoPromedioNacionalMin,
+      adelantadosPct: adelantadosPctNacional,
+      adelantadosCantidad: adelantadosNacional.length,
     },
     porPlanta: filasPlanta,
     narrativa: lineas,
+    rankingAdelantados,
+    rankingTiempoMuertoNacional,
   });
 });
 
