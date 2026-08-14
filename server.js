@@ -84,6 +84,20 @@ PLANTAS_REALES.forEach(([nombre, , , codigos]) => {
 let bitacora = []; // más reciente primero
 let auditoria = []; // más reciente primero
 
+// Registro de anomalías de datos detectadas durante el cálculo — para que un
+// valor raro (como una hora de turno imposible) sea diagnosticable en segundos
+// vía /api/diagnostico en vez de tener que reconstruir el caso a mano. Se
+// limpia en cada llamada a construirAnalisisOperadores() para reflejar solo
+// la última corrida.
+let advertenciasDato = [];
+function registrarAdvertenciaDato(campo, operadorId, operadorNombre, planta, motivo, valorCrudo) {
+  advertenciasDato.push({
+    campo, operadorId, operadorNombre, planta, motivo,
+    valorCrudo: valorCrudo === undefined ? null : valorCrudo,
+    ts: new Date().toISOString(),
+  });
+}
+
 // Datos de ingesta: turnos (programación), citaciones (hora citada por Syncrotess/similar),
 // logeo (marcación real del operador). Cada uno es un array de registros "crudos" tal cual
 // vinieron del Excel, más metadatos de quién/cuándo se subió.
@@ -216,7 +230,7 @@ function registrarAuditoria({ usuario, entidad, entidad_id, accion, anterior, nu
 // 4. Endpoints (mismo contrato que la versión con base de datos)
 // ---------------------------------------------------------------------------
 
-const VERSION_BACKEND = '2026-08-14-v7-citacion-flag-bitacora-cl';
+const VERSION_BACKEND = '2026-08-14-v8-diagnostico-validacion-turno';
 app.get('/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString(), version: VERSION_BACKEND }));
 
 app.post('/api/auth/login', (req, res) => {
@@ -483,7 +497,13 @@ function turnosDelDiaCorrespondiente() {
     if (fechaRef && inicioSemana && finSemana) {
       const ini = new Date(inicioSemana);
       const fin = new Date(finSemana);
-      fin.setHours(23, 59, 59, 999);
+      // OJO: fin.setHours() opera en hora LOCAL del proceso Node, mientras
+      // que fechaRef e ini/fin vienen de strings ISO en UTC. En un servidor
+      // que corre en UTC (típico en Render), esto coincide por casualidad,
+      // pero es frágil: se reemplaza por una construcción explícita en UTC
+      // para que el límite de fin de semana (23:59:59) sea siempre correcto
+      // sin depender de en qué zona horaria esté configurado el proceso.
+      fin.setUTCHours(23, 59, 59, 999);
       coincideSemana = fechaRef >= ini && fechaRef <= fin;
     }
 
@@ -498,6 +518,7 @@ function turnosDelDiaCorrespondiente() {
 }
 
 function construirAnalisisOperadores(nombrePlantaFiltro) {
+  advertenciasDato = []; // se reinicia en cada corrida, refleja solo esta ejecución
   // 1) Una sola fila de turno por operador, ya filtrada a la semana correcta
   const turnosPorOperador = turnosDelDiaCorrespondiente();
 
@@ -554,8 +575,32 @@ function construirAnalisisOperadores(nombrePlantaFiltro) {
     if (!planta || !id) continue;
 
     const nombre = nombreOperadorDeRegistro(r) || id;
-    const horaTurnoStr = buscarCampo(r, ['hora ingreso', 'hora_ingreso', 'turno asignado']);
+    // IMPORTANTE: el candidato de búsqueda es EXCLUSIVAMENTE columnas de hora
+    // real (Hora_ingreso). Antes se incluía 'turno asignado' como fallback,
+    // pero esa columna (Turno_asignado) contiene códigos de turno tipo "A-6",
+    // no una hora — mezclar ambos conceptos es un bug de diseño que puede
+    // producir horas corruptas o basura silenciosa. Se elimina el fallback.
+    const horaTurnoStr = buscarCampo(r, ['hora ingreso', 'hora_ingreso'], true);
     const turnoMin = horaAMinutos(horaTurnoStr);
+    if (horaTurnoStr !== null && turnoMin === null) {
+      // Se encontró un valor en la columna de hora de turno, pero no se pudo
+      // convertir a una hora válida. Se registra para diagnóstico en vez de
+      // fallar en silencio (antes esto simplemente devolvía turno: null sin
+      // dejar rastro de por qué).
+      registrarAdvertenciaDato('turno', id, nombre, planta, 'Hora_ingreso no convertible', horaTurnoStr);
+    }
+    // Validación de rango operativo: los turnos de la operación real van de
+    // 07:00 a 11:00 (ventana confirmada por Alberto). Un turno fuera de ese
+    // rango casi seguro es un dato corrupto o mal leído del Excel — se marca
+    // como sospechoso en vez de mostrarse como si fuera un valor normal, para
+    // que la anomalía sea visible en /api/diagnostico en lugar de aparecer
+    // silenciosamente en una tabla como si fuera un turno legítimo.
+    const RANGO_TURNO_MIN = 7 * 60;   // 07:00
+    const RANGO_TURNO_MAX = 11 * 60;  // 11:00
+    if (turnoMin !== null && (turnoMin < RANGO_TURNO_MIN || turnoMin > RANGO_TURNO_MAX)) {
+      registrarAdvertenciaDato('turno', id, nombre, planta,
+        `Hora de turno fuera del rango operativo (07:00-11:00): ${formatoHHMM(turnoMin)}`, horaTurnoStr);
+    }
 
     const eventos = eventosPorOperador.get(key) || [];
     const logeoMin = primerEvento(eventos, 'LOGIN');
@@ -673,6 +718,31 @@ app.get('/api/analisis-operadores', authMiddleware, (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// 6.55 Diagnóstico de calidad de datos — expone las anomalías detectadas
+//      durante el último cálculo (turnos fuera del rango operativo 07:00-11:00,
+//      valores de hora no convertibles, etc). Existe para poder responder en
+//      segundos "¿de dónde salió este valor raro?" mostrando el valor CRUDO
+//      exacto tal como llegó del Excel, en vez de tener que reconstruir el
+//      caso a mano cada vez que aparece un dato que no cuadra.
+// ---------------------------------------------------------------------------
+app.get('/api/diagnostico', authMiddleware, (req, res) => {
+  // Fuerza un recálculo para asegurar que advertenciasDato refleje el estado
+  // actual de las 3 ingestas, no una corrida anterior desactualizada.
+  construirAnalisisOperadores(null);
+  res.json({
+    generado_en: new Date().toISOString(),
+    totalAdvertencias: advertenciasDato.length,
+    advertencias: advertenciasDato,
+    fechaLogeoUsadaComoReferencia: fechaLogeoDetectada(),
+    ingestasCargadas: {
+      turnos: { cantidad: ingestas.turnos.registros.length, archivo: ingestas.turnos.archivo, subido_en: ingestas.turnos.subido_en },
+      citaciones: { cantidad: ingestas.citaciones.registros.length, archivo: ingestas.citaciones.archivo, subido_en: ingestas.citaciones.subido_en },
+      logeo: { cantidad: ingestas.logeo.registros.length, archivo: ingestas.logeo.archivo, subido_en: ingestas.logeo.subido_en },
+    },
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 6.6 Tabla completa de operadores para el Reporte Ejecutivo — mismas columnas
 //     que exige Alberto: id, nombre, planta, hora turno, hora citación, hora
 //     logeo, hora asignación, tiempo muerto, atraso/adelanto. Es la misma data
@@ -698,6 +768,15 @@ app.get('/api/tabla-operadores', authMiddleware, (req, res) => {
     planta: o.planta,
     zona: plantas.get(o.planta)?.zona || null,
     horaTurno: o.turno,
+    // Bandera para el frontend: turno fuera del rango operativo real
+    // (07:00-11:00). Permite resaltar la fila en rojo aunque el resto del
+    // cálculo (atraso/adelanto) haya salido "normal" — un turno imposible
+    // invalida esa fila entera y no debe pasar desapercibido en la tabla.
+    horaTurnoSospechosa: o.turno !== null && (() => {
+      const [h, m] = o.turno.split(':').map(Number);
+      const min = h * 60 + m;
+      return min < 7 * 60 || min > 11 * 60;
+    })(),
     horaCitacion: o.citacion,
     horaLogeo: o.logeo,
     horaAsignacion: o.asignacion,
