@@ -96,7 +96,7 @@ let ingestas = {
 // Intenta encontrar, entre las llaves de un registro, la que mejor calza con una lista de
 // nombres de columna candidatos (insensible a mayúsculas/acentos/espacios), igual que hacía
 // el HTML original con su función col(). Devuelve el VALOR de esa columna, o null.
-function buscarCampo(registro, candidatos) {
+function buscarCampo(registro, candidatos, soloExacto) {
   const normalizar = (s) =>
     String(s || '')
       .toLowerCase()
@@ -109,6 +109,7 @@ function buscarCampo(registro, candidatos) {
     const encontrada = llaves.find((k) => normalizar(k) === candNorm);
     if (encontrada) return registro[encontrada];
   }
+  if (soloExacto) return null;
   // Segundo intento: coincidencia parcial (contiene)
   for (const cand of candidatos) {
     const candNorm = normalizar(cand);
@@ -215,7 +216,8 @@ function registrarAuditoria({ usuario, entidad, entidad_id, accion, anterior, nu
 // 4. Endpoints (mismo contrato que la versión con base de datos)
 // ---------------------------------------------------------------------------
 
-app.get('/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
+const VERSION_BACKEND = '2026-08-14-v5-citacion-estricta-4plantas';
+app.get('/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString(), version: VERSION_BACKEND }));
 
 app.post('/api/auth/login', (req, res) => {
   const { nombre, rol, zona } = req.body;
@@ -533,13 +535,17 @@ function construirAnalisisOperadores(nombrePlantaFiltro) {
   // cargado trae columna de ID de operador (formato "Citación_Operadores": ID
   // Operador + Citación sugerida). El formato antiguo de despachos/pedidos no
   // tiene esta columna, así que para esos casos simplemente no hay dato.
+  // IMPORTANTE: se busca EXCLUSIVAMENTE la columna "Citación sugerida", en modo
+  // estricto (sin coincidencia parcial), para no confundirla nunca con otras
+  // columnas de hora que trae el mismo archivo (ej. "Logeo Tablet", "Inicio
+  // primera carga", "Hora solicitada primera obra").
   const citacionPorOperador = new Map(); // key = planta|id -> minutos
   for (const r of ingestas.citaciones.registros) {
     const id = idOperadorDeRegistro(r);
     if (!id) continue; // este archivo no trae ID de operador, se omite
     const planta = resolverPlantaCanonica(r);
     if (!planta) continue;
-    const horaStr = buscarCampo(r, ['citacion sugerida', 'citación sugerida', 'hora citada', 'hora citacion', 'hora citación']);
+    const horaStr = buscarCampo(r, ['citacion sugerida', 'citación sugerida'], true);
     const minutos = horaAMinutos(horaStr);
     if (minutos === null) continue;
     citacionPorOperador.set(planta + '|' + id, minutos);
