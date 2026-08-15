@@ -230,7 +230,7 @@ function registrarAuditoria({ usuario, entidad, entidad_id, accion, anterior, nu
 // 4. Endpoints (mismo contrato que la versión con base de datos)
 // ---------------------------------------------------------------------------
 
-const VERSION_BACKEND = '2026-08-14-v8-diagnostico-validacion-turno';
+const VERSION_BACKEND = '2026-08-14-v10-nota-citaciones-vs-turnos';
 app.get('/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString(), version: VERSION_BACKEND }));
 
 app.post('/api/auth/login', (req, res) => {
@@ -408,18 +408,63 @@ app.get('/api/ingesta/estado', authMiddleware, (req, res) => {
 //     de turno) -> ... -> ASIGNADO (primera asignación de carga).
 // ---------------------------------------------------------------------------
 
-// Convierte una hora en cualquier formato común (Date/ISO, "HH:MM", "HH:MM:SS",
-// "YYYY-MM-DD HH:MM:SS") a minutos desde medianoche. Devuelve null si no se pudo.
+// Convierte una hora en cualquier formato común a minutos desde medianoche.
+// Devuelve null si no se pudo.
+//
+// FIX (2026-08-14, v9) — bug de zona horaria que producía horas fantasma
+// (ej. Juan Diaz / ID 1004315, turno real 08:00 mostrado como 12:42):
+//
+// ANTES: cuando el valor llegaba como Date o como string con fecha+hora
+// ("YYYY-MM-DD HH:MM..."), se hacía `new Date(valor)` y se leía la hora con
+// `getUTCHours()/getUTCMinutes()`. El problema es que SheetJS, al leer una
+// celda Excel de tipo "hora pura" (ej. 08:00, sin fecha), genera un Date en
+// hora LOCAL del navegador del usuario (America/Santiago, UTC-3/UTC-4), pero
+// al serializarse a JSON con .toISOString() ese Date se convierte a UTC. El
+// backend en Render corre en UTC, así que técnicamente "coincide" — PERO si
+// en cualquier punto de la cadena (navegador del usuario, o el propio SheetJS
+// con cellDates+UTC) la hora ya se generó pensando que la celda estaba en UTC
+// en vez de hora local, se termina sumando o restando el offset de Chile una
+// vez de más o de menos. Resultado: una hora que no es ninguna de las dos
+// versiones "razonables" (ni la local ni la UTC cruda), sino una tercera
+// hora corrida por el offset — exactamente el síntoma reportado (08:00 real
+// mostrado como 12:42, un desfase de +4:42 que no corresponde a ningún
+// offset estándar de Chile, lo cual indica un doble ajuste de zona horaria
+// en la cadena SheetJS -> JSON -> Node).
+//
+// AHORA: se elimina por completo la dependencia de Date/UTC para extraer la
+// hora. Se prioriza SIEMPRE la extracción directa de dígitos "HH:MM" desde
+// el string, sin pasar nunca por conversión de zona horaria. Si el valor es
+// un objeto Date, se leen sus componentes en hora LOCAL del proceso (no UTC)
+// como fallback explícito, pero solo como último recurso — nunca como
+// primera opción — porque un objeto Date para una hora "pura" no tiene una
+// interpretación de zona horaria correcta y objetivamente única.
 function horaAMinutos(valor) {
   if (valor === null || valor === undefined || valor === '') return null;
-  // Date real o string ISO con fecha y hora
-  if (valor instanceof Date || /^\d{4}-\d{2}-\d{2}[ T]\d{1,2}:\d{2}/.test(String(valor))) {
-    const d = new Date(valor);
-    if (!isNaN(d.getTime())) return d.getUTCHours() * 60 + d.getUTCMinutes();
+
+  // 1) PRIORIDAD MÁXIMA: extraer "HH:MM" directamente del string, sin pasar
+  //    nunca por Date/UTC. Cubre "08:00", "08:00:00", y también strings con
+  //    fecha+hora tipo "1899-12-30T08:00:00.000Z" o "2026-08-10 08:00:00"
+  //    (se toma el componente de hora tal cual está escrito, sin reinterpretar
+  //    zona horaria).
+  const texto = String(valor).trim();
+
+  // "HH:MM" o "HH:MM:SS" puro (con o sin fecha adelante)
+  const matchConFecha = texto.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(?:Z)?$/);
+  if (matchConFecha) {
+    const h = parseInt(matchConFecha[1], 10);
+    const mi = parseInt(matchConFecha[2], 10);
+    if (h >= 0 && h < 24 && mi >= 0 && mi < 60) return h * 60 + mi;
   }
-  // "HH:MM" o "HH:MM:SS"
-  const m = String(valor).trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-  if (m) return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+
+  // 2) Fallback: objeto Date real (poco común tras JSON.stringify, pero se
+  //    contempla por si el registro llega sin serializar). Se usan los
+  //    componentes LOCALES del proceso, no UTC — el proceso en Render corre
+  //    en UTC por defecto, así que esto es equivalente a UTC ahí, pero deja
+  //    de forzar una interpretación UTC si el proceso corriera en otra TZ.
+  if (valor instanceof Date && !isNaN(valor.getTime())) {
+    return valor.getHours() * 60 + valor.getMinutes();
+  }
+
   return null;
 }
 
@@ -897,6 +942,22 @@ app.get('/api/reporte', authMiddleware, (req, res) => {
   // sinPlantaReconocida de logeo/turnos ahora se mide a nivel de operador, no de fila cruda:
   const logeoFilasCrudas = contarFilasPorPlanta('logeo'); // solo para el conteo de filas sin homologar
 
+  // --- Citados sin turno base: operadores que aparecen en Citaciones (con ID
+  // de operador, formato "Citación_Operadores") pero NO están en la selección
+  // de Turnos de la semana correspondiente. Esto explica el caso normal donde
+  // totalCitaciones > totalTurnos (refuerzos, préstamos entre plantas, cambios
+  // de última hora) para que no se lea como un error de conteo en el reporte.
+  const idsOperadoresTurnos = new Set(operadoresNacional.map((o) => o.planta + '|' + o.id));
+  const idsOperadoresCitados = new Set();
+  for (const r of ingestas.citaciones.registros) {
+    const id = idOperadorDeRegistro(r);
+    if (!id) continue; // archivo sin columna de ID de operador (formato antiguo), no se puede cruzar
+    const planta = resolverPlantaCanonica(r);
+    if (!planta || !nombresPlantas.includes(planta)) continue;
+    idsOperadoresCitados.add(planta + '|' + id);
+  }
+  const citadosSinTurnoBase = [...idsOperadoresCitados].filter((key) => !idsOperadoresTurnos.has(key));
+
   const filasPlanta = nombresPlantas.map((nombre) => {
     const turnos = turnosPorPlantaOp[nombre] || 0;
     const citaciones = citacionesPorPlanta.conteo[nombre] || 0;
@@ -940,6 +1001,15 @@ app.get('/api/reporte', authMiddleware, (req, res) => {
   if (tiempoMuertoPromedioNacionalMin !== null) {
     lineas.push(`Tiempo muerto promedio (logeo → asignación): ${tiempoMuertoPromedioNacionalMin} min (objetivo ≤ 30 min).`);
   }
+  // Aclaración cuando Citaciones > Turnos: no es un error de conteo, son dos
+  // universos distintos (operadores citados hoy vs. operadores programados en
+  // la semana base). Se explica solo cuando aplica, para no ensuciar el
+  // reporte en el caso normal donde ambos números son coherentes entre sí.
+  if (citadosSinTurnoBase.length > 0) {
+    lineas.push(
+      `Nota: ${citadosSinTurnoBase.length} operador(es) con citación no figuran en la programación base de Turnos de la semana — posible refuerzo, préstamo entre plantas o cambio de última hora. Citaciones y Turnos miden universos distintos (citados del día vs. programados de la semana), por lo que Citaciones puede superar a Turnos sin ser un error de datos.`
+    );
+  }
   if (plantasTiempoMuertoAlto.length) {
     lineas.push(
       `Tiempo muerto sobre 30 min: ${plantasTiempoMuertoAlto.map((f) => `${f.planta} (${f.tiempoMuertoPromedioMin} min)`).join(', ')}.`
@@ -973,6 +1043,7 @@ app.get('/api/reporte', authMiddleware, (req, res) => {
       tiempoMuertoPromedioMin: tiempoMuertoPromedioNacionalMin,
       adelantadosPct: adelantadosPctNacional,
       adelantadosCantidad: adelantadosNacional.length,
+      citadosSinTurnoBaseCantidad: citadosSinTurnoBase.length,
     },
     porPlanta: filasPlanta,
     narrativa: lineas,
