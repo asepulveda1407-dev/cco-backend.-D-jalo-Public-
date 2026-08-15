@@ -914,20 +914,29 @@ app.get('/api/reporte', authMiddleware, (req, res) => {
       esperaMin: o.esperaAsignacionMin,
     }));
 
-  // --- Citaciones: siguen siendo conteo de filas (son registros de despacho/
-  // carga programada, no turnos de operador, así que no se deduplican igual).
-  // IMPORTANTE: Citaciones no tiene columna de ID de operador — es un archivo
-  // de pedidos/despachos por planta, no de personas, así que nunca se puede
-  // cruzar contra un operador específico (solo agregado por planta). ---
+  // --- Citaciones: SOLO contar si la planta está configurada con citacion: 'si' ---
+  // Esto asegura que no se contaminen totales con plantas que NO usan citaciones.
+  // Cualquier citación de planta con citacion: 'no' se EXCLUYE completamente.
   function contarFilasPorPlanta(tipo) {
     const conteo = {};
     for (const nombre of nombresPlantas) conteo[nombre] = 0;
-    let sinPlantaVacia = 0; // el campo planta viene vacío (ej. pedido anulado)
-    let sinPlantaCodigoDesconocido = 0; // trae un código que nunca apareció en Logeo (sin nombre posible)
+    let sinPlantaVacia = 0;
+    let sinPlantaCodigoDesconocido = 0;
+    let excluidosPorCitacionNo = 0; // NEW: contador de registros excluidos por citacion='no'
+    
     for (const r of ingestas[tipo].registros) {
       const crudo = buscarCampo(r, ['planta', 'plant', 'nombre planta', 'sitio', 'descripcion planta', 'numero planta', 'número planta']);
       const match = resolverPlantaCanonica(r);
+      
       if (zonaFiltro && match && plantas.get(match)?.zona !== zonaFiltro) continue;
+      
+      // NEW: Si es el tipo 'citaciones', validar que la planta tenga citacion='si'
+      // Si no, EXCLUIR completamente (no contar en ningún lado)
+      if (tipo === 'citaciones' && match && plantas.get(match)?.citacion !== 'si') {
+        excluidosPorCitacionNo++;
+        continue; // EXCLUIR este registro completamente
+      }
+      
       if (match && conteo.hasOwnProperty(match)) {
         conteo[match]++;
       } else if (!crudo || String(crudo).trim() === '') {
@@ -936,7 +945,13 @@ app.get('/api/reporte', authMiddleware, (req, res) => {
         sinPlantaCodigoDesconocido++;
       }
     }
-    return { conteo, sinPlantaVacia, sinPlantaCodigoDesconocido, sinPlantaReconocida: sinPlantaVacia + sinPlantaCodigoDesconocido };
+    return { 
+      conteo, 
+      sinPlantaVacia, 
+      sinPlantaCodigoDesconocido, 
+      sinPlantaReconocida: sinPlantaVacia + sinPlantaCodigoDesconocido,
+      excluidosPorCitacionNo, // NEW: información de registros excluidos
+    };
   }
   const citacionesPorPlanta = contarFilasPorPlanta('citaciones');
   // sinPlantaReconocida de logeo/turnos ahora se mide a nivel de operador, no de fila cruda:
@@ -1023,6 +1038,10 @@ app.get('/api/reporte', authMiddleware, (req, res) => {
     if (sinPlantaVaciaTotal) detalle.push(`${sinPlantaVaciaTotal} con el campo planta vacío (ej. pedidos anulados)`);
     if (sinPlantaCodigoTotal) detalle.push(`${sinPlantaCodigoTotal} con un código de planta desconocido (nunca visto en Logeo, sin nombre posible)`);
     lineas.push(`Atención: ${totalSinReconocer} filas de Citaciones/Logeo no se pudieron cruzar a ninguna planta — ${detalle.join(' y ')}.`);
+  }
+  // NEW: Alerta de exclusión por citacion='no'
+  if (citacionesPorPlanta.excluidosPorCitacionNo > 0) {
+    lineas.push(`⚠️ EXCLUSIÓN: ${citacionesPorPlanta.excluidosPorCitacionNo} registros de Citaciones fueron EXCLUIDOS porque sus plantas NO tienen citación habilitada (citacion='no'). Estos registros NO aparecen en ningún total ni indicador.`);
   }
   if (bitacora.length) {
     lineas.push(`Eventos registrados en bitácora en este período: ${bitacora.length}.`);
