@@ -195,26 +195,62 @@ function puedeEditarConfigGlobal(user) {
 // ---------------------------------------------------------------------------
 // 3. App + WebSocket
 // ---------------------------------------------------------------------------
+const fs = require('fs');
+const path = require('path');
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
 // ============================================================================
-// RUTA RAÍZ: Servir index.html directamente
+// CACHE: Leer index.html UNA SOLA VEZ al iniciar el servidor
+// ============================================================================
+let indexHtmlCache = null;
+
+function cargarIndexHtml() {
+  try {
+    // Intentar múltiples rutas posibles
+    const posiblesRutas = [
+      path.join(__dirname, 'index.html'),
+      path.join(process.cwd(), 'index.html'),
+      '/app/index.html',
+      './index.html'
+    ];
+    
+    for (const ruta of posiblesRutas) {
+      try {
+        if (fs.existsSync(ruta)) {
+          console.log(`✅ Encontrado index.html en: ${ruta}`);
+          indexHtmlCache = fs.readFileSync(ruta, 'utf8');
+          return indexHtmlCache;
+        }
+      } catch (e) {
+        // Continuar con la siguiente ruta
+      }
+    }
+    
+    console.error('❌ No se encontró index.html en ninguna ruta conocida');
+    return null;
+  } catch (err) {
+    console.error('Error al leer index.html:', err.message);
+    return null;
+  }
+}
+
+// ============================================================================
+// RUTA RAÍZ: Servir index.html desde cache
 // ============================================================================
 app.get('/', (req, res) => {
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  if (!indexHtmlCache) {
+    // Intentar cargar nuevamente si no está en cache
+    indexHtmlCache = cargarIndexHtml();
+  }
   
-  // Leer index.html desde el mismo directorio que server.js
-  const fs = require('fs');
-  const indexPath = require('path').join(__dirname, 'index.html');
-  
-  try {
-    const html = fs.readFileSync(indexPath, 'utf8');
-    res.send(html);
-  } catch (err) {
-    // Si no encuentra index.html, devolver error claro
-    res.status(404).send('Error: index.html no encontrado en ' + indexPath);
+  if (indexHtmlCache) {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(indexHtmlCache);
+  } else {
+    res.status(500).send('Error: No se pudo cargar index.html');
   }
 });
 
