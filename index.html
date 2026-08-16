@@ -270,17 +270,14 @@ font-size:11px;margin-top:10px;text-align:left;display:none}
       <div class="chart-wrap"><canvas id="repChart"></canvas></div>
 
       <div class="rep-header"><span class="rep-titulo">🏃 Operadores con mayor adelanto <span class="small">(Operaciones — replanificar turnos/citaciones)</span></span></div>
-      <table class="rep-tabla">
-        <thead><tr><th>ID</th><th>Nombre</th><th>Planta</th><th>Hora turno</th><th>Hora citación</th><th>Hora logeo</th><th>Hora asignación</th><th>Adelanto</th></tr></thead>
-        <tbody id="repRankingAdelantados"></tbody>
-      </table>
-      <p class="small" style="margin:4px 0 0">"Hora citación" solo aparece si el archivo de Citaciones cargado trae columna de ID de operador (formato "Citación_Operadores"). El formato antiguo de despachos/pedidos por planta no la incluye, y se mostrará "—".</p>
+      <div id="repRankingAdelanladosContainer" style="padding:16px;text-align:center;color:var(--mut);font-size:11px">
+        Los datos aparecerán en la imagen PNG descargada (formato tarjetas ejecutivas).
+      </div>
 
       <div class="rep-header"><span class="rep-titulo">⏱️ Operadores con mayor tiempo muerto <span class="small">(Despacho — dónde se pierden más minutos logeo→asignación)</span></span></div>
-      <table class="rep-tabla">
-        <thead><tr><th>ID</th><th>Nombre</th><th>Planta</th><th>Hora turno</th><th>Hora citación</th><th>Hora logeo</th><th>Hora asignación</th><th>Espera</th></tr></thead>
-        <tbody id="repRankingTiempoMuerto"></tbody>
-      </table>
+      <div id="repRankingTiempoMuertoContainer" style="padding:16px;text-align:center;color:var(--mut);font-size:11px">
+        Los datos aparecerán en la imagen PNG descargada (formato tarjetas ejecutivas).
+      </div>
 
       <div class="rep-header"><span class="rep-titulo">Detalle por planta</span></div>
       <table class="rep-tabla">
@@ -1248,19 +1245,28 @@ function renderAnalisisOperadores(data){
 function enviarPorCorreo(){
   const texto = document.getElementById('reporteBox').dataset.texto;
   if(!texto){ alert('Primero genera el reporte ejecutivo'); return; }
+  
   const textoPlano = texto.replace(/\*/g,'').replace(/_/g,'').replace(/```/g,'');
   const asunto = 'Reporte Ejecutivo CCO — ' + new Date().toLocaleDateString('es-CL');
-  // mailto: tiene un límite práctico de largo de URL (varía por cliente); si el
-  // texto es muy extenso, se recorta y se avisa que el detalle completo queda
-  // en la imagen descargable y en "Copiar texto".
+  
   const LIMITE = 1800;
   const cuerpo = textoPlano.length > LIMITE
     ? textoPlano.slice(0, LIMITE) + '\n\n[Texto recortado por largo — ver detalle completo en la imagen adjunta o usar "Copiar texto"]'
     : textoPlano;
+  
   const url = 'mailto:?subject=' + encodeURIComponent(asunto) + '&body=' + encodeURIComponent(cuerpo);
+  
+  // Mostrar alerta de confirmación
+  alert('Se abrirá Outlook y se descargará el reporte en formato imagen (PNG).\n\nAdjunta la imagen descargada al correo antes de enviar.');
+  
+  // Abrir Outlook
   window.location.href = url;
-  // Se descarga la imagen automáticamente también, para que quede lista para adjuntar en Outlook
-  descargarImagenReporte();
+  
+  // Descargar el PNG con tarjetas ejecutivas (automáticamente)
+  // Pequeño delay para asegurar que Outlook se abrió
+  setTimeout(() => {
+    descargarImagenReporte();
+  }, 500);
 }
 
 // --- Descargar el reporte COMPLETO como una sola imagen (título + KPIs +
@@ -1684,4 +1690,3 @@ function roundRect(ctx, x, y, w, h, r){
 </script>
 </body>
 </html>
-
