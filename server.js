@@ -240,20 +240,6 @@ function cargarIndexHtml() {
 // ============================================================================
 // RUTA RAÍZ: Servir index.html desde cache
 // ============================================================================
-app.get('/', (req, res) => {
-  if (!indexHtmlCache) {
-    // Intentar cargar nuevamente si no está en cache
-    indexHtmlCache = cargarIndexHtml();
-  }
-  
-  if (indexHtmlCache) {
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.send(indexHtmlCache);
-  } else {
-    res.status(500).send('Error: No se pudo cargar index.html');
-  }
-});
-
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
@@ -1127,6 +1113,23 @@ app.get('/api/reporte', (req, res) => {
   } catch (err) {
     console.error('Error en /api/reporte:', err.message, err.stack);
     res.status(500).json({ error: 'Error al generar el reporte: ' + err.message });
+  }
+});
+
+// ============================================================================
+// RUTA RAÍZ (ÚLTIMA - después de todos los endpoints /api/*)
+// ============================================================================
+app.get('/', (req, res) => {
+  if (!indexHtmlCache) {
+    // Intentar cargar nuevamente si no está en cache
+    indexHtmlCache = cargarIndexHtml();
+  }
+  
+  if (indexHtmlCache) {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(indexHtmlCache);
+  } else {
+    res.status(500).send('Error: No se pudo cargar index.html');
   }
 });
 
