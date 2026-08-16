@@ -312,11 +312,11 @@ app.post('/api/auth/login', (req, res) => {
   res.json({ token, user });
 });
 
-app.get('/api/plantas', authMiddleware, (req, res) => {
+app.get('/api/plantas', (req, res) => {
   res.json([...plantas.values()].sort((a, b) => a.nombre.localeCompare(b.nombre)));
 });
 
-app.put('/api/plantas/:nombre/config', authMiddleware, (req, res) => {
+app.put('/api/plantas/:nombre/config', (req, res) => {
   if (!puedeEditarConfigGlobal(req.user)) {
     return res.status(403).json({ error: 'Rol sin permiso para editar configuración de planta' });
   }
@@ -345,11 +345,11 @@ app.put('/api/plantas/:nombre/config', authMiddleware, (req, res) => {
   res.json(nuevo);
 });
 
-app.get('/api/bitacora', authMiddleware, (req, res) => {
+app.get('/api/bitacora', (req, res) => {
   res.json(bitacora.slice(0, 200));
 });
 
-app.post('/api/bitacora', authMiddleware, (req, res) => {
+app.post('/api/bitacora', (req, res) => {
   const { planta, tipo, detalle, operador_id, operador_nombre, fecha_hora } = req.body;
   if (!planta || !tipo || !detalle) return res.status(400).json({ error: 'planta, tipo y detalle son requeridos' });
 
@@ -377,7 +377,7 @@ app.post('/api/bitacora', authMiddleware, (req, res) => {
 
 // Lista liviana de operadores de una planta (para el selector de la Bitácora),
 // tomada de la misma fuente que Análisis de operadores (Turnos, semana correcta).
-app.get('/api/operadores', authMiddleware, (req, res) => {
+app.get('/api/operadores', (req, res) => {
   const plantaFiltro = req.query.planta || null;
   if (!plantaFiltro || !plantas.has(plantaFiltro)) {
     return res.status(400).json({ error: 'Debes indicar una planta válida (?planta=...)' });
@@ -387,7 +387,7 @@ app.get('/api/operadores', authMiddleware, (req, res) => {
   res.json(operadores);
 });
 
-app.get('/api/auditoria', authMiddleware, (req, res) => {
+app.get('/api/auditoria', (req, res) => {
   if (!puedeEditarConfigGlobal(req.user)) return res.status(403).json({ error: 'Sin permiso' });
   res.json(auditoria.slice(0, 100));
 });
@@ -400,7 +400,7 @@ app.get('/api/auditoria', authMiddleware, (req, res) => {
 
 const TIPOS_INGESTA = ['turnos', 'citaciones', 'logeo'];
 
-app.post('/api/ingesta', authMiddleware, (req, res) => {
+app.post('/api/ingesta', (req, res) => {
   const { tipo, registros, archivo } = req.body;
   if (!TIPOS_INGESTA.includes(tipo)) {
     return res.status(400).json({ error: `tipo debe ser uno de: ${TIPOS_INGESTA.join(', ')}` });
@@ -443,7 +443,7 @@ app.post('/api/ingesta', authMiddleware, (req, res) => {
 });
 
 // Estado actual de las 3 ingestas (para pintar la pestaña de Automatización/Carga de datos)
-app.get('/api/ingesta/estado', authMiddleware, (req, res) => {
+app.get('/api/ingesta/estado', (req, res) => {
   const estado = {};
   for (const tipo of TIPOS_INGESTA) {
     estado[tipo] = {
@@ -737,7 +737,7 @@ function construirAnalisisOperadores(nombrePlantaFiltro) {
   return operadores;
 }
 
-app.get('/api/analisis-operadores', authMiddleware, (req, res) => {
+app.get('/api/analisis-operadores', (req, res) => {
   const plantaFiltro = req.query.planta || null;
   if (plantaFiltro && !plantas.has(plantaFiltro)) {
     return res.status(404).json({ error: 'Planta no encontrada' });
@@ -825,7 +825,7 @@ app.get('/api/analisis-operadores', authMiddleware, (req, res) => {
 //      exacto tal como llegó del Excel, en vez de tener que reconstruir el
 //      caso a mano cada vez que aparece un dato que no cuadra.
 // ---------------------------------------------------------------------------
-app.get('/api/diagnostico', authMiddleware, (req, res) => {
+app.get('/api/diagnostico', (req, res) => {
   // Fuerza un recálculo para asegurar que advertenciasDato refleje el estado
   // actual de las 3 ingestas, no una corrida anterior desactualizada.
   construirAnalisisOperadores(null);
@@ -849,7 +849,7 @@ app.get('/api/diagnostico', authMiddleware, (req, res) => {
 //     de construirAnalisisOperadores(), solo expuesta completa (no Top 10) y
 //     ordenable, para que el reporte pueda mostrar la tabla íntegra si se pide.
 // ---------------------------------------------------------------------------
-app.get('/api/tabla-operadores', authMiddleware, (req, res) => {
+app.get('/api/tabla-operadores', (req, res) => {
   const zonaFiltro = req.query.zona || null;
   const plantaFiltro = req.query.planta || null;
   const ordenarPor = req.query.orden || 'planta'; // planta | atraso | tiempoMuerto | nombre
@@ -902,29 +902,29 @@ app.get('/api/tabla-operadores', authMiddleware, (req, res) => {
   });
 });
 
-app.get('/api/reporte', authMiddleware, (req, res) => {
+app.get('/api/reporte', (req, res) => {
+  try {
+    const zonaFiltro = req.query.zona || null;
+    const plantasFiltro = req.query.plantas ? req.query.plantas.split(',').filter(Boolean) : null;
+    const nombresPlantas = [...plantas.keys()].filter(
+      (n) => (!zonaFiltro || plantas.get(n).zona === zonaFiltro) && (!plantasFiltro || plantasFiltro.includes(n))
+    );
 
-  const zonaFiltro = req.query.zona || null;
-  const plantasFiltro = req.query.plantas ? req.query.plantas.split(',').filter(Boolean) : null;
-  const nombresPlantas = [...plantas.keys()].filter(
-    (n) => (!zonaFiltro || plantas.get(n).zona === zonaFiltro) && (!plantasFiltro || plantasFiltro.includes(n))
-  );
-
-  // --- Turnos y Logeo: se calculan a partir del mismo análisis por operador
-  // que usa /api/analisis-operadores (deduplicado a la semana correcta, y
-  // contando OPERADORES ÚNICOS con logeo, no cada evento crudo de estado). ---
-  const operadoresNacional = construirAnalisisOperadores(null).filter((o) => nombresPlantas.includes(o.planta));
-  const turnosPorPlantaOp = {}; // conteo de operadores exigibles por planta
-  const conLogeoPorPlanta = {}; // conteo de operadores con logeo por planta
-  const esperasPorPlanta = {}; // arreglo de esperaAsignacionMin por planta (para promedio de tiempo muerto)
-  for (const nombre of nombresPlantas) { turnosPorPlantaOp[nombre] = 0; conLogeoPorPlanta[nombre] = 0; esperasPorPlanta[nombre] = []; }
-  for (const o of operadoresNacional) {
-    if (!turnosPorPlantaOp.hasOwnProperty(o.planta)) continue;
-    turnosPorPlantaOp[o.planta]++;
-    if (o.logeo !== null) conLogeoPorPlanta[o.planta]++;
-    if (o.esperaAsignacionMin !== null) esperasPorPlanta[o.planta].push(o.esperaAsignacionMin);
-  }
-  const promedioArr = (arr) => (arr.length ? Math.round((arr.reduce((s, v) => s + v, 0) / arr.length) * 10) / 10 : null);
+    // --- Turnos y Logeo: se calculan a partir del mismo análisis por operador
+    // que usa /api/analisis-operadores (deduplicado a la semana correcta, y
+    // contando OPERADORES ÚNICOS con logeo, no cada evento crudo de estado). ---
+    const operadoresNacional = construirAnalisisOperadores(null).filter((o) => nombresPlantas.includes(o.planta));
+    const turnosPorPlantaOp = {}; // conteo de operadores exigibles por planta
+    const conLogeoPorPlanta = {}; // conteo de operadores con logeo por planta
+    const esperasPorPlanta = {}; // arreglo de esperaAsignacionMin por planta (para promedio de tiempo muerto)
+    for (const nombre of nombresPlantas) { turnosPorPlantaOp[nombre] = 0; conLogeoPorPlanta[nombre] = 0; esperasPorPlanta[nombre] = []; }
+    for (const o of operadoresNacional) {
+      if (!turnosPorPlantaOp.hasOwnProperty(o.planta)) continue;
+      turnosPorPlantaOp[o.planta]++;
+      if (o.logeo !== null) conLogeoPorPlanta[o.planta]++;
+      if (o.esperaAsignacionMin !== null) esperasPorPlanta[o.planta].push(o.esperaAsignacionMin);
+    }
+    const promedioArr = (arr) => (arr.length ? Math.round((arr.reduce((s, v) => s + v, 0) / arr.length) * 10) / 10 : null);
 
   // --- KPIs nacionales exclusivos: Adelantamiento al turno y Tiempo muerto ---
   // (dentro del alcance de zona/plantas filtradas, no todo el país siempre)
@@ -1124,6 +1124,10 @@ app.get('/api/reporte', authMiddleware, (req, res) => {
     rankingAdelantados,
     rankingTiempoMuertoNacional,
   });
+  } catch (err) {
+    console.error('Error en /api/reporte:', err.message, err.stack);
+    res.status(500).json({ error: 'Error al generar el reporte: ' + err.message });
+  }
 });
 
 server.listen(PORT, () => {
