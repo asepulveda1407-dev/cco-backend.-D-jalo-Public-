@@ -199,6 +199,17 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
+// ============================================================================
+// MIDDLEWARE: Servir archivos estáticos (index.html, CSS, etc)
+// ============================================================================
+const path = require('path');
+app.use(express.static(path.join(__dirname, '.')));
+
+// Ruta raíz: servir index.html
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
