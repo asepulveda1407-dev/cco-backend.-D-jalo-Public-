@@ -199,6 +199,25 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
+// ============================================================================
+// RUTA RAÍZ: Servir index.html directamente
+// ============================================================================
+app.get('/', (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  
+  // Leer index.html desde el mismo directorio que server.js
+  const fs = require('fs');
+  const indexPath = require('path').join(__dirname, 'index.html');
+  
+  try {
+    const html = fs.readFileSync(indexPath, 'utf8');
+    res.send(html);
+  } catch (err) {
+    // Si no encuentra index.html, devolver error claro
+    res.status(404).send('Error: index.html no encontrado en ' + indexPath);
+  }
+});
+
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
