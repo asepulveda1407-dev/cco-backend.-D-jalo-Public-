@@ -134,6 +134,8 @@ const FIELDS = {
   citacion: ['citacion','citación','cita','hora_citacion','hora citacion','citacion_sugerida','citación sugerida'],
   logeo: ['logeo','marcacion','marcación','hora_logeo','hora logeo','entrada','login','fecha_hora','fecha hora'],
   estado: ['descripcion_estado','descripción estado','estado','status','status_description','descripcion status','descripción status'],
+  fecha: ['fecha','fecha_turno','fecha turno','dia_fecha','día_fecha','date','fecha_programada','fecha programada'],
+  diaSemana: ['dia','día','dia_semana','día_semana','day','weekday'],
   timestamp: [
     'timestamp','fecha_hora','fecha hora','fecha','hora_evento','fecha_evento',
     'fecha estado','fecha_estado','hora estado','hora_estado','inicio estado','inicio_estado',
@@ -215,6 +217,54 @@ function diffMinutes(actual, planned) {
   if (d > 720) d -= 1440;
   if (d < -720) d += 1440;
   return d;
+}
+
+function parseDateKey(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (value instanceof Date && !isNaN(value)) {
+    return `${value.getFullYear()}-${String(value.getMonth()+1).padStart(2,'0')}-${String(value.getDate()).padStart(2,'0')}`;
+  }
+  const s = String(value).trim();
+  let m = s.match(/^(\d{4})[-\/]([01]?\d)[-\/]([0-3]?\d)(?:[T\s]|$)/);
+  if (m) return `${m[1]}-${String(+m[2]).padStart(2,'0')}-${String(+m[3]).padStart(2,'0')}`;
+  m = s.match(/^([0-3]?\d)[-\/]([01]?\d)[-\/](\d{4})(?:\s|$)/);
+  if (m) return `${m[3]}-${String(+m[2]).padStart(2,'0')}-${String(+m[1]).padStart(2,'0')}`;
+  const d = new Date(s);
+  if (!isNaN(d)) return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  return null;
+}
+function weekdayEs(dateKey) {
+  if (!dateKey) return null;
+  const d = new Date(dateKey+'T12:00:00');
+  if (isNaN(d)) return null;
+  return ['domingo','lunes','martes','miercoles','jueves','viernes','sabado'][d.getDay()];
+}
+function normalizeWeekday(v) {
+  const n = normalizeName(v);
+  const map = { 'miercoles':'miercoles','miércoles':'miercoles','sabado':'sabado','sábado':'sabado' };
+  return map[n] || n;
+}
+function rowDateKey(row, type) {
+  const direct = parseDateKey(pick(row, FIELDS.fecha));
+  if (direct) return direct;
+  if (type === 'logeo') return parseDateKey(getEventTimeValue(row));
+  if (type === 'citaciones') return parseDateKey(pick(row, FIELDS.timestamp));
+  return null;
+}
+function filterRowsForDate(rows, fecha, type) {
+  if (!fecha) return rows;
+  const targetDay = weekdayEs(fecha);
+  return rows.filter(row => {
+    const dk = rowDateKey(row, type);
+    if (dk) return dk === fecha;
+    const wd = normalizeWeekday(pick(row, FIELDS.diaSemana));
+    if (wd) return wd === targetDay;
+    // Archivos ya recortados a un único día pueden no traer fecha: se conservan.
+    return true;
+  });
+}
+function countRowsWithDate(rows, type) {
+  return rows.filter(r => rowDateKey(r, type) || pick(r, FIELDS.diaSemana)).length;
 }
 
 function operatorKey(row) {
@@ -309,10 +359,22 @@ function getTurnos() { return state.datasets.turnos.datos || []; }
 function getCitaciones() { return state.datasets.citaciones.datos || []; }
 function getLogeo() { return state.datasets.logeo.datos || []; }
 
-function buildOperatorRecords() {
-  const shifts = getTurnos();
-  const citations = getCitaciones();
-  const logs = getLogeo();
+function buildOperatorRecords(fecha = '') {
+  const rawShifts = filterRowsForDate(getTurnos(), fecha, 'turnos');
+  // Un operador se cuenta una sola vez por día operacional. Si el archivo trae
+  // duplicados para el mismo operador, conservamos el turno más temprano.
+  const shiftMap = new Map();
+  rawShifts.forEach((row, idx) => {
+    const key = operatorKey(row) || `row:${idx}`;
+    const prev = shiftMap.get(key);
+    if (!prev) { shiftMap.set(key, row); return; }
+    const a = parseTimeMinutes(pick(row, FIELDS.turno));
+    const b = parseTimeMinutes(pick(prev, FIELDS.turno));
+    if (a !== null && (b === null || a < b)) shiftMap.set(key, row);
+  });
+  const shifts = [...shiftMap.values()];
+  const citations = filterRowsForDate(getCitaciones(), fecha, 'citaciones');
+  const logs = filterRowsForDate(getLogeo(), fecha, 'logeo');
   const cByKey = new Map();
   const logsByKey = new Map();
 
@@ -403,7 +465,7 @@ function datasetPlantCount(type, planta) {
 app.get('/health', (req, res) => res.json({
   ok: true,
   service: 'CCO Intelligence',
-  version: '1.0.0',
+  version: '1.2.0',
   env: NODE_ENV,
   timestamp: nowIso(),
   uptime_s: Math.round(process.uptime()),
@@ -414,10 +476,12 @@ app.post('/api/auth/login', (req, res) => {
   const nombre = safeText(req.body?.nombre);
   const rol = safeText(req.body?.rol || 'coordinador');
   const zona = safeText(req.body?.zona || '');
+  const planta = safeText(req.body?.planta || '');
+  const fecha = safeText(req.body?.fecha || '');
   if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
   const allowedRoles = new Set(['admin','gerencia','supervisor_nacional','supervisor_zona','supervisor_planta','coordinador','lectura']);
   if (!allowedRoles.has(rol)) return res.status(400).json({ error: 'Rol inválido' });
-  const user = { nombre, rol, zona };
+  const user = { nombre, rol, zona, planta, fecha };
   res.json({ token: authToken(user), user });
 });
 
@@ -468,6 +532,13 @@ app.get('/api/ingesta/estado', requireAuth, (req, res) => {
   });
 });
 
+app.get('/api/catalogo/plantas', (req, res) => {
+  const zona = safeText(req.query.zona || '');
+  let list = Object.values(state.plantas);
+  if (zona) list = list.filter(p => p.zona === zona);
+  res.json(list.sort((a,b)=>a.nombre.localeCompare(b.nombre,'es')).map(p=>({nombre:p.nombre,zona:p.zona})));
+});
+
 app.get('/api/plantas', requireAuth, (req, res) => {
   res.json(Object.values(state.plantas).sort((a,b)=>a.zona.localeCompare(b.zona,'es') || a.nombre.localeCompare(b.nombre,'es')));
 });
@@ -494,7 +565,8 @@ app.put('/api/plantas/:nombre/config', requireAuth, (req, res) => {
 app.get('/api/operadores', requireAuth, (req, res) => {
   const planta = safeText(req.query.planta || '');
   const seen = new Map();
-  for (const row of getTurnos()) {
+  const fecha = safeText(req.query.fecha || req.user.fecha || '');
+  for (const row of filterRowsForDate(getTurnos(), fecha, 'turnos')) {
     if (planta && safeText(pick(row, FIELDS.planta)) !== planta) continue;
     const op = rowOperator(row);
     if (!seen.has(op.id)) seen.set(op.id, op);
@@ -533,7 +605,7 @@ app.post('/api/bitacora', requireAuth, (req, res) => {
 });
 
 app.get('/api/tabla-operadores', requireAuth, (req, res) => {
-  let records = buildOperatorRecords();
+  let records = buildOperatorRecords(safeText(req.query.fecha || req.user.fecha || ''));
   if (req.user.zona) records = records.filter(r=>r.zona===req.user.zona);
   if (req.query.soloProblemas === '1') records = records.filter(r=>r.categoria !== 'a_tiempo');
   const orden = req.query.orden;
@@ -547,7 +619,8 @@ app.get('/api/tabla-operadores', requireAuth, (req, res) => {
 app.get('/api/analisis-operadores', requireAuth, (req, res) => {
   const planta = safeText(req.query.planta || '');
   if (!planta) return res.status(400).json({ error:'Planta requerida' });
-  const records = buildOperatorRecords().filter(r=>r.planta===planta);
+  const fecha = safeText(req.query.fecha || req.user.fecha || '');
+  const records = buildOperatorRecords(fecha).filter(r=>r.planta===planta);
   if (!records.length) return res.json({
     diagnostico:'ATENCIÓN', diagnosticoLineas:['No hay turnos válidos para esta planta.'],
     resumen:{ totalOperadores:0, conLogeo:0, sinLogeo:0, adherenciaTurnoPct:null, atrasadosPct:null, atrasadosCriticos:0, adelantadosPct:null, logeadosSinAsignacion:0, esperaAsignacionPromedioMin:null },
@@ -593,8 +666,10 @@ app.get('/api/analisis-operadores', requireAuth, (req, res) => {
 });
 
 app.get('/api/reporte', requireAuth, (req, res) => {
-  let records = filterScope(buildOperatorRecords(), req.query);
+  const fecha = safeText(req.query.fecha || req.user.fecha || '');
+  let records = filterScope(buildOperatorRecords(fecha), req.query);
   if (req.user.zona) records = records.filter(r=>r.zona===req.user.zona);
+  if (req.user.planta) records = records.filter(r=>r.planta===req.user.planta);
   const plantNames = [...new Set(records.map(r=>r.planta))];
   if (!plantNames.length) return res.status(400).json({ error:'No hay turnos cargados para el alcance seleccionado' });
   const byPlant = plantNames.map(planta=>{
@@ -620,6 +695,8 @@ app.get('/api/reporte', requireAuth, (req, res) => {
   }).length;
   res.json({
     generado_por:req.user.nombre,
+    fecha,
+    diagnosticoFecha:{ turnosTotal:getTurnos().length, turnosConFecha:countRowsWithDate(getTurnos(),'turnos'), turnosDia:records.length },
     generado_en:nowIso(),
     zona:req.query.zona || req.user.zona || null,
     plantasFiltro:req.query.plantas?String(req.query.plantas).split(',').filter(Boolean):null,
@@ -648,7 +725,7 @@ io.on('connection', (socket) => {
 app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 server.listen(PORT, () => {
-  console.log(`CCO Intelligence v1.0.0 activo en puerto ${PORT}`);
+  console.log(`CCO Intelligence v1.2.0 activo en puerto ${PORT}`);
   if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') {
     console.warn('ADVERTENCIA: configure AUTH_SECRET en producción.');
   }
