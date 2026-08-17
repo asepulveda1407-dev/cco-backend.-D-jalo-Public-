@@ -8,11 +8,11 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <style>
-:root{--bg:#f8fafc;--panel:#ffffff;--panel2:#f1f5f9;--line:#e2e8f0;--txt:#1e293b;--mut:#64748b;
---blue:#0066cc;--green:#10b981;--yellow:#f59e0b;--red:#ef4444;--cyan:#06b6d4;--radius:14px;
---shadow:0 1px 3px rgba(0,0,0,0.1)}
+:root{--bg:#08111f;--panel:#111b2b;--panel2:#0c1625;--line:#26364f;--txt:#edf3fb;--mut:#9cacbf;
+--blue:#5a86f7;--green:#2bc47d;--yellow:#f3b447;--red:#f25f6d;--cyan:#35bfd0;--radius:14px;
+--shadow:0 14px 34px rgba(0,0,0,.18)}
 *{box-sizing:border-box}
-body{margin:0;background:linear-gradient(160deg,#f8fafc 0%,#f1f5f9 55%,#f0f4f8 100%);color:var(--txt);
+body{margin:0;background:linear-gradient(160deg,#08111f 0%,#0b1422 55%,#09111d 100%);color:var(--txt);
 font-family:Inter,Segoe UI,Arial,sans-serif;line-height:1.4}
 header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--line)}
 header h1{font-size:15px;margin:0}
@@ -32,15 +32,15 @@ button.secondary{background:var(--panel2);border:1px solid var(--line);color:var
 .row{display:flex;gap:10px;flex-wrap:wrap}
 .row>*{flex:1;min-width:120px}
 .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700}
-.badge.si{background:#ecfdf5;color:var(--green)}
-.badge.no{background:#fef2f2;color:var(--red)}
+.badge.si{background:#0e2a1c;color:var(--green)}
+.badge.no{background:#2a1414;color:var(--red)}
 table{width:100%;border-collapse:collapse;font-size:11px}
 th,td{text-align:left;padding:7px 6px;border-bottom:1px solid var(--line)}
 th{color:var(--mut);font-weight:600}
 .log-entry{border-left:3px solid var(--cyan);padding:6px 10px;margin-bottom:6px;background:var(--panel2);border-radius:6px;font-size:11px}
 .log-entry .meta{color:var(--mut);font-size:10px;margin-bottom:2px}
 .flash{animation:flash 1.1s ease}
-@keyframes flash{0%{background:#ecfdf5}100%{background:var(--panel2)}}
+@keyframes flash{0%{background:#173a2a}100%{background:var(--panel2)}}
 .gate{max-width:400px;margin:50px auto;text-align:center}
 .small{font-size:10px;color:var(--mut)}
 .upload-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
@@ -61,10 +61,10 @@ th{color:var(--mut);font-weight:600}
 .sheet-picker .sp-preview{color:var(--mut);font-size:10px;font-family:monospace;background:var(--panel2);padding:6px 8px;border-radius:6px;max-height:70px;overflow:auto;white-space:pre}
 .sheet-picker .sp-actions{display:flex;gap:8px;margin-top:8px}
 .reporte-box{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:12px;margin-top:12px;font-size:11px;line-height:1.7;white-space:pre-wrap}
-tr.sev-critico{background:rgba(239,68,68,0.08)}
-tr.sev-medio{background:rgba(245,158,11,0.08)}
-tr.sev-anomalia{background:rgba(0,102,204,0.08)}
-tr.sev-na{background:rgba(100,116,139,0.06)}
+tr.sev-critico{background:rgba(220,38,38,0.12)}
+tr.sev-medio{background:rgba(202,138,4,0.12)}
+tr.sev-anomalia{background:rgba(37,99,235,0.10)}
+tr.sev-na{background:rgba(107,114,128,0.10)}
 tr.sev-ok{background:transparent}
 .rep-header{display:flex;justify-content:space-between;align-items:baseline;margin-top:14px}
 .rep-header .rep-titulo{font-size:12px;font-weight:800;color:var(--txt)}
@@ -73,20 +73,20 @@ tr.sev-ok{background:transparent}
 .alert-card .alert-icon{font-size:14px;line-height:1;flex-shrink:0}
 .alert-card .alert-text{font-size:11px;line-height:1.5}
 .alert-card .alert-text b{font-weight:800}
-.alert-card.critico{background:#fef2f2;border-color:var(--red);color:#991b1b}
-.alert-card.medio{background:#fffbeb;border-color:var(--yellow);color:#78350f}
-.alert-card.info{background:#eff6ff;border-color:var(--blue);color:#0c2340}
-.alert-card.ok{background:#ecfdf5;border-color:var(--green);color:#065f46}
+.alert-card.critico{background:#2a1414;border-color:var(--red);color:#ffc6c9}
+.alert-card.medio{background:#2a2210;border-color:var(--yellow);color:#ffe6ad}
+.alert-card.info{background:#0e2130;border-color:var(--blue);color:#cfe0ff}
+.alert-card.ok{background:#0e2a1c;border-color:var(--green);color:#b9f0d2}
 .chart-wrap{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:14px 10px 6px;margin:12px 0}
 .chart-wrap canvas{max-height:420px}
 .rep-tabla{width:100%;border-collapse:collapse;font-size:10px;margin-top:8px}
 .rep-tabla th,.rep-tabla td{padding:5px 6px;text-align:left;border-bottom:1px solid var(--line)}
 .rep-tabla th{color:var(--mut);font-weight:700}
 .pill-sev{display:inline-block;padding:1px 7px;border-radius:999px;font-size:9px;font-weight:800}
-.pill-sev.critico{background:#fef2f2;color:var(--red)}
-.pill-sev.medio{background:#fffbeb;color:var(--yellow)}
-.pill-sev.ok{background:#ecfdf5;color:var(--green)}
-.pill-sev.anomalia{background:#eff6ff;color:var(--cyan)}
+.pill-sev.critico{background:#2a1414;color:var(--red)}
+.pill-sev.medio{background:#2a2210;color:var(--yellow)}
+.pill-sev.ok{background:#0e2a1c;color:var(--green)}
+.pill-sev.anomalia{background:#0e2130;color:var(--cyan)}
 .pill-sev.na{background:var(--panel);color:var(--mut)}
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:10px 0}
 .kpi-card{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
@@ -94,9 +94,9 @@ tr.sev-ok{background:transparent}
 .kpi-card .kpi-valor{font-size:20px;font-weight:800;color:var(--txt)}
 .kpi-card .kpi-sub{font-size:9px;color:var(--mut);margin-top:2px}
 .diag-badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:800;margin-left:8px}
-.diag-badge.ESTABLE{background:#ecfdf5;color:var(--green)}
-.diag-badge.ATENCIÓN{background:#fffbeb;color:var(--yellow)}
-.diag-badge.CRÍTICO{background:#fef2f2;color:var(--red)}
+.diag-badge.ESTABLE{background:#0e2a1c;color:var(--green)}
+.diag-badge.ATENCIÓN{background:#2a2210;color:var(--yellow)}
+.diag-badge.CRÍTICO{background:#2a1414;color:var(--red)}
 .diag-lineas{margin-top:8px}
 .diag-lineas div{font-size:11px;color:var(--mut);padding:3px 0;border-left:2px solid var(--line);padding-left:8px;margin-bottom:3px}
 .op-tabla{width:100%;border-collapse:collapse;font-size:10px;margin-top:10px}
@@ -590,81 +590,20 @@ function usarHoja(tipo, wb, nombreHoja, nombreArchivo){
 }
 
 function subirIngesta(tipo, registros, nombreArchivo){
-  // VALIDACIÓN CRÍTICA PREVIA #1
-  if (!tipo || typeof tipo !== 'string') {
-    setDot(tipo,'err');
-    setStatusText(tipo, 'Error: tipo de archivo inválido', 'err');
-    return;
-  }
-  
-  // VALIDACIÓN CRÍTICA PREVIA #2
-  if (!Array.isArray(registros)) {
-    setDot(tipo,'err');
-    setStatusText(tipo, 'Error: los datos no son un arreglo', 'err');
-    return;
-  }
-  
-  // VALIDACIÓN CRÍTICA PREVIA #3
-  if (registros.length === 0) {
-    setDot(tipo,'err');
-    setStatusText(tipo, 'Error: el archivo está vacío', 'err');
-    return;
-  }
-  
-  // VALIDACIÓN CRÍTICA PREVIA #4: Validar campos mínimos
-  const camposRequeridos = {
-    turnos: ['operador', 'planta', 'turno_inicio'],
-    citaciones: ['operador'],
-    logeo: ['operador', 'logeo']
-  };
-  
-  const camposEsperados = camposRequeridos[tipo] || [];
-  const firasInvalidas = [];
-  
-  registros.forEach((fila, idx) => {
-    let tieneAlMenosUnoCorrecto = false;
-    camposEsperados.forEach(campo => {
-      if (fila[campo] !== null && fila[campo] !== undefined && String(fila[campo]).trim() !== '') {
-        tieneAlMenosUnoCorrecto = true;
-      }
-    });
-    if (!tieneAlMenosUnoCorrecto && idx < 5) {
-      firasInvalidas.push(idx + 1);
-    }
-  });
-  
-  if (firasInvalidas.length === registros.length) {
-    setDot(tipo,'err');
-    setStatusText(tipo, `Error: campos esperados no encontrados en el archivo`, 'err');
-    return;
-  }
-  
-  // Si pasó todas las validaciones, enviar
-  setDot(tipo,'busy');
-  setStatusText(tipo, `Subiendo ${registros.length} filas...`);
-  
-  fetch(API+'/api/ingesta', {
-    method:'POST',
-    headers:authHeaders(),
-    body:JSON.stringify({tipo, registros, archivo:nombreArchivo})
-  })
-    .then(r => {
-      if (!r.ok) return r.json().then(j => {
-        throw new Error(j.error || `HTTP ${r.status}`);
-      });
+  setDot(tipo,'busy'); setStatusText(tipo, `Subiendo ${registros.length} filas...`);
+  fetch(API+'/api/ingesta',{method:'POST',headers:authHeaders(),
+    body:JSON.stringify({tipo, datos:registros, archivo:nombreArchivo})})
+    .then(r=>{
+      if(!r.ok) return r.json().then(j=>{throw new Error(j.error || ('HTTP '+r.status))});
       return r.json();
     })
-    .then(resp => {
-      if (!resp.ok) {
-        throw new Error(resp.error || 'Respuesta inválida del servidor');
-      }
-      setDot(tipo, 'ok');
-      marcarIngestaStatus(tipo, resp.filas_validas, usuarioInfo.nombre, false);
+    .then(resp=>{
+      setDot(tipo,'ok');
+      marcarIngestaStatus(tipo, resp.cantidad, resp.subido_por, false);
     })
-    .catch(err => {
-      setDot(tipo, 'err');
-      setStatusText(tipo, `❌ ${err.message}`, 'err');
-      console.error(`Error en ${tipo}:`, err);
+    .catch(err=>{
+      setDot(tipo,'err');
+      setStatusText(tipo, 'Error al subir: '+err.message, 'err');
     });
 }
 
@@ -745,15 +684,6 @@ const COLOR_SEV = { critico:'#f25f6d', medio:'#f3b447', ok:'#2bc47d', anomalia:'
 const ICONO_SEV = { critico:'🔴', medio:'🟡', ok:'🟢', anomalia:'🔵', na:'⚪' };
 
 function generarReporte(){
-  // GUARDIA: Validar que hay datos cargados
-  const turnosInfo = document.getElementById('statusTurnos');
-  const tieneturnosValidos = turnosInfo && turnosInfo.textContent.includes('filas');
-  
-  if (!tieneturnosValidos) {
-    alert('⚠️ Primero carga archivo de Turnos para generar reporte');
-    return;
-  }
-  
   const box = document.getElementById('reporteBox');
   box.style.display='block';
   document.getElementById('repAlertas').innerHTML = '<div class="small">Generando...</div>';
