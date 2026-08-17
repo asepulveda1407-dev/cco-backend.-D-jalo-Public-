@@ -363,7 +363,7 @@ font-size:11px;margin-top:10px;text-align:left;display:none}
 let socket, token, user, API;
 
 // Restaurar la última URL de backend usada en este navegador
-document.getElementById('gApi').value = localStorage.getItem('cco_api_url') || 'http://localhost:4000';
+document.getElementById('gApi').value = localStorage.getItem('cco_api_url') || 'https://cco-backend-d-jalo-public.onrender.com';
 
 function mostrarErrorGate(msg){
   const box = document.getElementById('gateErr');
