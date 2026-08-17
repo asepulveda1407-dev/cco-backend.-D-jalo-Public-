@@ -592,7 +592,10 @@ function subirIngesta(tipo, registros, nombreArchivo){
   fetch(API+'/api/ingesta',{method:'POST',headers:authHeaders(),
     body:JSON.stringify({tipo, datos:registros, archivo:nombreArchivo})})
     .then(r=>{
-      if(!r.ok) return r.json().then(j=>{throw new Error(j.error || ('HTTP '+r.status))});
+      if(!r.ok) return r.json().then(j=>{
+        const detalle = Array.isArray(j.errores) && j.errores.length ? ' · '+j.errores.slice(0,3).join(' | ') : '';
+        throw new Error((j.error || ('HTTP '+r.status)) + detalle);
+      });
       return r.json();
     })
     .then(resp=>{
