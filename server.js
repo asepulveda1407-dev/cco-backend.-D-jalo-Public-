@@ -127,7 +127,9 @@ function pick(row, aliases) {
 
 const FIELDS = {
   id: ['id_operador','id operador','numero_funcionario','número funcionario','numero funcionario','id','rut','codigo_operador','cod_operador'],
-  nombre: ['operador','nombre_operador','nom_operador','operario','nombre','employee_name','nombre_funcionario'],
+  nombre: ['operador','nombre_operador','nom_operador','operario','nombre','employee_name','nombre_funcionario','nombre empleado','nombre_empleado'],
+  firstName: ['primero_empleado','primero empleado','first_name','firstname','nombre_funcionario','nombre funcionario'],
+  lastName: ['ultimo_empleado','último empleado','ultimo empleado','last_name','lastname','apellido_funcionario','apellido funcionario'],
   planta: ['planta','planta_origen','origen','plta','descripcion_planta','descripción planta','plant'],
   zona: ['zona','region','región'],
   turno: ['turno_inicio','hora_inicio','hora_ingreso','hora ingreso','horaingreso','turno','inicio_turno'],
@@ -275,8 +277,25 @@ function operatorKey(row) {
 }
 function rowOperator(row) {
   const id = normalizeId(pick(row, FIELDS.id));
-  const nombre = safeText(pick(row, FIELDS.nombre)) || (id ? `Operador ${id}` : 'Sin nombre');
+  let nombre = safeText(pick(row, FIELDS.nombre));
+  if (!nombre) {
+    const first = safeText(pick(row, FIELDS.firstName));
+    const last = safeText(pick(row, FIELDS.lastName));
+    nombre = [first, last].filter(Boolean).join(' ').trim();
+  }
+  nombre = nombre || (id ? `Operador ${id}` : 'Sin nombre');
   return { id: id || normalizeName(nombre), nombre };
+}
+
+function classifyOperationalEvent(rawEstado) {
+  const e = normalizeName(rawEstado);
+  if (!e) return 'otro';
+  if (/login|logeo|logeado|entrada/.test(e)) return 'login';
+  if (/^asignado$|asignad|assigned|dispatch|despachad/.test(e)) return 'asignado';
+  if (/cargando|^cargado$|loading/.test(e)) return 'primera_carga';
+  if (/en planta/.test(e)) return 'en_planta';
+  if (/en servicio/.test(e)) return 'en_servicio';
+  return 'otro';
 }
 
 // ============================================================================
@@ -503,18 +522,35 @@ function buildOperatorRecords(fecha = '') {
     const events = ls.map(l => ({
       row: l,
       min: parseTimeMinutes(getEventTimeValue(l)),
+      estadoRaw: safeText(pick(l, FIELDS.estado)) || '',
       estado: normalizeName(pick(l, FIELDS.estado)),
-    })).filter(x => x.min !== null);
+      tipo: classifyOperationalEvent(pick(l, FIELDS.estado)),
+    })).filter(x => x.min !== null).sort((a,b)=>a.min-b.min);
 
-    let loginEvent = events.find(e => /login|logeo|logeado|entrada/.test(e.estado));
-    if (!loginEvent && events.length) loginEvent = [...events].sort((a,b) => Math.abs(diffMinutes(a.min, turnoMin)) - Math.abs(diffMinutes(b.min, turnoMin)))[0];
+    // LOGIN/PRE-VIAJE es el evento oficial de ingreso del StatusBreakdown.
+    // No usamos cualquier evento como logeo, porque eso infla falsamente la cobertura.
+    let loginEvent = events.find(e => e.tipo === 'login');
+    // Respaldo solo para exportaciones sin columna Estado: si todos los estados vienen vacíos,
+    // usamos el primer timestamp del operador como marcación observada.
+    if (!loginEvent && events.length && events.every(e => !e.estado)) loginEvent = events[0];
     const logeoMin = loginEvent?.min ?? null;
 
-    const assignmentCandidates = events.filter(e => /asignad/.test(e.estado));
+    const assignmentCandidates = events.filter(e => e.tipo === 'asignado');
     let asignacionMin = null;
-    if (assignmentCandidates.length && logeoMin !== null) {
-      const after = assignmentCandidates.map(e => ({...e, d: diffMinutes(e.min, logeoMin)})).filter(e => e.d >= 0).sort((a,b)=>a.d-b.d);
+    if (assignmentCandidates.length) {
+      const base = logeoMin ?? turnoMin;
+      const after = assignmentCandidates.map(e => ({...e, d: base===null?0:diffMinutes(e.min, base)})).filter(e => base===null || e.d >= 0).sort((a,b)=>a.d-b.d);
       asignacionMin = after[0]?.min ?? assignmentCandidates[0]?.min ?? null;
+    }
+
+    // Primera carga: primer estado CARGANDO/CARGADO posterior al logeo o asignación.
+    // EN PLANTA no se utiliza como primera carga porque puede corresponder al retorno de un ciclo previo.
+    const loadCandidates = events.filter(e => e.tipo === 'primera_carga');
+    let primeraCargaMin = null;
+    if (loadCandidates.length) {
+      const base = asignacionMin ?? logeoMin ?? turnoMin;
+      const after = loadCandidates.map(e => ({...e, d: base===null?0:diffMinutes(e.min, base)})).filter(e => base===null || e.d >= 0).sort((a,b)=>a.d-b.d);
+      primeraCargaMin = after[0]?.min ?? loadCandidates[0]?.min ?? null;
     }
 
     const atraso = logeoMin === null ? null : diffMinutes(logeoMin, turnoMin);
@@ -529,18 +565,23 @@ function buildOperatorRecords(fecha = '') {
     const estado = {
       a_tiempo:'A tiempo', adelantado:'Adelantado', atraso_leve:'Atraso leve', atraso_critico:'Atraso crítico', sin_logeo:'Sin logeo'
     }[categoria];
+    const estadoOperacional = primeraCargaMin !== null ? 'Primera carga'
+      : asignacionMin !== null ? 'Asignado'
+      : logeoMin !== null ? 'Con logeo'
+      : 'Sin logeo';
 
     return {
       key, id, nombre, planta, zona: pCfg.zona, region: pCfg.region,
-      turnoMin, citacionMin, logeoMin, asignacionMin,
-      horaTurno: fmtMinutes(turnoMin), horaCitacion: fmtMinutes(citacionMin), horaLogeo: fmtMinutes(logeoMin), horaAsignacion: fmtMinutes(asignacionMin),
-      turno: fmtMinutes(turnoMin), citacionHora: fmtMinutes(citacionMin), logeo: fmtMinutes(logeoMin), asignacion: fmtMinutes(asignacionMin),
+      turnoMin, citacionMin, logeoMin, asignacionMin, primeraCargaMin,
+      horaTurno: fmtMinutes(turnoMin), horaCitacion: fmtMinutes(citacionMin), horaLogeo: fmtMinutes(logeoMin), horaAsignacion: fmtMinutes(asignacionMin), horaPrimeraCarga: fmtMinutes(primeraCargaMin),
+      turno: fmtMinutes(turnoMin), citacionHora: fmtMinutes(citacionMin), logeo: fmtMinutes(logeoMin), asignacion: fmtMinutes(asignacionMin), primeraCarga: fmtMinutes(primeraCargaMin),
+      conLogeo: logeoMin !== null, asignado: asignacionMin !== null, conPrimeraCarga: primeraCargaMin !== null,
       atrasoTurnoMin: atraso,
       adelantoMin: atraso !== null && atraso < 0 ? Math.abs(atraso) : 0,
       tiempoMuertoMin,
       esperaMin: tiempoMuertoMin,
       esperaAsignacionMin: tiempoMuertoMin,
-      categoria, estado,
+      categoria, estado, estadoOperacional,
       etiqueta: estado,
       horaTurnoSospechosa: turnoMin !== null && (turnoMin < 5*60 || turnoMin > 23*60+59),
     };
@@ -562,7 +603,7 @@ function datasetPlantCount(type, planta) {
 app.get('/health', (req, res) => res.json({
   ok: true,
   service: 'CCO Intelligence',
-  version: '1.4.0',
+  version: '1.5.0',
   env: NODE_ENV,
   timestamp: nowIso(),
   uptime_s: Math.round(process.uptime()),
@@ -792,6 +833,9 @@ app.get('/api/reporte', requireAuth, (req, res) => {
       turnos:rs.length,
       citaciones:rs.filter(r=>r.citacionMin!==null).length,
       logeo:logged.length,
+      asignados:rs.filter(r=>r.asignacionMin!==null).length,
+      primeraCarga:rs.filter(r=>r.primeraCargaMin!==null).length,
+      pendientesIngreso:rs.filter(r=>r.logeoMin===null).length,
       adherenciaLogeo:rs.length?round1(logged.length/rs.length*100):null,
       tiempoMuertoPromedioMin:tm.length?round1(tm.reduce((s,r)=>s+r.tiempoMuertoMin,0)/tm.length):null,
     };
@@ -813,8 +857,14 @@ app.get('/api/reporte', requireAuth, (req, res) => {
     plantasFiltro:req.query.plantas?String(req.query.plantas).split(',').filter(Boolean):null,
     resumen:{
       totalTurnos:records.length,
+      programadosExigibles:records.length,
       totalCitaciones:records.filter(r=>r.citacionMin!==null).length,
       totalLogeo:records.filter(r=>r.logeoMin!==null).length,
+      logeadosAlCorte:records.filter(r=>r.logeoMin!==null).length,
+      pendientesIngreso:records.filter(r=>r.logeoMin===null).length,
+      asignados:records.filter(r=>r.asignacionMin!==null).length,
+      primeraCarga:records.filter(r=>r.primeraCargaMin!==null).length,
+      operadoresCriticos:records.filter(r=>r.categoria==='atraso_critico' || (r.logeoMin!==null && r.asignacionMin===null)).length,
       tiempoMuertoPromedioMin:tmAll.length?round1(tmAll.reduce((s,r)=>s+r.tiempoMuertoMin,0)/tmAll.length):null,
       adelantadosPct:records.length?round1(adelantados.length/records.length*100):null,
       adelantadosCantidad:adelantados.length,
@@ -836,7 +886,7 @@ io.on('connection', (socket) => {
 app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 server.listen(PORT, () => {
-  console.log(`CCO Intelligence v1.4.0 activo en puerto ${PORT}`);
+  console.log(`CCO Intelligence v1.5.0 activo en puerto ${PORT}`);
   if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') {
     console.warn('ADVERTENCIA: configure AUTH_SECRET en producción.');
   }
