@@ -1,6 +1,6 @@
 {
   "name": "cco-intelligence",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "private": true,
   "description": "Centro de Control Operacional CCO Intelligence",
   "main": "server.js",
@@ -9,7 +9,9 @@
     "dev": "node --watch server.js",
     "check": "node --check server.js"
   },
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.21.2",
