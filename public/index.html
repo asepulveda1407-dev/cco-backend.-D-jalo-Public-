@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CCO Intelligence · Centro de Inteligencia (tiempo real)</title>
+<title>CCO Intelligence v1.2 · Centro de Inteligencia</title>
 <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4/dist/socket.io.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
@@ -140,11 +140,15 @@ font-size:11px;margin-top:10px;text-align:left;display:none}
     <option value="supervisor_planta">Supervisor Planta</option>
     <option value="coordinador">Coordinador</option>
   </select>
-  <label>Zona (opcional)</label>
-  <select id="gZona">
+  <label>Fecha operacional</label>
+  <input id="gFecha" type="date">
+  <label>Zona</label>
+  <select id="gZona" onchange="cargarPlantasLogin()">
     <option value="">Todas</option>
     <option>Norte</option><option>RM</option><option>Centro</option><option>Sur</option>
   </select>
+  <label>Planta <span class="small">(se actualiza según la zona)</span></label>
+  <select id="gPlanta"><option value="">Todas las plantas</option></select>
   <button onclick="entrar()">Entrar</button>
   <div id="gateErr" class="errbox"></div>
   <p class="small">Acceso operacional en tiempo real. Los cambios de configuración, bitácora e ingesta se sincronizan entre usuarios conectados.</p>
@@ -154,7 +158,10 @@ font-size:11px;margin-top:10px;text-align:left;display:none}
 <header>
   <div><h1>CCO Intelligence · Centro de Control Operacional</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
-  <span id="connPill" class="pill">Conectando…</span>
+  <div style="display:flex;align-items:center;gap:8px">
+    <label style="margin:0;font-size:10px">Fecha operacional <input id="scopeFecha" type="date" onchange="cambiarFechaOperacional()" style="width:145px;margin-left:5px"></label>
+    <span id="connPill" class="pill">Conectando…</span>
+  </div>
 </header>
 <main>
 
@@ -363,6 +370,22 @@ let socket, token, user, API;
 
 // Restaurar la última URL de backend usada en este navegador
 document.getElementById('gApi').value = window.location.origin;
+const hoyLocal = new Date();
+const hoyKey = `${hoyLocal.getFullYear()}-${String(hoyLocal.getMonth()+1).padStart(2,'0')}-${String(hoyLocal.getDate()).padStart(2,'0')}`;
+document.getElementById('gFecha').value = hoyKey;
+
+function cargarPlantasLogin(){
+  const zona = document.getElementById('gZona').value;
+  const planta = document.getElementById('gPlanta').value;
+  const fecha = document.getElementById('gFecha').value || hoyKey;
+  const sel = document.getElementById('gPlanta');
+  sel.innerHTML = '<option value="">Cargando plantas...</option>';
+  fetch(API+'/api/catalogo/plantas'+(zona?'?zona='+encodeURIComponent(zona):''))
+    .then(r=>r.json()).then(list=>{
+      sel.innerHTML = '<option value="">Todas las plantas</option>' + list.map(p=>`<option value="${p.nombre}">${p.nombre}</option>`).join('');
+    }).catch(()=>{ sel.innerHTML='<option value="">No se pudieron cargar plantas</option>'; });
+}
+setTimeout(cargarPlantasLogin,0);
 
 function mostrarErrorGate(msg){
   const box = document.getElementById('gateErr');
@@ -381,20 +404,31 @@ function entrar(){
 
 
   fetch(API+'/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({nombre,rol,zona})})
+    body:JSON.stringify({nombre,rol,zona,planta,fecha})})
     .then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
     .then(data=>{
       token = data.token; user = data.user;
       document.getElementById('gate').style.display='none';
       document.getElementById('app').style.display='block';
       document.getElementById('apiShown').textContent = API;
-      document.getElementById('userInfo').textContent = user.nombre+' · '+user.rol+(user.zona?' · '+user.zona:'');
+      document.getElementById('userInfo').textContent = user.nombre+' · '+user.rol+(user.zona?' · '+user.zona:'')+(user.planta?' · '+user.planta:'')+(user.fecha?' · '+user.fecha:'');
+      document.getElementById('scopeFecha').value = user.fecha || hoyKey;
       iniciar();
     })
     .catch(()=> mostrarErrorGate(
       'No se pudo conectar a '+API+'. Verifica que el backend esté corriendo y que la URL sea correcta ' +
       'Contacta al administrador si el servicio no está disponible.'
     ));
+}
+
+function cambiarFechaOperacional(){
+  const v = document.getElementById('scopeFecha').value;
+  if(!v || !user) return;
+  user.fecha = v;
+  document.getElementById('userInfo').textContent = user.nombre+' · '+user.rol+(user.zona?' · '+user.zona:'')+(user.planta?' · '+user.planta:'')+' · '+user.fecha;
+  if(document.getElementById('reporteBox').style.display !== 'none') generarReporte();
+  if(document.getElementById('opPlanta')?.value) cargarAnalisisOperadores();
+  if(document.getElementById('tablaOperadoresBox')?.style.display !== 'none') cargarTablaOperadores();
 }
 
 function salir(){
@@ -645,7 +679,7 @@ function cargarTablaOperadores(){
   tbody.innerHTML = '<tr><td colspan="9" style="padding:12px;text-align:center;color:var(--mut)">Cargando...</td></tr>';
   vacio.style.display = 'none';
 
-  fetch(API+`/api/tabla-operadores?orden=${orden}&soloProblemas=${soloProblemas}`, {headers:authHeaders()})
+  fetch(API+`/api/tabla-operadores?orden=${orden}&soloProblemas=${soloProblemas}&fecha=${encodeURIComponent(user?.fecha||'')}`, {headers:authHeaders()})
     .then(r=>r.json()).then(data=>{
       if(data.error){ tbody.innerHTML = `<tr><td colspan="9" style="padding:12px;color:var(--red)">${data.error}</td></tr>`; return; }
       if(!data.operadores.length){ tbody.innerHTML=''; vacio.style.display='block'; return; }
@@ -692,6 +726,7 @@ function generarReporte(){
   const zonaSel = document.getElementById('filtroZona')?.value || '';
   const params = new URLSearchParams();
   if(zonaSel) params.set('zona', zonaSel);
+  if(user?.fecha) params.set('fecha', user.fecha);
   // Si el usuario desmarcó alguna planta en el multiselector, el reporte respeta exactamente esa selección
   if(plantasMarcadas !== null) params.set('plantas', [...plantasMarcadas].join(','));
   const qs = params.toString();
@@ -705,7 +740,7 @@ function generarReporte(){
 function renderReporte(rep){
   const alcance = rep.zona ? `Zona ${rep.zona}` : (rep.plantasFiltro ? `${rep.plantasFiltro.length} planta(s) seleccionada(s)` : 'Todas las plantas');
   document.getElementById('repMeta').textContent =
-    `Generado por ${rep.generado_por} · ${new Date(rep.generado_en).toLocaleString('es-CL')} · ${alcance}`;
+    `Generado por ${rep.generado_por} · ${new Date(rep.generado_en).toLocaleString('es-CL')} · Fecha ${rep.fecha||user?.fecha||'—'} · ${alcance}`;
 
   // --- KPIs nacionales exclusivos (respetan el alcance de zona/plantas elegido) ---
   const kpisNac = [
@@ -916,6 +951,7 @@ function cargarPlantas(){
     if(user && user.zona){
       document.getElementById('filtroZona').value = user.zona;
     }
+    if(user && user.planta) plantasMarcadas = new Set([user.planta]);
     poblarSelectoresPlanta();
     poblarFiltroPlanta();
     renderTablaPlantas();
@@ -1113,7 +1149,7 @@ function cargarOperadoresDePlanta(){
   const sel = document.getElementById('bitOperador');
   sel.innerHTML = '<option value="">Cargando operadores...</option>';
   if(!planta){ sel.innerHTML = '<option value="">— General / sin operador específico —</option>'; return; }
-  fetch(API+'/api/operadores?planta='+encodeURIComponent(planta),{headers:authHeaders()})
+  fetch(API+'/api/operadores?planta='+encodeURIComponent(planta)+'&fecha='+encodeURIComponent(user?.fecha||''),{headers:authHeaders()})
     .then(r=>r.json()).then(list=>{
       if(list.error){ sel.innerHTML = '<option value="">— General / sin operador específico —</option>'; return; }
       sel.innerHTML = '<option value="">— General / sin operador específico —</option>' +
@@ -1172,7 +1208,7 @@ function cargarAnalisisOperadores(){
   cont.style.display='block';
   document.getElementById('opDiagLineas').innerHTML = '<div class="small">Cargando...</div>';
 
-  fetch(API+'/api/analisis-operadores?planta='+encodeURIComponent(planta),{headers:authHeaders()})
+  fetch(API+'/api/analisis-operadores?planta='+encodeURIComponent(planta)+'&fecha='+encodeURIComponent(user?.fecha||''),{headers:authHeaders()})
     .then(r=>r.json()).then(data=>{
       if(data.error){ document.getElementById('opDiagLineas').innerHTML = 'Error: '+data.error; return; }
       renderAnalisisOperadores(data);
