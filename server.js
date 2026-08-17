@@ -279,21 +279,103 @@ function rowOperator(row) {
   return { id: id || normalizeName(nombre), nombre };
 }
 
-function inferZona(planta) {
-  const p = normalizeName(planta);
-  if (/antofag|calama|copiapo|la negra|norte/.test(p)) return 'Norte';
-  if (/melipilla|espejo|santo domingo|quilicura|puente alto|san bernardo|renca|maipu|maipu|rm|central mix/.test(p)) return 'RM';
-  if (/vina|viña|valparaiso|quilpue|los andes|san felipe|centro/.test(p)) return 'Centro';
-  if (/concepcion|concepción|temuco|valdivia|osorno|puerto montt|sur/.test(p)) return 'Sur';
-  return 'RM';
+// ============================================================================
+// DICCIONARIO MAESTRO DE ZONAS OPERACIONALES
+// Solo existen 3 zonas: Norte, Centro y Sur.
+// Centro agrupa RM + V + VI Región.
+// ============================================================================
+const MASTER_ZONE_REGIONS = {
+  Norte: {
+    Norte: ['Arica','Iquique','Antofagasta','Copiapó','Vallenar','Coquimbo','Diego de Almagro']
+  },
+  Centro: {
+    'RM': ['Central Mix','Lo Espejo','Planta Oriente','Planta Poniente'],
+    'V Región': ['Viña del Mar','Santo Domingo','Los Andes','Melipilla'],
+    'VI Región': ['Rancagua']
+  },
+  Sur: {
+    Sur: ['Curicó','Talca','Linares','Chillán','Los Ángeles','Concepción Hualpén','Coronel','Temuco','Villarrica','Puerto Montt','Castro']
+  }
+};
+
+const MASTER_ZONE_PLANTS = Object.fromEntries(
+  Object.entries(MASTER_ZONE_REGIONS).map(([zona, regiones]) => [zona, Object.values(regiones).flat()])
+);
+
+const PLANT_ALIASES = {
+  'espejo': 'Lo Espejo',
+  'lo espejo': 'Lo Espejo',
+  'central mix': 'Central Mix',
+  'oriente': 'Planta Oriente',
+  'planta oriente': 'Planta Oriente',
+  'poniente': 'Planta Poniente',
+  'planta poniente': 'Planta Poniente',
+  'vina': 'Viña del Mar',
+  'vina del mar': 'Viña del Mar',
+  'concepcion': 'Concepción Hualpén',
+  'concepcion hualpen': 'Concepción Hualpén',
+  'hualpen': 'Concepción Hualpén',
+  'villarica': 'Villarrica'
+};
+
+function canonicalPlantName(rawName) {
+  const raw = safeText(rawName);
+  if (!raw) return 'Sin planta';
+  const norm = normalizeName(raw);
+  if (PLANT_ALIASES[norm]) return PLANT_ALIASES[norm];
+  for (const nombres of Object.values(MASTER_ZONE_PLANTS)) {
+    const found = nombres.find(n => normalizeName(n) === norm);
+    if (found) return found;
+  }
+  return raw;
 }
 
-function ensurePlant(name, zone) {
-  const clean = safeText(name) || 'Sin planta';
+function canonicalZone(rawZone) {
+  const z = normalizeName(rawZone);
+  if (!z) return '';
+  if (/^(norte|zona norte)$/.test(z)) return 'Norte';
+  if (/^(sur|zona sur)$/.test(z)) return 'Sur';
+  // RM, V y VI pertenecen a Centro por definición operacional.
+  if (/^(centro|zona centro|rm|region metropolitana|metropolitana|v|5|quinta|quinta region|vi|6|sexta|sexta region)$/.test(z)) return 'Centro';
+  return '';
+}
+
+function inferZona(planta, rawZone='') {
+  const z = canonicalZone(rawZone);
+  if (z) return z;
+  const p = normalizeName(planta);
+
+  if (/arica|iquique|antofagasta|copiapo|vallenar|coquimbo|diego de almagro/.test(p)) return 'Norte';
+  if (/curico|talca|linares|chillan|los angeles|concepcion|hualpen|coronel|temuco|villarica|villarrica|puerto montt|castro/.test(p)) return 'Sur';
+  if (/central mix|lo espejo|(^| )espejo($| )|planta oriente|planta poniente|vina del mar|santo domingo|los andes|melipilla|rancagua/.test(p)) return 'Centro';
+
+  return 'Centro';
+}
+
+function inferRegion(planta, rawRegion='', rawZone='') {
+  const r = normalizeName(rawRegion);
+  const p = normalizeName(planta);
+  const z = inferZona(planta, rawZone);
+  if (z === 'Norte') return 'Norte';
+  if (z === 'Sur') return 'Sur';
+  if (/^(rm|region metropolitana|metropolitana)$/.test(r)) return 'RM';
+  if (/^(v|5|quinta|quinta region|v region)$/.test(r)) return 'V Región';
+  if (/^(vi|6|sexta|sexta region|vi region)$/.test(r)) return 'VI Región';
+  if (/central mix|lo espejo|(^| )espejo($| )|planta oriente|planta poniente/.test(p)) return 'RM';
+  if (/vina del mar|santo domingo|los andes|melipilla/.test(p)) return 'V Región';
+  if (/rancagua/.test(p)) return 'VI Región';
+  return 'Centro';
+}
+
+function ensurePlant(name, zone, region) {
+  const clean = canonicalPlantName(name);
+  const zonaCanonica = inferZona(clean, zone);
+  const regionCanonica = inferRegion(clean, region, zone);
   if (!state.plantas[clean]) {
     state.plantas[clean] = {
       nombre: clean,
-      zona: zone || inferZona(clean),
+      zona: zonaCanonica,
+      region: regionCanonica,
       tol_v: 5,
       tol_a: 30,
       tol_asig: 30,
@@ -301,8 +383,21 @@ function ensurePlant(name, zone) {
       actualizado_por: 'Sistema',
       actualizado_en: nowIso(),
     };
+  } else {
+    state.plantas[clean].zona = zonaCanonica;
+    state.plantas[clean].region = regionCanonica;
   }
   return state.plantas[clean];
+}
+
+function masterPlantCatalog() {
+  const merged = new Map();
+  for (const [zona, regiones] of Object.entries(MASTER_ZONE_REGIONS)) {
+    for (const [region, nombres] of Object.entries(regiones)) {
+      for (const nombre of nombres) merged.set(normalizeName(nombre), { nombre, zona, region });
+    }
+  }
+  return [...merged.values()];
 }
 
 function validateDataset(type, rows) {
@@ -392,8 +487,9 @@ function buildOperatorRecords(fecha = '') {
   return shifts.map((t, idx) => {
     const key = operatorKey(t) || `row:${idx}`;
     const { id, nombre } = rowOperator(t);
-    const planta = safeText(pick(t, FIELDS.planta)) || 'Sin planta';
-    const pCfg = ensurePlant(planta, safeText(pick(t, FIELDS.zona)) || undefined);
+    const plantaOriginal = safeText(pick(t, FIELDS.planta)) || 'Sin planta';
+    const pCfg = ensurePlant(plantaOriginal, safeText(pick(t, FIELDS.zona)) || undefined);
+    const planta = pCfg.nombre;
     const turnoMin = parseTimeMinutes(pick(t, FIELDS.turno));
 
     const cs = cByKey.get(key) || [];
@@ -435,7 +531,7 @@ function buildOperatorRecords(fecha = '') {
     }[categoria];
 
     return {
-      key, id, nombre, planta, zona: pCfg.zona,
+      key, id, nombre, planta, zona: pCfg.zona, region: pCfg.region,
       turnoMin, citacionMin, logeoMin, asignacionMin,
       horaTurno: fmtMinutes(turnoMin), horaCitacion: fmtMinutes(citacionMin), horaLogeo: fmtMinutes(logeoMin), horaAsignacion: fmtMinutes(asignacionMin),
       turno: fmtMinutes(turnoMin), citacionHora: fmtMinutes(citacionMin), logeo: fmtMinutes(logeoMin), asignacion: fmtMinutes(asignacionMin),
@@ -453,8 +549,9 @@ function buildOperatorRecords(fecha = '') {
 
 function filterScope(records, query) {
   const zona = safeText(query.zona || '');
+  const region = safeText(query.region || '');
   const plantas = String(query.plantas || '').split(',').map(s=>s.trim()).filter(Boolean);
-  return records.filter(r => (!zona || r.zona === zona) && (!plantas.length || plantas.includes(r.planta)));
+  return records.filter(r => (!zona || r.zona === zona) && (!region || r.region === region) && (!plantas.length || plantas.includes(r.planta)));
 }
 
 function datasetPlantCount(type, planta) {
@@ -465,7 +562,7 @@ function datasetPlantCount(type, planta) {
 app.get('/health', (req, res) => res.json({
   ok: true,
   service: 'CCO Intelligence',
-  version: '1.2.0',
+  version: '1.4.0',
   env: NODE_ENV,
   timestamp: nowIso(),
   uptime_s: Math.round(process.uptime()),
@@ -477,11 +574,12 @@ app.post('/api/auth/login', (req, res) => {
   const rol = safeText(req.body?.rol || 'coordinador');
   const zona = safeText(req.body?.zona || '');
   const planta = safeText(req.body?.planta || '');
+  const region = safeText(req.body?.region || '');
   const fecha = safeText(req.body?.fecha || '');
   if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
   const allowedRoles = new Set(['admin','gerencia','supervisor_nacional','supervisor_zona','supervisor_planta','coordinador','lectura']);
   if (!allowedRoles.has(rol)) return res.status(400).json({ error: 'Rol inválido' });
-  const user = { nombre, rol, zona, planta, fecha };
+  const user = { nombre, rol, zona, region, planta, fecha };
   res.json({ token: authToken(user), user });
 });
 
@@ -533,14 +631,23 @@ app.get('/api/ingesta/estado', requireAuth, (req, res) => {
 });
 
 app.get('/api/catalogo/plantas', (req, res) => {
-  const zona = safeText(req.query.zona || '');
-  let list = Object.values(state.plantas);
+  const zona = canonicalZone(safeText(req.query.zona || ''));
+  const region = safeText(req.query.region || '');
+  let list = masterPlantCatalog();
   if (zona) list = list.filter(p => p.zona === zona);
-  res.json(list.sort((a,b)=>a.nombre.localeCompare(b.nombre,'es')).map(p=>({nombre:p.nombre,zona:p.zona})));
+  if (region) list = list.filter(p => p.region === region);
+  res.json(list.sort((a,b)=>a.zona.localeCompare(b.zona,'es') || String(a.region||'').localeCompare(String(b.region||''),'es') || a.nombre.localeCompare(b.nombre,'es')));
 });
 
 app.get('/api/plantas', requireAuth, (req, res) => {
-  res.json(Object.values(state.plantas).sort((a,b)=>a.zona.localeCompare(b.zona,'es') || a.nombre.localeCompare(b.nombre,'es')));
+  // Catálogo operacional oficial: solo expone las plantas definidas en el maestro.
+  const catalog = [];
+  for (const item of masterPlantCatalog().filter(p => MASTER_ZONE_PLANTS[p.zona]?.some(n=>normalizeName(n)===normalizeName(p.nombre)))) {
+    const cfg = ensurePlant(item.nombre, item.zona, item.region);
+    catalog.push({...cfg, zona:item.zona, region:item.region});
+  }
+  persistState();
+  res.json(catalog.sort((a,b)=>a.zona.localeCompare(b.zona,'es') || String(a.region||'').localeCompare(String(b.region||''),'es') || a.nombre.localeCompare(b.nombre,'es')));
 });
 
 app.put('/api/plantas/:nombre/config', requireAuth, (req, res) => {
@@ -607,6 +714,7 @@ app.post('/api/bitacora', requireAuth, (req, res) => {
 app.get('/api/tabla-operadores', requireAuth, (req, res) => {
   let records = buildOperatorRecords(safeText(req.query.fecha || req.user.fecha || ''));
   if (req.user.zona) records = records.filter(r=>r.zona===req.user.zona);
+  if (req.user.region) records = records.filter(r=>r.region===req.user.region);
   if (req.query.soloProblemas === '1') records = records.filter(r=>r.categoria !== 'a_tiempo');
   const orden = req.query.orden;
   if (orden === 'planta') records.sort((a,b)=>a.planta.localeCompare(b.planta,'es') || a.nombre.localeCompare(b.nombre,'es'));
@@ -669,6 +777,7 @@ app.get('/api/reporte', requireAuth, (req, res) => {
   const fecha = safeText(req.query.fecha || req.user.fecha || '');
   let records = filterScope(buildOperatorRecords(fecha), req.query);
   if (req.user.zona) records = records.filter(r=>r.zona===req.user.zona);
+  if (req.user.region) records = records.filter(r=>r.region===req.user.region);
   if (req.user.planta) records = records.filter(r=>r.planta===req.user.planta);
   const plantNames = [...new Set(records.map(r=>r.planta))];
   if (!plantNames.length) return res.status(400).json({ error:'No hay turnos cargados para el alcance seleccionado' });
@@ -679,6 +788,7 @@ app.get('/api/reporte', requireAuth, (req, res) => {
     return {
       planta,
       zona:ensurePlant(planta).zona,
+      region:ensurePlant(planta).region,
       turnos:rs.length,
       citaciones:rs.filter(r=>r.citacionMin!==null).length,
       logeo:logged.length,
@@ -699,6 +809,7 @@ app.get('/api/reporte', requireAuth, (req, res) => {
     diagnosticoFecha:{ turnosTotal:getTurnos().length, turnosConFecha:countRowsWithDate(getTurnos(),'turnos'), turnosDia:records.length },
     generado_en:nowIso(),
     zona:req.query.zona || req.user.zona || null,
+    region:req.query.region || req.user.region || null,
     plantasFiltro:req.query.plantas?String(req.query.plantas).split(',').filter(Boolean):null,
     resumen:{
       totalTurnos:records.length,
@@ -725,7 +836,7 @@ io.on('connection', (socket) => {
 app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 server.listen(PORT, () => {
-  console.log(`CCO Intelligence v1.2.0 activo en puerto ${PORT}`);
+  console.log(`CCO Intelligence v1.4.0 activo en puerto ${PORT}`);
   if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') {
     console.warn('ADVERTENCIA: configure AUTH_SECRET en producción.');
   }
