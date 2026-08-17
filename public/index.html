@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CCO Intelligence v1.2 · Centro de Inteligencia</title>
+<title>CCO Intelligence v1.5 · Centro de Control Operacional</title>
 <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4/dist/socket.io.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
@@ -120,6 +120,43 @@ tr.sev-ok{background:transparent}
 .multiselect-box input[type=checkbox]{width:13px;height:13px;flex-shrink:0;cursor:pointer}
 .errbox{background:#2a1414;border:1px solid var(--red);color:#ffb3b8;border-radius:8px;padding:8px 10px;
 font-size:11px;margin-top:10px;text-align:left;display:none}
+
+/* ===== CCO Intelligence v1.5 · Tema ejecutivo claro ===== */
+:root{
+  --bg:#f3f7fb;--panel:#ffffff;--panel2:#f8fbff;--line:#cfdeed;--txt:#17324d;--mut:#71859a;
+  --blue:#2f80ed;--green:#27ae60;--yellow:#f2b01e;--red:#eb5757;--cyan:#2d9cdb;--radius:14px;
+  --shadow:0 8px 24px rgba(23,50,77,.07)
+}
+body{background:linear-gradient(180deg,#eef5fb 0%,#f7f9fc 55%,#f2f6fa 100%);color:var(--txt)}
+header{background:#fff;border-bottom:1px solid var(--line);box-shadow:0 2px 10px rgba(23,50,77,.05);position:sticky;top:0;z-index:20}
+header h1{color:#17324d;font-weight:800} header p{color:var(--mut)}
+.card{background:#fff;border-color:var(--line);box-shadow:var(--shadow)}
+.card h2,.rep-header .rep-titulo{color:#17324d}
+input,select,textarea{background:#f8fbff;border-color:#cbdbea;color:#17324d}
+input:focus,select:focus,textarea:focus{outline:2px solid rgba(47,128,237,.14);border-color:#2f80ed}
+button{background:#2f80ed;box-shadow:0 3px 10px rgba(47,128,237,.16)}
+button.secondary{background:#fff;border:1px solid #c9d9e8;color:#244764;box-shadow:none}
+button.secondary:hover{background:#eef5fd}.wa-btn{background:#2f80ed;color:#fff}.wa-btn:hover{background:#236fcf}
+.pill{background:#f6faff;border-color:#cbdbea;color:#5d7489}.pill.live{background:#ebf8f1;color:#1d8b4f;border-color:#a8dfc1}.pill.err{background:#fff0f0;color:#c93c3c;border-color:#f0b6b6}
+.small,label,th,.rep-header .rep-meta,.kpi-card .kpi-label,.kpi-card .kpi-sub{color:var(--mut)}
+.upload-row label.filelabel{color:#244764}.upload-row input[type=file]{color:#536d84}
+.sheet-picker,.chart-wrap,.reporte-box,.multiselect-box{background:#f8fbff;border-color:#d2e0ed}
+.sheet-picker .sp-title{color:#17324d}.sheet-picker .sp-preview{background:#eef5fb;color:#526d86}
+.kpi-grid{grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.kpi-card{position:relative;background:#fff;border:1px solid #d2e0ed;border-radius:12px;padding:14px 14px 13px;min-height:92px;box-shadow:0 4px 14px rgba(23,50,77,.05);overflow:hidden}
+.kpi-card:before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:#2f80ed}
+.kpi-card.kpi-ok:before{background:#27ae60}.kpi-card.kpi-warn:before{background:#f2b01e}.kpi-card.kpi-crit:before{background:#eb5757}.kpi-card.kpi-info:before{background:#2f80ed}
+.kpi-card .kpi-label{font-size:9px;letter-spacing:.5px}.kpi-card .kpi-valor{font-size:25px;color:#17324d;line-height:1.15}.kpi-card .kpi-sub{font-size:9px;margin-top:7px}
+.alert-card.critico{background:#fff2f2;border-color:#efbcbc;color:#a92f2f}.alert-card.medio{background:#fff8e6;border-color:#f0d18b;color:#886300}.alert-card.info{background:#eef6ff;border-color:#b9d7f7;color:#235d92}.alert-card.ok{background:#ecf9f2;border-color:#b8e5cc;color:#217047}
+.pill-sev.critico,.pill-cat.atraso_critico{background:#fff0f0;color:#c63d3d}.pill-sev.medio,.pill-cat.atraso_leve{background:#fff6df;color:#a87700}.pill-sev.ok,.pill-cat.a_tiempo{background:#eaf8f0;color:#21894e}.pill-sev.anomalia,.pill-cat.adelantado{background:#eaf4ff;color:#2f80ed}.pill-sev.na,.pill-cat.sin_logeo{background:#edf2f7;color:#677b8d}
+.diag-badge.ESTABLE{background:#eaf8f0;color:#21894e}.diag-badge.ATENCIÓN{background:#fff6df;color:#a87700}.diag-badge.CRÍTICO{background:#fff0f0;color:#c63d3d}
+th{background:#f6f9fc;color:#607a91;font-weight:700} td{color:#26465f} tr:hover td{background:#f8fbfe}
+.op-tabla th{background:#f6f9fc}.ranking-item{border-bottom-color:#dbe6f0}.ranking-item .ri-op{color:#17324d}.ranking-item .ri-det{color:#71859a}
+.log-entry{background:#f8fbff;border-left-color:#2f80ed}.errbox{background:#fff0f0;border-color:#efbcbc;color:#bd3535}
+tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomalia{background:#f2f8ff}tr.sev-na{background:#f6f8fa}
+.status-dot{background:#c7d4e1}.status-dot.ok{background:#27ae60}.status-dot.err{background:#eb5757}.status-dot.busy{background:#f2b01e}
+@media(max-width:760px){main{padding:10px}.upload-row{align-items:flex-start;flex-direction:column}.upload-status{flex:auto;text-align:left;justify-content:flex-start}.gate{margin:16px 10px}}
+
 </style>
 </head>
 <body>
@@ -259,8 +296,10 @@ font-size:11px;margin-top:10px;text-align:left;display:none}
               <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--line)">Citación</th>
               <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--line)">Logeo</th>
               <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--line)">Asignación</th>
+              <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--line)">Primera carga</th>
               <th style="padding:6px 8px;text-align:right;border-bottom:1px solid var(--line)">T. muerto</th>
-              <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--line)">Estado</th>
+              <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--line)">Estado operacional</th>
+              <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--line)">Adherencia</th>
             </tr>
           </thead>
           <tbody id="tablaOperadoresBody"></tbody>
@@ -296,7 +335,7 @@ font-size:11px;margin-top:10px;text-align:left;display:none}
 
       <div class="rep-header"><span class="rep-titulo">Detalle por planta</span></div>
       <table class="rep-tabla">
-        <thead><tr><th>Estado</th><th>Planta</th><th>Zona</th><th>Turnos</th><th>Citaciones</th><th>Logeo</th><th>Adh. logeo</th></tr></thead>
+        <thead><tr><th>Estado</th><th>Planta</th><th>Zona</th><th>Turnos</th><th>Citaciones</th><th>Logeo</th><th>Asignados</th><th>1ª carga</th><th>Adh. logeo</th></tr></thead>
         <tbody id="repTablaBody"></tbody>
       </table>
 
@@ -327,7 +366,7 @@ font-size:11px;margin-top:10px;text-align:left;display:none}
       <div class="rep-header"><span class="rep-titulo">Operadores asignados a esta planta</span></div>
       <p class="small" style="margin:4px 0 0">Referencia de categorías: <b>A tiempo</b> = dentro de la tolerancia normal · <b>Adelantado</b> = logeó antes de lo esperado · <b>Atraso leve</b> = dentro de tolerancia amarilla · <b>Atraso crítico</b> = supera la tolerancia máxima · <b>Sin logeo</b> = no hay marcación registrada para el turno.</p>
       <table class="op-tabla">
-        <thead><tr><th style="width:22%">Operador</th><th style="width:10%">Turno</th><th style="width:10%">Logeo</th><th style="width:12%">Asignación</th><th style="width:16%">Espera asig.</th><th style="width:30%">Estado</th></tr></thead>
+        <thead><tr><th style="width:20%">Operador</th><th style="width:9%">Turno</th><th style="width:9%">Logeo</th><th style="width:11%">Asignación</th><th style="width:11%">1ª carga</th><th style="width:14%">Espera asig.</th><th style="width:26%">Estado</th></tr></thead>
         <tbody id="opTablaBody"></tbody>
       </table>
     </div>
@@ -705,12 +744,12 @@ function cargarTablaOperadores(){
   const soloProblemas = document.getElementById('tablaSoloProblemas').checked ? '1' : '0';
   const tbody = document.getElementById('tablaOperadoresBody');
   const vacio = document.getElementById('tablaOperadoresVacio');
-  tbody.innerHTML = '<tr><td colspan="9" style="padding:12px;text-align:center;color:var(--mut)">Cargando...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="11" style="padding:12px;text-align:center;color:var(--mut)">Cargando...</td></tr>';
   vacio.style.display = 'none';
 
   fetch(API+`/api/tabla-operadores?orden=${orden}&soloProblemas=${soloProblemas}&fecha=${encodeURIComponent(user?.fecha||'')}`, {headers:authHeaders()})
     .then(r=>r.json()).then(data=>{
-      if(data.error){ tbody.innerHTML = `<tr><td colspan="9" style="padding:12px;color:var(--red)">${data.error}</td></tr>`; return; }
+      if(data.error){ tbody.innerHTML = `<tr><td colspan="11" style="padding:12px;color:var(--red)">${data.error}</td></tr>`; return; }
       if(!data.operadores.length){ tbody.innerHTML=''; vacio.style.display='block'; return; }
       const sospechosos = data.operadores.filter(o=>o.horaTurnoSospechosa);
       tbody.innerHTML = data.operadores.map(o=>`
@@ -722,16 +761,18 @@ function cargarTablaOperadores(){
           <td style="padding:5px 8px;border-bottom:1px solid var(--line)">${o.horaCitacion ?? '—'}</td>
           <td style="padding:5px 8px;border-bottom:1px solid var(--line)">${o.horaLogeo ?? '—'}</td>
           <td style="padding:5px 8px;border-bottom:1px solid var(--line)">${o.horaAsignacion ?? '—'}</td>
+          <td style="padding:5px 8px;border-bottom:1px solid var(--line)">${o.horaPrimeraCarga ?? '—'}</td>
           <td style="padding:5px 8px;border-bottom:1px solid var(--line);text-align:right">${o.tiempoMuertoMin ?? '—'}</td>
+          <td style="padding:5px 8px;border-bottom:1px solid var(--line)"><span class="pill-cat ${o.estadoOperacional==='Sin logeo'?'sin_logeo':o.estadoOperacional==='Con logeo'?'a_tiempo':o.estadoOperacional==='Asignado'?'adelantado':'a_tiempo'}">${o.estadoOperacional||'—'}</span></td>
           <td style="padding:5px 8px;border-bottom:1px solid var(--line)">${o.estado}</td>
         </tr>`).join('');
       if(sospechosos.length){
-        tbody.innerHTML += `<tr><td colspan="9" style="padding:8px;background:rgba(220,38,38,0.15);color:var(--red);font-size:10px">
+        tbody.innerHTML += `<tr><td colspan="11" style="padding:8px;background:rgba(220,38,38,0.15);color:var(--red);font-size:10px">
           ⚠️ ${sospechosos.length} operador(es) con hora de turno fuera del rango 07:00-11:00 — revisar la fila correspondiente en el Excel de Turnos (columna Hora_ingreso) para ${sospechosos.map(o=>o.nombre+' ('+o.id+')').join(', ')}.
         </td></tr>`;
       }
     })
-    .catch(()=>{ tbody.innerHTML = '<tr><td colspan="9" style="padding:12px;color:var(--red)">Error de conexión al cargar la tabla</td></tr>'; });
+    .catch(()=>{ tbody.innerHTML = '<tr><td colspan="11" style="padding:12px;color:var(--red)">Error de conexión al cargar la tabla</td></tr>'; });
 }
 
 // --- Reporte ejecutivo (alertas + gráfico + detalle) ---
@@ -774,14 +815,19 @@ function renderReporte(rep){
     `Generado por ${rep.generado_por} · ${new Date(rep.generado_en).toLocaleString('es-CL')} · Fecha ${rep.fecha||user?.fecha||'—'} · ${alcance}`;
 
   // --- KPIs nacionales exclusivos (respetan el alcance de zona/plantas elegido) ---
+  const total = rep.resumen.programadosExigibles ?? rep.resumen.totalTurnos ?? 0;
+  const logeados = rep.resumen.logeadosAlCorte ?? rep.resumen.totalLogeo ?? 0;
+  const pendientes = rep.resumen.pendientesIngreso ?? Math.max(0,total-logeados);
   const kpisNac = [
-    ['Operadores exigibles', rep.resumen.totalTurnos, alcance],
-    ['Con logeo registrado', rep.resumen.totalLogeo, rep.resumen.totalTurnos?Math.round(rep.resumen.totalLogeo/rep.resumen.totalTurnos*1000)/10+'%':'—'],
-    ['⏱️ Tiempo muerto nacional', rep.resumen.tiempoMuertoPromedioMin!==null?rep.resumen.tiempoMuertoPromedioMin+' min':'—', 'logeo → asignación · objetivo ≤30 min'],
-    ['🏃 Adelantamiento al turno', rep.resumen.adelantadosPct!==null?rep.resumen.adelantadosPct+'%':'—', rep.resumen.adelantadosCantidad+' operador(es)'],
+    ['Programados exigibles', total, alcance, 'info'],
+    ['Con logeo', logeados, total?Math.round(logeados/total*1000)/10+'% del turno':'—', logeados===total?'ok':'info'],
+    ['Pendientes de ingreso', pendientes, pendientes?'Requieren seguimiento':'Cobertura completa', pendientes?'warn':'ok'],
+    ['Asignados', rep.resumen.asignados ?? 0, 'Estado ASIGNADO detectado', 'info'],
+    ['Primera carga', rep.resumen.primeraCarga ?? 0, 'Primer CARGANDO/CARGADO detectado', 'ok'],
+    ['Operadores críticos', rep.resumen.operadoresCriticos ?? 0, 'Atraso crítico o logeado sin asignación', (rep.resumen.operadoresCriticos??0)>0?'crit':'ok'],
   ];
-  document.getElementById('repKpisNacionales').innerHTML = kpisNac.map(([label,valor,sub])=>`
-    <div class="kpi-card"><div class="kpi-label">${label}</div><div class="kpi-valor">${valor}</div><div class="kpi-sub">${sub}</div></div>
+  document.getElementById('repKpisNacionales').innerHTML = kpisNac.map(([label,valor,sub,tone])=>`
+    <div class="kpi-card kpi-${tone}"><div class="kpi-label">${label}</div><div class="kpi-valor">${valor}</div><div class="kpi-sub">${sub}</div></div>
   `).join('');
 
   // --- Alertas, ordenadas por severidad (crítico primero) ---
@@ -792,6 +838,15 @@ function renderReporte(rep){
   const sinDatos = filas.filter(f=>f.turnos===0);
 
   let alertasHtml = '';
+  if((rep.resumen.pendientesIngreso||0)>0){
+    alertasHtml += `<div class="alert-card medio"><span class="alert-icon">⏳</span><div class="alert-text"><b>${rep.resumen.pendientesIngreso} operador(es) pendientes de ingreso.</b> Están programados para la fecha seleccionada y no tienen evento LOGIN/PRE-VIAJE.</div></div>`;
+  }
+  if((rep.resumen.asignados||0)>0){
+    alertasHtml += `<div class="alert-card info"><span class="alert-icon">📌</span><div class="alert-text"><b>${rep.resumen.asignados} operador(es) asignados.</b> Se detectó al menos un estado ASIGNADO posterior al ingreso.</div></div>`;
+  }
+  if((rep.resumen.primeraCarga||0)>0){
+    alertasHtml += `<div class="alert-card ok"><span class="alert-icon">🚚</span><div class="alert-text"><b>${rep.resumen.primeraCarga} operador(es) con primera carga.</b> Se detectó CARGANDO/CARGADO en su secuencia operacional.</div></div>`;
+  }
   if(criticas.length){
     alertasHtml += `<div class="alert-card critico"><span class="alert-icon">🔴</span><div class="alert-text">
       <b>${criticas.length} planta${criticas.length>1?'s':''} en estado crítico</b> (adherencia de logeo bajo 50%): ${criticas.map(f=>`${f.planta} (${f.adherenciaLogeo}%)`).join(', ')}.
@@ -856,8 +911,8 @@ function renderReporte(rep){
       maintainAspectRatio: false,
       plugins: { legend: { display:false }, tooltip:{ callbacks:{ label: c=>c.parsed.x+'%' } } },
       scales: {
-        x: { min:0, max: Math.max(100, ...conDatos.map(f=>f.adherenciaLogeo), 10), ticks:{color:'#9cacbf'}, grid:{color:'#26364f'} },
-        y: { ticks:{color:'#edf3fb', font:{size:10}}, grid:{display:false} }
+        x: { min:0, max: Math.max(100, ...conDatos.map(f=>f.adherenciaLogeo), 10), ticks:{color:'#71859a'}, grid:{color:'#d9e4ef'} },
+        y: { ticks:{color:'#365873', font:{size:10}}, grid:{display:false} }
       }
     }
   });
@@ -872,7 +927,7 @@ function renderReporte(rep){
     return `
     <tr>
       <td><span class="pill-sev ${f.severidad}">${ICONO_SEV[f.severidad]} ${etiquetas[f.severidad]}</span></td>
-      <td>${f.planta}</td><td>${f.zona}</td><td>${f.turnos}</td><td>${f.citaciones}</td><td>${f.logeo}</td>
+      <td>${f.planta}</td><td>${f.zona}</td><td>${f.turnos}</td><td>${f.citaciones}</td><td>${f.logeo}</td><td>${f.asignados??0}</td><td>${f.primeraCarga??0}</td>
       <td>${f.adherenciaLogeo!==null?f.adherenciaLogeo+'%':'—'}</td>
     </tr>`;
   }).join('');
@@ -931,7 +986,11 @@ function renderReporte(rep){
   texto += `*KPIs NACIONALES*\n`;
   texto += `Operadores exigibles: *${rep.resumen.totalTurnos}*\n`;
   texto += `Citaciones: *${rep.resumen.totalCitaciones}*\n`;
-  texto += `Con logeo registrado: *${rep.resumen.totalLogeo}*\n`;
+  texto += `Con logeo: *${rep.resumen.logeadosAlCorte ?? rep.resumen.totalLogeo}*\n`;
+  texto += `Pendientes de ingreso: *${rep.resumen.pendientesIngreso ?? 0}*\n`;
+  texto += `Asignados: *${rep.resumen.asignados ?? 0}*\n`;
+  texto += `Primera carga: *${rep.resumen.primeraCarga ?? 0}*\n`;
+  texto += `Operadores críticos: *${rep.resumen.operadoresCriticos ?? 0}*\n`;
   if(rep.resumen.tiempoMuertoPromedioMin!==null) texto += `⏱️ Tiempo muerto nacional: *${rep.resumen.tiempoMuertoPromedioMin} min* (obj. ≤30)\n`;
   if(rep.resumen.adelantadosPct!==null) texto += `🏃 Adelantamiento al turno: *${rep.resumen.adelantadosPct}%* (${rep.resumen.adelantadosCantidad} operadores)\n`;
   if(rep.resumen.filasSinReconocer) texto += `⚠️ Sin homologar: *${rep.resumen.filasSinReconocer}* filas\n`;
@@ -1323,6 +1382,7 @@ function renderAnalisisOperadores(data){
         <td>${o.turno||'—'}</td>
         <td>${o.logeo||'—'}</td>
         <td>${o.asignacion||'—'}</td>
+        <td>${o.primeraCarga||'—'}</td>
         <td>${o.esperaAsignacionMin!==null?o.esperaAsignacionMin+' min':'—'}</td>
         <td><span class="pill-cat ${o.categoria}">${o.etiqueta}</span></td>
       </tr>`).join('');
