@@ -132,10 +132,36 @@ const FIELDS = {
   zona: ['zona','region','región'],
   turno: ['turno_inicio','hora_inicio','hora_ingreso','hora ingreso','horaingreso','turno','inicio_turno'],
   citacion: ['citacion','citación','cita','hora_citacion','hora citacion','citacion_sugerida','citación sugerida'],
-  logeo: ['logeo','marcacion','marcación','hora_logeo','hora logeo','entrada','login','fecha_hora'],
-  estado: ['descripcion_estado','descripción estado','estado','status','status_description'],
-  timestamp: ['timestamp','fecha_hora','fecha hora','fecha','hora_evento','fecha_evento'],
+  logeo: ['logeo','marcacion','marcación','hora_logeo','hora logeo','entrada','login','fecha_hora','fecha hora'],
+  estado: ['descripcion_estado','descripción estado','estado','status','status_description','descripcion status','descripción status'],
+  timestamp: [
+    'timestamp','fecha_hora','fecha hora','fecha','hora_evento','fecha_evento',
+    'fecha estado','fecha_estado','hora estado','hora_estado','inicio estado','inicio_estado',
+    'fecha inicio','fecha_inicio','hora inicio','hora_inicio','date time','datetime','event time'
+  ],
 };
+
+// StatusBreakdown puede traer la fecha/hora con nombres distintos según la exportación.
+// Esta función busca primero los alias conocidos y, si no existen, detecta de forma
+// conservadora columnas cuyo encabezado parece corresponder a fecha/hora/evento.
+function getEventTimeValue(row) {
+  const direct = pick(row, FIELDS.timestamp) ?? pick(row, FIELDS.logeo);
+  if (direct !== null && direct !== undefined && direct !== '') return direct;
+
+  const preferred = [];
+  const fallback = [];
+  for (const [key, value] of Object.entries(row || {})) {
+    if (value === null || value === undefined || String(value).trim() === '') continue;
+    const k = normalizeKey(key);
+    const looksTemporal = /(fecha|hora|time|date|timestamp|inicio|evento|estado)/.test(k);
+    if (!looksTemporal) continue;
+    const valid = parseTimeMinutes(value) !== null || asDate(value) !== null;
+    if (!valid) continue;
+    if (/(fecha.*hora|hora.*fecha|timestamp|datetime|event.*time|fecha.*evento|hora.*evento|inicio.*estado|fecha.*estado|hora.*estado)/.test(k)) preferred.push(value);
+    else fallback.push(value);
+  }
+  return preferred[0] ?? fallback[0] ?? null;
+}
 
 function asDate(value) {
   if (value === null || value === undefined || value === '') return null;
@@ -243,9 +269,12 @@ function validateDataset(type, rows) {
       if (parseTimeMinutes(shift) === null) { rejected.push(row); errors.push(`Fila ${index + 1}: hora de turno inválida`); return; }
     }
     if (type === 'logeo') {
-      const log = pick(row, FIELDS.logeo) ?? pick(row, FIELDS.timestamp);
+      const log = getEventTimeValue(row);
       if (parseTimeMinutes(log) === null && !asDate(log)) {
-        rejected.push(row); errors.push(`Fila ${index + 1}: hora de logeo/evento inválida`); return;
+        const columnas = Object.keys(row || {}).slice(0, 12).join(', ');
+        rejected.push(row);
+        errors.push(`Fila ${index + 1}: no se detectó fecha/hora de evento. Columnas recibidas: ${columnas}`);
+        return;
       }
     }
     valid.push(row);
@@ -315,7 +344,7 @@ function buildOperatorRecords() {
     const ls = logsByKey.get(key) || [];
     const events = ls.map(l => ({
       row: l,
-      min: parseTimeMinutes(pick(l, FIELDS.timestamp) ?? pick(l, FIELDS.logeo)),
+      min: parseTimeMinutes(getEventTimeValue(l)),
       estado: normalizeName(pick(l, FIELDS.estado)),
     })).filter(x => x.min !== null);
 
