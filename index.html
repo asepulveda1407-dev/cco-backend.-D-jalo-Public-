@@ -20,7 +20,7 @@ header p{margin:2px 0 0;color:var(--mut);font-size:11px}
 .pill{background:var(--panel2);border:1px solid var(--line);padding:5px 10px;border-radius:999px;font-size:11px;color:var(--mut)}
 .pill.live{color:var(--green);border-color:var(--green)}
 .pill.err{color:var(--red);border-color:var(--red)}
-main{padding:18px;max-width:900px;margin:0 auto}
+main{padding:22px;max-width:1400px;margin:0 auto}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:16px;box-shadow:var(--shadow)}
 .card h2{font-size:13px;margin:0 0 12px;color:var(--txt)}
 label{display:block;font-size:11px;color:var(--mut);margin-bottom:4px;margin-top:10px}
@@ -126,11 +126,10 @@ font-size:11px;margin-top:10px;text-align:left;display:none}
 
 <div id="gate" class="gate card">
   <h2>Entrar al Centro de Inteligencia CCO</h2>
-  <label>URL del backend</label>
-  <input id="gApi" placeholder="https://xxxxx.stackblitz.io  (o http://localhost:4000)">
+  <label>Servidor CCO</label>
+  <input id="gApi" readonly aria-label="Servidor CCO">
   <p class="small" style="text-align:left;margin:4px 0 0">
-    Si el backend corre en StackBlitz, pega aquí la URL pública de la pestaña "Preview" (termina en
-    .stackblitz.io o .webcontainer-api.io). Se guarda en este navegador para no volver a pegarla.
+    El servidor se detecta automáticamente desde esta misma dirección web. No necesitas configurar URLs manualmente.
   </p>
   <label>Nombre</label>
   <input id="gNombre" placeholder="Ej: Alberto Sepúlveda">
@@ -148,12 +147,12 @@ font-size:11px;margin-top:10px;text-align:left;display:none}
   </select>
   <button onclick="entrar()">Entrar</button>
   <div id="gateErr" class="errbox"></div>
-  <p class="small">Abre esta misma URL/archivo en dos pestañas o navegadores con nombres distintos (misma URL de backend) para ver la sincronización en tiempo real.</p>
+  <p class="small">Acceso operacional en tiempo real. Los cambios de configuración, bitácora e ingesta se sincronizan entre usuarios conectados.</p>
 </div>
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Inteligencia (prototipo tiempo real)</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <span id="connPill" class="pill">Conectando…</span>
 </header>
@@ -363,7 +362,7 @@ font-size:11px;margin-top:10px;text-align:left;display:none}
 let socket, token, user, API;
 
 // Restaurar la última URL de backend usada en este navegador
-document.getElementById('gApi').value = localStorage.getItem('cco_api_url') || 'https://cco-backend-d-jalo-public.onrender.com';
+document.getElementById('gApi').value = window.location.origin;
 
 function mostrarErrorGate(msg){
   const box = document.getElementById('gateErr');
@@ -380,7 +379,6 @@ function entrar(){
   if(!API){ mostrarErrorGate('Ingresa la URL del backend.'); return; }
   if(!nombre){ mostrarErrorGate('Ingresa un nombre.'); return; }
 
-  localStorage.setItem('cco_api_url', API);
 
   fetch(API+'/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({nombre,rol,zona})})
@@ -395,7 +393,7 @@ function entrar(){
     })
     .catch(()=> mostrarErrorGate(
       'No se pudo conectar a '+API+'. Verifica que el backend esté corriendo y que la URL sea correcta ' +
-      '(si es StackBlitz, debe ser la URL pública que muestra la pestaña "Preview"/"Open in new tab", no la del editor).'
+      'Contacta al administrador si el servicio no está disponible.'
     ));
 }
 
