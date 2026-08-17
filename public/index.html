@@ -143,11 +143,13 @@ font-size:11px;margin-top:10px;text-align:left;display:none}
   <label>Fecha operacional</label>
   <input id="gFecha" type="date">
   <label>Zona</label>
-  <select id="gZona" onchange="cargarPlantasLogin()">
-    <option value="">Todas</option>
-    <option>Norte</option><option>RM</option><option>Centro</option><option>Sur</option>
+  <select id="gZona" onchange="cargarRegionesLogin();cargarPlantasLogin()">
+    <option value="">Todas las zonas</option>
+    <option value="Norte">Norte</option><option value="Centro">Centro</option><option value="Sur">Zona Sur</option>
   </select>
-  <label>Planta <span class="small">(se actualiza según la zona)</span></label>
+  <label>Región / subzona <span class="small">(disponible para Zona Centro)</span></label>
+  <select id="gRegion" onchange="cargarPlantasLogin()"><option value="">Todas las regiones</option></select>
+  <label>Planta <span class="small">(se actualiza según zona y región)</span></label>
   <select id="gPlanta"><option value="">Todas las plantas</option></select>
   <button onclick="entrar()">Entrar</button>
   <div id="gateErr" class="errbox"></div>
@@ -185,9 +187,13 @@ font-size:11px;margin-top:10px;text-align:left;display:none}
         <select id="filtroZona" onchange="onFiltroZonaChange()">
           <option value="">Todas las zonas</option>
           <option value="Norte">Norte</option>
-          <option value="RM">RM</option>
           <option value="Centro">Centro</option>
-          <option value="Sur">Sur</option>
+          <option value="Sur">Zona Sur</option>
+        </select>
+      </div>
+      <div><label>Región / subzona</label>
+        <select id="filtroRegion" onchange="onFiltroRegionChange()">
+          <option value="">Todas las regiones</option>
         </select>
       </div>
     </div>
@@ -199,7 +205,7 @@ font-size:11px;margin-top:10px;text-align:left;display:none}
     <div id="filtroPlantaLista" class="multiselect-box"></div>
 
     <table style="margin-top:14px">
-      <thead><tr><th>Planta</th><th>Zona</th><th>Tol. "A tiempo" (min)</th><th>Tol. máx. atraso crítico (min)</th><th>Espera máx. asignación (min)</th><th>Citación</th><th>Últ. edición</th></tr></thead>
+      <thead><tr><th>Planta</th><th>Zona</th><th>Región</th><th>Tol. "A tiempo" (min)</th><th>Tol. máx. atraso crítico (min)</th><th>Espera máx. asignación (min)</th><th>Citación</th><th>Últ. edición</th></tr></thead>
       <tbody id="tblPlantas"></tbody>
     </table>
   </div>
@@ -374,18 +380,38 @@ const hoyLocal = new Date();
 const hoyKey = `${hoyLocal.getFullYear()}-${String(hoyLocal.getMonth()+1).padStart(2,'0')}-${String(hoyLocal.getDate()).padStart(2,'0')}`;
 document.getElementById('gFecha').value = hoyKey;
 
+function regionesParaZona(zona){
+  if(zona==='Centro') return ['RM','V Región','VI Región'];
+  return [];
+}
+function cargarRegionesLogin(){
+  const zona = document.getElementById('gZona').value;
+  const sel = document.getElementById('gRegion');
+  const anterior = sel.value;
+  const regiones = regionesParaZona(zona);
+  sel.innerHTML = '<option value="">Todas las regiones</option>' + regiones.map(r=>`<option value="${r}">${r}</option>`).join('');
+  sel.disabled = zona !== 'Centro';
+  if(regiones.includes(anterior)) sel.value = anterior;
+  else sel.value = '';
+}
 function cargarPlantasLogin(){
   const zona = document.getElementById('gZona').value;
-  const planta = document.getElementById('gPlanta').value;
-  const fecha = document.getElementById('gFecha').value || hoyKey;
+  const region = document.getElementById('gRegion').value;
   const sel = document.getElementById('gPlanta');
+  const anterior = sel.value;
   sel.innerHTML = '<option value="">Cargando plantas...</option>';
-  fetch(API+'/api/catalogo/plantas'+(zona?'?zona='+encodeURIComponent(zona):''))
-    .then(r=>r.json()).then(list=>{
-      sel.innerHTML = '<option value="">Todas las plantas</option>' + list.map(p=>`<option value="${p.nombre}">${p.nombre}</option>`).join('');
+  const params = new URLSearchParams();
+  if(zona) params.set('zona', zona);
+  if(region) params.set('region', region);
+  const url = API+'/api/catalogo/plantas'+(params.toString() ? '?'+params.toString() : '');
+  fetch(url)
+    .then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+    .then(list=>{
+      sel.innerHTML = '<option value="">Todas las plantas</option>' + list.map(p=>`<option value="${p.nombre}">${p.nombre}${p.region && p.region!==p.zona ? ' · '+p.region : ''}</option>`).join('');
+      if([...sel.options].some(o=>o.value===anterior)) sel.value = anterior;
     }).catch(()=>{ sel.innerHTML='<option value="">No se pudieron cargar plantas</option>'; });
 }
-setTimeout(cargarPlantasLogin,0);
+setTimeout(()=>{ cargarRegionesLogin(); cargarPlantasLogin(); },0);
 
 function mostrarErrorGate(msg){
   const box = document.getElementById('gateErr');
@@ -398,20 +424,23 @@ function entrar(){
   const nombre = document.getElementById('gNombre').value.trim();
   const rol = document.getElementById('gRol').value;
   const zona = document.getElementById('gZona').value;
+  const region = document.getElementById('gRegion').value;
+  const planta = document.getElementById('gPlanta').value;
+  const fecha = document.getElementById('gFecha').value || hoyKey;
   document.getElementById('gateErr').style.display='none';
   if(!API){ mostrarErrorGate('Ingresa la URL del backend.'); return; }
   if(!nombre){ mostrarErrorGate('Ingresa un nombre.'); return; }
 
 
   fetch(API+'/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({nombre,rol,zona,planta,fecha})})
+    body:JSON.stringify({nombre,rol,zona,region,planta,fecha})})
     .then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
     .then(data=>{
       token = data.token; user = data.user;
       document.getElementById('gate').style.display='none';
       document.getElementById('app').style.display='block';
       document.getElementById('apiShown').textContent = API;
-      document.getElementById('userInfo').textContent = user.nombre+' · '+user.rol+(user.zona?' · '+user.zona:'')+(user.planta?' · '+user.planta:'')+(user.fecha?' · '+user.fecha:'');
+      document.getElementById('userInfo').textContent = user.nombre+' · '+user.rol+(user.zona?' · '+user.zona:'')+(user.region?' · '+user.region:'')+(user.planta?' · '+user.planta:'')+(user.fecha?' · '+user.fecha:'');
       document.getElementById('scopeFecha').value = user.fecha || hoyKey;
       iniciar();
     })
@@ -425,7 +454,7 @@ function cambiarFechaOperacional(){
   const v = document.getElementById('scopeFecha').value;
   if(!v || !user) return;
   user.fecha = v;
-  document.getElementById('userInfo').textContent = user.nombre+' · '+user.rol+(user.zona?' · '+user.zona:'')+(user.planta?' · '+user.planta:'')+' · '+user.fecha;
+  document.getElementById('userInfo').textContent = user.nombre+' · '+user.rol+(user.zona?' · '+user.zona:'')+(user.region?' · '+user.region:'')+(user.planta?' · '+user.planta:'')+' · '+user.fecha;
   if(document.getElementById('reporteBox').style.display !== 'none') generarReporte();
   if(document.getElementById('opPlanta')?.value) cargarAnalisisOperadores();
   if(document.getElementById('tablaOperadoresBox')?.style.display !== 'none') cargarTablaOperadores();
@@ -724,8 +753,10 @@ function generarReporte(){
   document.getElementById('repAlertas').innerHTML = '<div class="small">Generando...</div>';
 
   const zonaSel = document.getElementById('filtroZona')?.value || '';
+  const regionSel = document.getElementById('filtroRegion')?.value || '';
   const params = new URLSearchParams();
   if(zonaSel) params.set('zona', zonaSel);
+  if(regionSel) params.set('region', regionSel);
   if(user?.fecha) params.set('fecha', user.fecha);
   // Si el usuario desmarcó alguna planta en el multiselector, el reporte respeta exactamente esa selección
   if(plantasMarcadas !== null) params.set('plantas', [...plantasMarcadas].join(','));
@@ -738,7 +769,7 @@ function generarReporte(){
 }
 
 function renderReporte(rep){
-  const alcance = rep.zona ? `Zona ${rep.zona}` : (rep.plantasFiltro ? `${rep.plantasFiltro.length} planta(s) seleccionada(s)` : 'Todas las plantas');
+  const alcance = rep.region ? `${rep.zona||'Centro'} · ${rep.region}` : (rep.zona ? `Zona ${rep.zona}` : (rep.plantasFiltro ? `${rep.plantasFiltro.length} planta(s) seleccionada(s)` : 'Todas las plantas'));
   document.getElementById('repMeta').textContent =
     `Generado por ${rep.generado_por} · ${new Date(rep.generado_en).toLocaleString('es-CL')} · Fecha ${rep.fecha||user?.fecha||'—'} · ${alcance}`;
 
@@ -951,6 +982,8 @@ function cargarPlantas(){
     if(user && user.zona){
       document.getElementById('filtroZona').value = user.zona;
     }
+    actualizarRegionesFiltro();
+    if(user && user.region && document.getElementById('filtroRegion')) document.getElementById('filtroRegion').value = user.region;
     if(user && user.planta) plantasMarcadas = new Set([user.planta]);
     poblarSelectoresPlanta();
     poblarFiltroPlanta();
@@ -964,7 +997,8 @@ function cargarPlantas(){
 // "conversen" entre sí: elegir una zona en un lado se refleja en todos lados.
 function poblarSelectoresPlanta(){
   const zonaSel = document.getElementById('filtroZona').value;
-  const disponibles = zonaSel ? plantasCache.filter(p=>p.zona===zonaSel) : plantasCache;
+  const regionSel = document.getElementById('filtroRegion')?.value || '';
+  const disponibles = plantasCache.filter(p=>(!zonaSel || p.zona===zonaSel) && (!regionSel || p.region===regionSel));
 
   const selCfg = document.getElementById('cfgPlanta');
   const selBit = document.getElementById('bitPlanta');
@@ -989,7 +1023,8 @@ let plantasMarcadas = null; // null = "todas" (aún no se ha tocado el filtro)
 
 function poblarFiltroPlanta(){
   const zonaSel = document.getElementById('filtroZona').value;
-  const disponibles = zonaSel ? plantasCache.filter(p=>p.zona===zonaSel) : plantasCache;
+  const regionSel = document.getElementById('filtroRegion')?.value || '';
+  const disponibles = plantasCache.filter(p=>(!zonaSel || p.zona===zonaSel) && (!regionSel || p.region===regionSel));
   const cont = document.getElementById('filtroPlantaLista');
 
   cont.innerHTML = disponibles.map(p=>{
@@ -1020,25 +1055,43 @@ function actualizarResumenFiltroPlanta(){
     marcadas===total ? '(todas seleccionadas)' : `(${marcadas} de ${total} seleccionadas)`;
 }
 
+function actualizarRegionesFiltro(){
+  const zonaSel = document.getElementById('filtroZona')?.value || '';
+  const sel = document.getElementById('filtroRegion');
+  if(!sel) return;
+  const anterior = sel.value;
+  const regiones = regionesParaZona(zonaSel);
+  sel.innerHTML = '<option value="">Todas las regiones</option>' + regiones.map(r=>`<option value="${r}">${r}</option>`).join('');
+  sel.disabled = zonaSel !== 'Centro';
+  if(regiones.includes(anterior)) sel.value = anterior; else sel.value='';
+}
 function onFiltroZonaChange(){
-  plantasMarcadas = null; // al cambiar de zona, se resetea a "todas" dentro de esa zona
-  poblarSelectoresPlanta(); // Config/Bitácora/Análisis de operadores se actualizan igual
+  plantasMarcadas = null;
+  actualizarRegionesFiltro();
+  poblarSelectoresPlanta();
+  poblarFiltroPlanta();
+  renderTablaPlantas();
+}
+function onFiltroRegionChange(){
+  plantasMarcadas = null;
+  poblarSelectoresPlanta();
   poblarFiltroPlanta();
   renderTablaPlantas();
 }
 
 function renderTablaPlantas(){
   const zonaSel = document.getElementById('filtroZona')?.value || '';
-  let filtradas = plantasCache.filter(p => !zonaSel || p.zona===zonaSel);
+  const regionSel = document.getElementById('filtroRegion')?.value || '';
+  let filtradas = plantasCache.filter(p => (!zonaSel || p.zona===zonaSel) && (!regionSel || p.region===regionSel));
   if(plantasMarcadas !== null) filtradas = filtradas.filter(p => plantasMarcadas.has(p.nombre));
 
   if(!filtradas.length){
-    document.getElementById('tblPlantas').innerHTML = `<tr><td colspan="7" class="small" style="text-align:center;padding:14px">Ninguna planta calza con el filtro elegido.</td></tr>`;
+    document.getElementById('tblPlantas').innerHTML = `<tr><td colspan="8" class="small" style="text-align:center;padding:14px">Ninguna planta calza con el filtro elegido.</td></tr>`;
     return;
   }
   document.getElementById('tblPlantas').innerHTML = filtradas.map(p=>`
     <tr id="row-${p.nombre}">
-      <td>${p.nombre}</td><td>${p.zona}</td><td>${p.tol_v}</td><td>${p.tol_a}</td><td>${p.tol_asig}</td>
+      <td>${p.nombre}</td><td>${p.zona}</td><td>${p.region||'—'}</td><td>${p.tol_v}</td><td>${p.tol_a}</td><td>${p.tol_asig}</td>
       <td><span class="badge ${p.citacion}">${p.citacion==='si'?'Sí':'No'}</span></td>
       <td class="small">${p.actualizado_por||'-'} · ${(p.actualizado_en||'').replace('T',' ').slice(0,16)}</td>
     </tr>`).join('');
@@ -1357,7 +1410,7 @@ function descargarImagenReporte(){
   ctx.fillStyle = COLORES.txt; ctx.font = '700 20px Arial';
   ctx.fillText('📊 REPORTE EJECUTIVO CCO', PADX, 40);
   ctx.fillStyle = COLORES.mut; ctx.font = '12px Arial';
-  const alcanceTxt = rep.zona ? `Zona ${rep.zona}` : (rep.plantasFiltro ? `${rep.plantasFiltro.length} planta(s) seleccionada(s)` : 'Todas las zonas y plantas');
+  const alcanceTxt = rep.region ? `${rep.zona||'Centro'} · ${rep.region}` : (rep.zona ? `Zona ${rep.zona}` : (rep.plantasFiltro ? `${rep.plantasFiltro.length} planta(s) seleccionada(s)` : 'Todas las zonas y plantas'));
   const metaTxt = `${new Date(rep.generado_en).toLocaleString('es-CL')} · ${rep.generado_por} · ${alcanceTxt}`;
   ctx.fillText(metaTxt, PADX, 62);
   ctx.fillText(`${rep.resumen.totalPlantas} planta(s) en el alcance de este reporte`, PADX, 80);
