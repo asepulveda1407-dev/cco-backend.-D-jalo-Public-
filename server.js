@@ -101,7 +101,7 @@ app.post('/api/ingesta', (req, res) => {
       console.log(`✅ ${logeos.length} logeos cargados`);
     }
 
-    res.json({ success: true, mensaje: `${tipo} cargado correctamente` });
+    res.json({ ok: true, success: true, mensaje: `${tipo} cargado correctamente`, cantidad: datos.length });
   } catch (err) {
     console.error('Error en /api/ingesta:', err.message);
     res.status(500).json({ error: err.message });
