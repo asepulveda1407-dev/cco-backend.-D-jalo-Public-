@@ -269,6 +269,23 @@ function countRowsWithDate(rows, type) {
   return rows.filter(r => rowDateKey(r, type) || pick(r, FIELDS.diaSemana)).length;
 }
 
+function datasetDateProfile(rows, type) {
+  const counts = new Map();
+  for (const row of rows || []) {
+    const d = rowDateKey(row, type);
+    if (!d) continue;
+    counts.set(d, (counts.get(d) || 0) + 1);
+  }
+  const fechas = [...counts.entries()]
+    .sort((a,b)=>a[0].localeCompare(b[0]))
+    .map(([fecha,cantidad])=>({fecha,cantidad}));
+  return {
+    fechas,
+    fecha_unica: fechas.length === 1 ? fechas[0].fecha : null,
+    filas_con_fecha: fechas.reduce((a,x)=>a+x.cantidad,0),
+  };
+}
+
 function operatorKey(row) {
   const id = normalizeId(pick(row, FIELDS.id));
   if (id) return `id:${id}`;
@@ -285,6 +302,34 @@ function rowOperator(row) {
   }
   nombre = nombre || (id ? `Operador ${id}` : 'Sin nombre');
   return { id: id || normalizeName(nombre), nombre };
+}
+
+// Genera todas las claves útiles para conciliar un operador entre fuentes.
+// StatusBreakdown suele identificar por Numero Funcionario, mientras otros
+// archivos pueden traer ID Operador y/o nombre. Indexamos por ambos cuando existen.
+function operatorMatchKeys(row) {
+  const keys = [];
+  const id = normalizeId(pick(row, FIELDS.id));
+  if (id) keys.push(`id:${id}`);
+  const op = rowOperator(row);
+  const nombre = normalizeName(op.nombre);
+  if (nombre && !/^operador\s+\d+$/.test(nombre) && nombre !== 'sin nombre') keys.push(`name:${nombre}`);
+  return [...new Set(keys)];
+}
+
+function addToMultiIndex(index, row) {
+  for (const key of operatorMatchKeys(row)) {
+    if (!index.has(key)) index.set(key, []);
+    index.get(key).push(row);
+  }
+}
+
+function rowsFromMultiIndex(index, row) {
+  const out = new Set();
+  for (const key of operatorMatchKeys(row)) {
+    for (const item of (index.get(key) || [])) out.add(item);
+  }
+  return [...out];
 }
 
 function classifyOperationalEvent(rawEstado) {
@@ -492,16 +537,8 @@ function buildOperatorRecords(fecha = '') {
   const cByKey = new Map();
   const logsByKey = new Map();
 
-  for (const c of citations) {
-    const key = operatorKey(c); if (!key) continue;
-    if (!cByKey.has(key)) cByKey.set(key, []);
-    cByKey.get(key).push(c);
-  }
-  for (const l of logs) {
-    const key = operatorKey(l); if (!key) continue;
-    if (!logsByKey.has(key)) logsByKey.set(key, []);
-    logsByKey.get(key).push(l);
-  }
+  for (const c of citations) addToMultiIndex(cByKey, c);
+  for (const l of logs) addToMultiIndex(logsByKey, l);
 
   return shifts.map((t, idx) => {
     const key = operatorKey(t) || `row:${idx}`;
@@ -511,14 +548,14 @@ function buildOperatorRecords(fecha = '') {
     const planta = pCfg.nombre;
     const turnoMin = parseTimeMinutes(pick(t, FIELDS.turno));
 
-    const cs = cByKey.get(key) || [];
+    const cs = rowsFromMultiIndex(cByKey, t);
     let citacionMin = null;
     for (const c of cs) {
       const m = parseTimeMinutes(pick(c, FIELDS.citacion));
       if (m !== null && (citacionMin === null || Math.abs(diffMinutes(m, turnoMin)) < Math.abs(diffMinutes(citacionMin, turnoMin)))) citacionMin = m;
     }
 
-    const ls = logsByKey.get(key) || [];
+    const ls = rowsFromMultiIndex(logsByKey, t);
     const events = ls.map(l => ({
       row: l,
       min: parseTimeMinutes(getEventTimeValue(l)),
@@ -603,7 +640,7 @@ function datasetPlantCount(type, planta) {
 app.get('/health', (req, res) => res.json({
   ok: true,
   service: 'CCO Intelligence',
-  version: '1.5.0',
+  version: '1.6.0',
   env: NODE_ENV,
   timestamp: nowIso(),
   uptime_s: Math.round(process.uptime()),
@@ -634,6 +671,7 @@ app.post('/api/ingesta', requireAuth, (req, res) => {
     const normalized = normalizeRows(incoming);
     const result = validateDataset(tipo, normalized);
     if (!result.valid.length) return res.status(400).json({ error: 'Ninguna fila superó la validación', errores: result.errors.slice(0,10) });
+    const dateProfile = datasetDateProfile(result.valid, tipo);
 
     state.datasets[tipo] = {
       datos: result.valid,
@@ -646,6 +684,8 @@ app.post('/api/ingesta', requireAuth, (req, res) => {
         archivo,
         subido_por: req.user.nombre,
         cargado_en: nowIso(),
+        fechas_detectadas: dateProfile.fechas,
+        fecha_unica: dateProfile.fecha_unica,
       },
     };
     if (tipo === 'turnos') {
@@ -654,7 +694,14 @@ app.post('/api/ingesta', requireAuth, (req, res) => {
     state.audit.unshift({ id: crypto.randomUUID(), action:'ingesta', tipo, archivo, usuario:req.user.nombre, fecha:nowIso() });
     state.audit = state.audit.slice(0, 2000);
     persistState();
-    const info = { tipo, cantidad: result.valid.length, subido_por: req.user.nombre, filas_rechazadas: result.rejected.length };
+    const info = {
+      tipo,
+      cantidad: result.valid.length,
+      subido_por: req.user.nombre,
+      filas_rechazadas: result.rejected.length,
+      fechas_detectadas: dateProfile.fechas,
+      fecha_unica: dateProfile.fecha_unica,
+    };
     io.emit('ingesta:actualizada', info);
     res.json({ ok:true, ...info, errores: result.errors.slice(0,5) });
   } catch (err) {
@@ -886,7 +933,7 @@ io.on('connection', (socket) => {
 app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 server.listen(PORT, () => {
-  console.log(`CCO Intelligence v1.5.0 activo en puerto ${PORT}`);
+  console.log(`CCO Intelligence v1.6.0 activo en puerto ${PORT}`);
   if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') {
     console.warn('ADVERTENCIA: configure AUTH_SECRET en producción.');
   }
