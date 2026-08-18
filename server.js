@@ -175,6 +175,7 @@ const FIELDS = {
   estado: ['descripcion_estado','descripción estado','estado','status','status_description','descripcion status','descripción status'],
   fecha: ['fecha','fecha_turno','fecha turno','dia_fecha','día_fecha','date','fecha_programada','fecha programada'],
   diaSemana: ['dia','día','dia_semana','día_semana','day','weekday'],
+  semana: ['semana','n_semana','n° semana','numero_semana','número_semana','week','week_number','semana_iso'],
   timestamp: [
     'timestamp','fecha_hora','fecha hora','fecha','hora_evento','fecha_evento',
     'fecha estado','fecha_estado','hora estado','hora_estado','inicio estado','inicio_estado',
@@ -283,29 +284,95 @@ function normalizeWeekday(v) {
   const map = { 'miercoles':'miercoles','miércoles':'miercoles','sabado':'sabado','sábado':'sabado' };
   return map[n] || n;
 }
+function parseWeekNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const m = String(value).match(/(?:^|\D)(\d{1,2})(?:\D|$)/);
+  if (!m) return null;
+  const w = Number(m[1]);
+  return Number.isInteger(w) && w >= 1 && w <= 53 ? w : null;
+}
+function sourceYear(row) {
+  const source = safeText(row?.__source_file || row?._source_file || '');
+  const m = source.match(/(?:^|\D)(20\d{2})(?:\D|$)/);
+  return m ? Number(m[1]) : new Date().getFullYear();
+}
+function isoDateFromWeekday(year, week, weekdayRaw) {
+  const wd = normalizeWeekday(weekdayRaw);
+  const idx = {lunes:1,martes:2,miercoles:3,jueves:4,viernes:5,sabado:6,domingo:7}[wd];
+  if (!idx || !week || !year) return null;
+  const jan4 = new Date(Date.UTC(year,0,4));
+  const jan4Iso = jan4.getUTCDay() || 7;
+  const monday = new Date(jan4);
+  monday.setUTCDate(jan4.getUTCDate() - jan4Iso + 1 + (week-1)*7 + (idx-1));
+  return monday.toISOString().slice(0,10);
+}
 function rowDateKey(row, type) {
   const direct = parseDateKey(pick(row, FIELDS.fecha));
   if (direct) return direct;
-  if (type === 'logeo') return parseDateKey(getEventTimeValue(row));
-  if (type === 'citaciones') return parseDateKey(pick(row, FIELDS.timestamp));
+  if (type === 'logeo') {
+    const eventDate = parseDateKey(getEventTimeValue(row));
+    if (eventDate) return eventDate;
+  }
+  if (type === 'citaciones') {
+    const eventDate = parseDateKey(pick(row, FIELDS.timestamp));
+    if (eventDate) return eventDate;
+  }
+  const week = parseWeekNumber(pick(row, FIELDS.semana));
+  const weekday = pick(row, FIELDS.diaSemana);
+  if (week && weekday) return isoDateFromWeekday(sourceYear(row), week, weekday);
   return null;
+}
+
+const runtimeIndexCache = new Map();
+function datasetRevision(type) {
+  const meta = state?.datasets?.[type]?.metadatos || {};
+  return `${meta.revision || 0}|${meta.cantidad || 0}|${meta.cargado_en || ''}`;
+}
+function invalidateDatasetCache(type) { runtimeIndexCache.delete(type); }
+function datasetDateIndex(type) {
+  const rev = datasetRevision(type);
+  const cached = runtimeIndexCache.get(type);
+  if (cached?.rev === rev) return cached;
+  const rows = getDatasetRows(type);
+  const byDate = new Map(), byWeekday = new Map(), timeless = [];
+  let explicitCount = 0;
+  for (const row of rows) {
+    const dk = rowDateKey(row, type);
+    if (dk) {
+      explicitCount++;
+      if (!byDate.has(dk)) byDate.set(dk, []);
+      byDate.get(dk).push(row);
+      continue;
+    }
+    const wd = normalizeWeekday(pick(row, FIELDS.diaSemana));
+    if (wd) {
+      if (!byWeekday.has(wd)) byWeekday.set(wd, []);
+      byWeekday.get(wd).push(row);
+    } else timeless.push(row);
+  }
+  const idx = { rev, byDate, byWeekday, timeless, explicitCount };
+  runtimeIndexCache.set(type, idx);
+  return idx;
 }
 function filterRowsForDate(rows, fecha, type) {
   const safeRows = Array.isArray(rows) ? rows : [];
   if (!fecha) return safeRows;
+  if (safeRows === getDatasetRows(type)) {
+    const idx = datasetDateIndex(type);
+    if (idx.explicitCount > 0) return idx.byDate.get(fecha) || [];
+    const targetDay = weekdayEs(fecha);
+    return [...(idx.byWeekday.get(targetDay) || []), ...idx.timeless];
+  }
   const targetDay = weekdayEs(fecha);
   return safeRows.filter(row => {
     const dk = rowDateKey(row, type);
     if (dk) return dk === fecha;
-    // Si existe un campo temporal explícito pero no se puede interpretar, la fila es inválida
-    // para un filtro por fecha y no debe contaminar otro período.
     const rawFecha = pick(row, FIELDS.fecha);
     const rawEvento = type === 'logeo' ? getEventTimeValue(row) : (type === 'citaciones' ? pick(row, FIELDS.timestamp) : null);
     if ((rawFecha !== null && rawFecha !== undefined && String(rawFecha).trim() !== '') ||
         (rawEvento !== null && rawEvento !== undefined && String(rawEvento).trim() !== '')) return false;
     const wd = normalizeWeekday(pick(row, FIELDS.diaSemana));
     if (wd) return wd === targetDay;
-    // Compatibilidad con archivos diarios sin fecha ni día explícitos.
     return true;
   });
 }
@@ -605,10 +672,17 @@ function buildOperatorRecords(fecha = '') {
   const citations = filterRowsForDate(getCitaciones(), fecha, 'citaciones');
   const logs = getLogeo(); // v1.7: se indexa todo el StatusBreakdown para soportar turnos nocturnos que cruzan medianoche
   const cByKey = new Map();
-  const logsByKey = new Map();
-
   for (const c of citations) addToMultiIndex(cByKey, c);
-  for (const l of logs) addToMultiIndex(logsByKey, l);
+
+  const logIndexRev = datasetRevision('logeo');
+  let logIndexCached = runtimeIndexCache.get('__log_operator_index');
+  if (!logIndexCached || logIndexCached.rev !== logIndexRev) {
+    const map = new Map();
+    for (const l of logs) addToMultiIndex(map, l);
+    logIndexCached = { rev: logIndexRev, map };
+    runtimeIndexCache.set('__log_operator_index', logIndexCached);
+  }
+  const logsByKey = logIndexCached.map;
 
   const buildErrors = [];
   const built = shifts.map((t, idx) => {
@@ -842,14 +916,24 @@ app.post('/api/ingesta', requireAuth, (req, res) => {
       });
     }
 
+    const lote = Number(req.body?.lote || 1);
+    const totalLotes = Number(req.body?.total_lotes || 1);
+    const esUltimoLote = !Number.isFinite(totalLotes) || totalLotes <= 1 || lote >= totalLotes;
+    const validConFuente = result.valid.map(row => ({ ...row, __source_file: row?.__source_file || archivo }));
     const anteriores = modo === 'append' && Array.isArray(state.datasets?.[tipo]?.datos)
       ? state.datasets[tipo].datos
       : [];
-    const combinados = modo === 'append'
-      ? [...anteriores, ...result.valid]
-      : [...result.valid];
+    let combinados;
+    if (modo === 'append') {
+      anteriores.push(...validConFuente);
+      combinados = anteriores;
+    } else {
+      combinados = validConFuente;
+    }
 
-    const dateProfile = datasetDateProfile(combinados, tipo);
+    invalidateDatasetCache(tipo);
+    runtimeIndexCache.delete('__log_operator_index');
+    const dateProfile = esUltimoLote ? datasetDateProfile(combinados, tipo) : { fechas:[], fecha_unica:null };
     const metaAnterior = modo === 'append' ? (state.datasets?.[tipo]?.metadatos || {}) : {};
     const archivosPrevios = Array.isArray(metaAnterior.archivos) ? metaAnterior.archivos : [];
     const archivos = [...new Set([...archivosPrevios, archivo].filter(Boolean))];
@@ -869,6 +953,7 @@ app.post('/api/ingesta', requireAuth, (req, res) => {
         fechas_detectadas: dateProfile.fechas,
         fecha_unica: dateProfile.fecha_unica,
         modo_ultima_carga: modo,
+        revision: Number(metaAnterior.revision || 0) + 1,
       },
     };
 
@@ -892,7 +977,7 @@ app.post('/api/ingesta', requireAuth, (req, res) => {
       fecha: nowIso(),
     });
     state.audit = state.audit.slice(0, 2000);
-    persistState();
+    if (esUltimoLote) persistState();
 
     const info = {
       tipo,
@@ -904,7 +989,7 @@ app.post('/api/ingesta', requireAuth, (req, res) => {
       fechas_detectadas: dateProfile.fechas,
       fecha_unica: dateProfile.fecha_unica,
     };
-    io.emit('ingesta:actualizada', info);
+    if (esUltimoLote) io.emit('ingesta:actualizada', info);
     return res.json({ ok:true, ...info, errores: result.errors.slice(0,5) });
   } catch (err) {
     registrarErrorDetallado({
@@ -1348,10 +1433,8 @@ function recordsToPlantRows(records) {
 }
 
 function loadedTurnoDates(from='', to='') {
-  const profile=datasetDateProfile(Array.isArray(getTurnos())?getTurnos():[], 'turnos');
-  return (Array.isArray(profile?.fechas)?profile.fechas:[])
-    .map(x=>safeText(x?.fecha))
-    .filter(Boolean)
+  const idx = datasetDateIndex('turnos');
+  return [...idx.byDate.keys()]
     .filter(d=>(!from||d>=from)&&(!to||d<=to))
     .sort();
 }
@@ -1406,6 +1489,7 @@ app.get('/api/historico/dashboard', requireAuth, (req,res) => {
     const plantasFiltro = req.query.plantas ? String(req.query.plantas).split(',').map(safeText).filter(Boolean) : [];
 
     const fechasTurnos = loadedTurnoDates(from,to);
+    const fechasStatus = [...datasetDateIndex('logeo').byDate.keys()].filter(d=>(!from||d>=from)&&(!to||d<=to)).sort();
     const daily = [];
     const diasIncompletos = [];
 
@@ -1423,6 +1507,21 @@ app.get('/api/historico/dashboard', requireAuth, (req,res) => {
       if (!plants.length) continue;
       daily.push({ fecha, plants, coverage });
     }
+
+    // Fallback seguro: si los Turnos cargados no traen fecha/semana suficiente para reconstruir
+    // el histórico, se aprovechan snapshots existentes sin duplicar fechas ya calculadas.
+    const existingDates = new Set(daily.map(d=>d.fecha));
+    const snapshots = Array.isArray(state.historico) ? state.historico.filter(h => (!from || h?.fecha >= from) && (!to || h?.fecha <= to)) : [];
+    for (const snap of snapshots) {
+      if (!snap?.fecha || existingDates.has(snap.fecha)) continue;
+      let plants = historicalPlantRows(snap);
+      if (zona) plants = plants.filter(p=>p?.zona===zona);
+      if (plantasFiltro.length) plants = plants.filter(p=>plantasFiltro.includes(p?.planta));
+      if (!plants.length) continue;
+      daily.push({ fecha:snap.fecha, plants, coverage:{turnosFilas:plants.reduce((a,p)=>a+(Number(p?.turnos)||0),0), logeoFilas:plants.reduce((a,p)=>a+(Number(p?.logeo)||0),0)}, source:'snapshot' });
+      existingDates.add(snap.fecha);
+    }
+    daily.sort((a,b)=>a.fecha.localeCompare(b.fecha));
 
     const weeklyMap = new Map();
     for (const day of daily) {
@@ -1463,6 +1562,9 @@ app.get('/api/historico/dashboard', requireAuth, (req,res) => {
       diasConDatos:daily.length,
       diasIncompletos,
       fechasTurnosDetectadas:fechasTurnos.length,
+      fechasStatusDetectadas:fechasStatus.length,
+      turnosSinFecha: datasetDateIndex('turnos').explicitCount === 0 && getTurnos().length > 0,
+      statusSinFecha: datasetDateIndex('logeo').explicitCount === 0 && getLogeo().length > 0,
       weekly,
       acumulado,
       zonas,
@@ -1494,7 +1596,7 @@ app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 if (require.main === module && process.env.CCO_TEST_MODE !== '1') {
   server.listen(PORT, () => {
-    console.log(`[CCO][startup] CCO Intelligence v2.4.0 activo en puerto ${PORT}`);
+    console.log(`[CCO][startup] CCO Intelligence v2.5.0 activo en puerto ${PORT}`);
     if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producción.');
   });
 }
