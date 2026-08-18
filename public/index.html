@@ -176,7 +176,7 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 @media(max-width:760px){.module-switcher{right:10px;bottom:10px;left:10px;justify-content:center}.module-switcher button{flex:1}.module-tabs{top:4px}}
 
 
-/* v2.2 navegación principal: selector fijo siempre visible */
+/* v2.3 navegación principal: selector fijo siempre visible */
 .module-switcher{position:fixed!important;top:12px!important;right:16px!important;bottom:auto!important;left:auto!important;z-index:99999!important;display:flex!important;align-items:center!important;justify-content:center!important;gap:6px!important;width:auto!important;padding:6px!important;margin:0!important;background:rgba(255,255,255,.98)!important;border:1px solid var(--line)!important;border-radius:12px!important;box-shadow:0 8px 24px rgba(16,42,67,.16)!important;backdrop-filter:blur(8px)!important}
 .module-switcher-label{font-size:9px;font-weight:800;letter-spacing:.5px;color:#607a91;margin:0 3px}
 .module-switcher button{margin:0!important;padding:8px 11px!important;font-size:11px!important;font-weight:800!important;border-radius:8px!important;min-width:0!important;white-space:nowrap!important}
@@ -223,11 +223,11 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v2.2</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v2.3</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
     <label style="margin:0;font-size:10px">Fecha operacional <input id="scopeFecha" type="date" onchange="cambiarFechaOperacional()" style="width:145px;margin-left:5px"></label>
-    <span id="appVersion" class="pill">v2.2</span><span id="connPill" class="pill">Conectando…</span>
+    <span id="appVersion" class="pill">v2.3</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
 <div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
@@ -657,7 +657,7 @@ Object.keys(TIPOS_ARCHIVO).forEach(inputId=>{
 });
 
 
-// v2.2 — Carga masiva desde carpeta (Chrome / Edge). Cada carpeta debe contener
+// v2.3 — Carga masiva desde carpeta (Chrome / Edge). Cada carpeta debe contener
 // archivos de la misma fuente: Turnos, Citaciones o StatusBreakdown/Logeo.
 const CARPETAS_ARCHIVO = {
   folderTurnos:{tipo:'turnos', boton:'btnFolderTurnos'},
@@ -702,7 +702,7 @@ async function procesarCarpeta(tipo, files){
   }
   const etiqueta=`Carpeta (${usados.length} archivos) · ${usados.slice(0,3).join(' | ')}${usados.length>3?' | …':''}`;
   setStatusText(tipo,`${acumuladas.length} filas combinadas de ${usados.length} archivo(s). Subiendo...`);
-  subirIngesta(tipo, acumuladas, etiqueta);
+  await subirIngesta(tipo, acumuladas, etiqueta);
   if(errores.length) console.warn('Archivos omitidos en carga de carpeta:',errores);
 }
 
@@ -820,47 +820,133 @@ function usarHoja(tipo, wb, nombreHoja, nombreArchivo){
   subirIngesta(tipo, registros, `${nombreArchivo} · ${nombreHoja}`);
 }
 
-function subirIngesta(tipo, registros, nombreArchivo){
-  setDot(tipo,'busy'); setStatusText(tipo, `Subiendo ${registros.length} filas...`);
-  fetch(API+'/api/ingesta',{method:'POST',headers:authHeaders(),
-    body:JSON.stringify({tipo, datos:registros, archivo:nombreArchivo})})
-    .then(r=>{
-      if(!r.ok) return r.json().then(j=>{
-        const detalle = Array.isArray(j.errores) && j.errores.length ? ' · '+j.errores.slice(0,3).join(' | ') : '';
-        throw new Error((j.error || ('HTTP '+r.status)) + detalle);
-      });
-      return r.json();
-    })
-    .then(resp=>{
-      setDot(tipo,'ok');
+async function leerRespuestaApiSegura(response){
+  const contentType = String(response.headers?.get?.('content-type') || '').toLowerCase();
+  const texto = await response.text();
+  let data = null;
 
-      // StatusBreakdown normalmente corresponde a un único día operacional.
-      // Si su fecha difiere de la fecha seleccionada, sincronizamos el CCO con
-      // la fecha real del archivo para evitar un reporte con 0 logeos/asignados.
-      if(tipo === 'logeo' && resp.fecha_unica){
-        const fechaAnterior = user?.fecha || '';
-        if(user && fechaAnterior !== resp.fecha_unica){
-          user.fecha = resp.fecha_unica;
-          const scope = document.getElementById('scopeFecha');
-          const gateFecha = document.getElementById('gFecha');
-          if(scope) scope.value = resp.fecha_unica;
-          if(gateFecha) gateFecha.value = resp.fecha_unica;
-          document.getElementById('userInfo').textContent = user.nombre+' · '+user.rol+(user.zona?' · '+user.zona:'')+(user.region?' · '+user.region:'')+(user.planta?' · '+user.planta:'')+' · '+user.fecha;
-          setStatusText(tipo, `${resp.cantidad} filas · ${resp.subido_por} · Fecha StatusBreakdown ${resp.fecha_unica} (fecha operacional sincronizada)`, 'ok');
-        } else {
-          setStatusText(tipo, `${resp.cantidad} filas · ${resp.subido_por} · Fecha ${resp.fecha_unica}`, 'ok');
-        }
-      } else {
-        marcarIngestaStatus(tipo, resp.cantidad, resp.subido_por, false);
+  if(texto){
+    try{
+      data = JSON.parse(texto);
+    }catch(parseErr){
+      const pareceHtml = /^\s*</.test(texto) || contentType.includes('text/html');
+      const vista = texto.replace(/\s+/g,' ').slice(0,180);
+      const msg = pareceHtml
+        ? `El servidor devolvió HTML en vez de JSON (HTTP ${response.status}). Esto suele ocurrir por límite de tamaño, proxy o endpoint incorrecto.`
+        : `Respuesta inválida del servidor (HTTP ${response.status}).`;
+      const err = new Error(`${msg}${vista ? ' · Respuesta: '+vista : ''}`);
+      err.httpStatus = response.status;
+      err.contentType = contentType;
+      throw err;
+    }
+  }
+
+  if(!response.ok){
+    const detalle = Array.isArray(data?.errores) && data.errores.length
+      ? ' · '+data.errores.slice(0,3).join(' | ')
+      : (data?.detalle ? ' · '+data.detalle : '');
+    throw new Error((data?.error || `HTTP ${response.status}`) + detalle);
+  }
+
+  if(!data || typeof data !== 'object'){
+    throw new Error(`El servidor no devolvió un objeto JSON válido (HTTP ${response.status}).`);
+  }
+  return data;
+}
+
+async function subirIngesta(tipo, registros, nombreArchivo){
+  try{
+    if(!['turnos','citaciones','logeo'].includes(tipo)){
+      throw new Error(`Tipo de ingesta inválido: ${tipo || 'vacío'}`);
+    }
+    if(!Array.isArray(registros) || registros.length===0){
+      throw new Error('No existen filas para subir.');
+    }
+    if(!API){
+      throw new Error('La URL del servidor CCO no está disponible.');
+    }
+    if(!token){
+      throw new Error('La sesión CCO no está autenticada. Vuelve a ingresar.');
+    }
+
+    const BATCH_SIZE = 750;
+    const totalLotes = Math.ceil(registros.length / BATCH_SIZE);
+    let ultimaRespuesta = null;
+
+    setDot(tipo,'busy');
+    setStatusText(tipo, `Preparando ${registros.length} filas en ${totalLotes} lote(s)...`);
+
+    for(let lote=0; lote<totalLotes; lote++){
+      const inicio = lote * BATCH_SIZE;
+      const datosLote = registros.slice(inicio, inicio + BATCH_SIZE);
+      const modo = lote===0 ? 'replace' : 'append';
+      setStatusText(tipo, `Subiendo lote ${lote+1}/${totalLotes} · ${Math.min(inicio+datosLote.length, registros.length)}/${registros.length} filas...`);
+
+      let response;
+      try{
+        response = await fetch(API+'/api/ingesta',{
+          method:'POST',
+          headers:authHeaders(),
+          body:JSON.stringify({
+            tipo,
+            datos:datosLote,
+            archivo:nombreArchivo,
+            modo,
+            lote:lote+1,
+            total_lotes:totalLotes
+          })
+        });
+      }catch(networkErr){
+        throw new Error(`No fue posible contactar el servidor durante el lote ${lote+1}/${totalLotes}: ${networkErr?.message || networkErr}`);
       }
 
-      // Si el reporte estaba abierto, se recalcula automáticamente con la fecha correcta.
-      if(tipo === 'logeo' && document.getElementById('reporteBox')?.style.display !== 'none') generarReporte();
-    })
-    .catch(err=>{
-      setDot(tipo,'err');
-      setStatusText(tipo, 'Error al subir: '+err.message, 'err');
-    });
+      ultimaRespuesta = await leerRespuestaApiSegura(response);
+    }
+
+    const resp = ultimaRespuesta;
+    if(!resp) throw new Error('La carga terminó sin respuesta final del servidor.');
+
+    setDot(tipo,'ok');
+
+    if(tipo === 'logeo' && resp.fecha_unica){
+      const fechaAnterior = user?.fecha || '';
+      if(user && fechaAnterior !== resp.fecha_unica){
+        user.fecha = resp.fecha_unica;
+        const scope = document.getElementById('scopeFecha');
+        const gateFecha = document.getElementById('gFecha');
+        if(scope) scope.value = resp.fecha_unica;
+        if(gateFecha) gateFecha.value = resp.fecha_unica;
+        const infoUsuario = document.getElementById('userInfo');
+        if(infoUsuario){
+          infoUsuario.textContent =
+            (user?.nombre ?? 'Usuario')+' · '+(user?.rol ?? '—')+
+            (user?.zona?' · '+user.zona:'')+
+            (user?.region?' · '+user.region:'')+
+            (user?.planta?' · '+user.planta:'')+
+            ' · '+user.fecha;
+        }
+        setStatusText(
+          tipo,
+          `${resp.cantidad ?? registros.length} filas · ${resp.subido_por ?? '—'} · Fecha StatusBreakdown ${resp.fecha_unica} (fecha operacional sincronizada)`,
+          'ok'
+        );
+      }else{
+        setStatusText(tipo, `${resp.cantidad ?? registros.length} filas · ${resp.subido_por ?? '—'} · Fecha ${resp.fecha_unica}`, 'ok');
+      }
+    }else{
+      marcarIngestaStatus(tipo, resp.cantidad ?? registros.length, resp.subido_por ?? '—', false);
+    }
+
+    if(tipo === 'logeo' && document.getElementById('reporteBox')?.style.display !== 'none'){
+      generarReporte();
+    }
+    return resp;
+  }catch(err){
+    registrarErrorDetalladoUI('ingesta','subirIngesta',err);
+    setDot(tipo,'err');
+    setStatusText(tipo, 'Error al subir: '+(err?.message || String(err)), 'err');
+    return null;
+  }
 }
 
 function marcarIngestaStatus(tipo, cantidad, subidoPor, remoto){
