@@ -163,6 +163,7 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 .module-tab.active{background:var(--blue);color:white;border-color:var(--blue)}
 .history-toolbar{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:10px;align-items:end}
 .history-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:14px 0}
+.history-audit{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:8px;margin:10px 0 14px}.history-audit .kpi-card{padding:10px 12px}.snapshot-status{font-size:10px;color:var(--mut);margin-left:8px}
 .history-table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:white}
 .history-table{min-width:900px;margin:0}
 .history-empty{padding:22px;text-align:center;color:var(--mut)}
@@ -176,7 +177,7 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 @media(max-width:760px){.module-switcher{right:10px;bottom:10px;left:10px;justify-content:center}.module-switcher button{flex:1}.module-tabs{top:4px}}
 
 
-/* v2.5 navegación principal: selector fijo siempre visible */
+/* v2.6 navegación principal: selector fijo siempre visible */
 .module-switcher{position:fixed!important;top:12px!important;right:16px!important;bottom:auto!important;left:auto!important;z-index:99999!important;display:flex!important;align-items:center!important;justify-content:center!important;gap:6px!important;width:auto!important;padding:6px!important;margin:0!important;background:rgba(255,255,255,.98)!important;border:1px solid var(--line)!important;border-radius:12px!important;box-shadow:0 8px 24px rgba(16,42,67,.16)!important;backdrop-filter:blur(8px)!important}
 .module-switcher-label{font-size:9px;font-weight:800;letter-spacing:.5px;color:#607a91;margin:0 3px}
 .module-switcher button{margin:0!important;padding:8px 11px!important;font-size:11px!important;font-weight:800!important;border-radius:8px!important;min-width:0!important;white-space:nowrap!important}
@@ -223,11 +224,11 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v2.5</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v2.6</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
-    <label style="margin:0;font-size:10px">Fecha operacional <input id="scopeFecha" type="date" onchange="cambiarFechaOperacional()" style="width:145px;margin-left:5px"></label>
-    <span id="appVersion" class="pill">v2.5</span><span id="connPill" class="pill">Conectando…</span>
+    <label id="opDateControl" style="margin:0;font-size:10px">Fecha Operación Nacional <input id="scopeFecha" type="date" onchange="cambiarFechaOperacional()" style="width:145px;margin-left:5px"></label>
+    <span id="appVersion" class="pill">v2.6</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
 <div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
@@ -244,7 +245,7 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
   <div id="historicoPanel" class="card" style="display:none">
     <h2>Trazabilidad histórica <span class="small">(Semana 25 a la fecha)</span></h2>
-    <p class="small">Tablero histórico conectado: la adherencia semanal, los acumulados, la apertura por zona y los KPIs por planta responden a los mismos filtros.</p>
+    <p class="small"><b>Fuente exclusiva:</b> snapshots históricos consolidados. Esta vista no lee Turnos, Citaciones ni StatusBreakdown activos. Sus filtros son independientes de Operación Nacional.</p>
 
     <div class="history-toolbar" style="grid-template-columns:repeat(4,minmax(150px,1fr))">
       <div><label>Desde</label><input id="histDesde" type="date"></div>
@@ -261,6 +262,13 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
       <span class="small" id="histAlcance" style="align-self:center"></span>
     </div>
     <div id="histDiagnostico" class="history-note" style="margin:6px 0 10px"></div>
+    <div id="histAudit" class="history-audit">
+      <div class="kpi-card"><div class="kpi-label">Fecha Operación Nacional</div><div class="kpi-valor" id="auditOpFecha">—</div><div class="kpi-sub">Estado independiente</div></div>
+      <div class="kpi-card"><div class="kpi-label">Último Snapshot Histórico</div><div class="kpi-valor" id="auditUltSnapshot">—</div><div class="kpi-sub">Repositorio histórico</div></div>
+      <div class="kpi-card"><div class="kpi-label">Semanas Disponibles</div><div class="kpi-valor" id="auditSemanas">0</div><div class="kpi-sub">Snapshots consolidados</div></div>
+      <div class="kpi-card"><div class="kpi-label">Días Disponibles</div><div class="kpi-valor" id="auditDias">0</div><div class="kpi-sub">Fechas con snapshot</div></div>
+      <div class="kpi-card"><div class="kpi-label">Registros Históricos</div><div class="kpi-valor" id="auditRegistros">0</div><div class="kpi-sub">Snapshots nacionales</div></div>
+    </div>
     <div id="histPlantasLista" class="multiselect-box"></div>
 
     <div class="rep-header"><span class="rep-titulo">Adherencia general por semana</span><span class="rep-meta">Desde semana 25</span></div>
@@ -281,7 +289,7 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
         <tbody id="histBody"><tr><td colspan="8" class="history-empty">Aún no se ha consultado el histórico.</td></tr></tbody>
       </table>
     </div>
-    <div class="history-note">La trazabilidad se reconstruye directamente desde los archivos cargados. Para histórico semanal, Turnos debe incluir fecha o combinación Semana + Día; StatusBreakdown debe incluir fecha/hora del evento.</div>
+    <div class="history-note"><b>Regla de separación:</b> Operación Nacional = fotografía activa del día. Trazabilidad Histórica = película construida únicamente desde snapshots guardados. Cargar archivos o cambiar filtros diarios no altera esta vista.</div>
   </div>
 
   <div class="card">
@@ -349,6 +357,7 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
     <div id="pickerLogeo"></div>
     <p class="batch-help">También puedes seleccionar una carpeta por cada fuente. CCO combinará todos los .xls, .xlsx y .csv compatibles de esa carpeta en una sola carga.</p>
     <button onclick="generarReporte()">Generar reporte ejecutivo</button>
+    <button class="secondary" id="btnSnapshotHistorico" onclick="guardarSnapshotHistorico()">📌 Guardar snapshot histórico</button><span id="snapshotStatus" class="snapshot-status"></span>
     <button class="secondary" onclick="copiarReporte()">Copiar texto</button>
     <button class="wa-btn" onclick="enviarPorCorreo()">📧 Enviar por correo (Outlook)</button>
     <button class="secondary" onclick="descargarImagenReporte()">🖼️ Descargar gráfico (imagen)</button>
@@ -658,7 +667,7 @@ Object.keys(TIPOS_ARCHIVO).forEach(inputId=>{
 });
 
 
-// v2.5 — Carga masiva optimizada desde carpeta (Chrome / Edge). Cada carpeta debe contener
+// v2.6 — Carga masiva optimizada desde carpeta (Chrome / Edge). Cada carpeta debe contener
 // archivos de la misma fuente: Turnos, Citaciones o StatusBreakdown/Logeo.
 const CARPETAS_ARCHIVO = {
   folderTurnos:{tipo:'turnos', boton:'btnFolderTurnos'},
@@ -1080,6 +1089,38 @@ function normalizarReporte(rep){
   };
 }
 
+function validarOperacionDiariaUI(rep){
+  if(!rep || typeof rep!=='object') throw new Error('Reporte diario inválido');
+  if(rep.empty) return true;
+  if(rep.validacionOperacion?.ok!==true) throw new Error('El backend no certificó la operación diaria');
+  const r=rep.resumen||{};
+  const p=Number(r.programadosExigibles??r.totalTurnos), l=Number(r.logeadosAlCorte??r.totalLogeo), pend=Number(r.pendientesIngreso), a=Number(r.asignados), c=Number(r.primeraCarga);
+  if([p,l,pend,a,c].some(v=>!Number.isFinite(v)||v<0)) throw new Error('KPIs diarios inválidos');
+  if(l>p || pend!==Math.max(0,p-l) || a>l || c>a) throw new Error('Los KPIs diarios no cumplen consistencia matemática');
+  if(rep.fecha!==(user?.fecha||document.getElementById('scopeFecha')?.value)) throw new Error('El reporte no corresponde a la fecha operacional activa');
+  return true;
+}
+
+function validarTrazabilidadHistoricaUI(data){
+  if(!data || typeof data!=='object') throw new Error('Respuesta histórica inválida');
+  if(data.source!=='historicalSnapshots') throw new Error('La trazabilidad intentó usar una fuente distinta de historicalSnapshots');
+  if(!Array.isArray(data.weekly) || !Array.isArray(data.zonas) || !Array.isArray(data.plantas)) throw new Error('Estructura histórica incompleta');
+  if(data.validacionHistorica?.ok!==true) throw new Error('El repositorio histórico no superó validación');
+  return true;
+}
+
+function validarConsistenciaHistoricaUI(data){
+  if(data.consistenciaHistorica?.ok===false){
+    const errs=Array.isArray(data.consistenciaHistorica?.errores)?data.consistenciaHistorica.errores:[];
+    throw new Error(`Consistencia histórica inválida${errs.length?': '+errs.slice(0,3).join(' | '):''}`);
+  }
+  const a=data.acumulado||{};
+  const p=Number(a.programados||0), l=Number(a.logeados||0), pend=Number(a.pendientes||0), asig=Number(a.asignados||0), carga=Number(a.primeraCarga||0);
+  if([p,l,pend,asig,carga].some(v=>!Number.isFinite(v)||v<0)) throw new Error('Acumulados históricos inválidos');
+  if(l>p || pend!==Math.max(0,p-l) || asig>l || carga>asig) throw new Error('Acumulados históricos no cuadran matemáticamente');
+  return true;
+}
+
 async function generarReporte(){
   const box = document.getElementById('reporteBox');
   box.style.display='block';
@@ -1110,6 +1151,7 @@ async function generarReporte(){
       throw new Error((rep.error || `HTTP ${response.status}`) + detalle);
     }
     rep = normalizarReporte(rep);
+    validarOperacionDiariaUI(rep);
     if(rep.empty){
       document.getElementById('repKpisNacionales').innerHTML='';
       document.getElementById('repTablaBody').innerHTML='<tr><td colspan="10" style="text-align:center;padding:18px">Sin información disponible para el período seleccionado</td></tr>';
@@ -1124,7 +1166,7 @@ async function generarReporte(){
       renderReporte(rep);
       if(Array.isArray(rep.erroresConstruccion) && rep.erroresConstruccion.length){ console.warn('Operadores aislados por errores de datos:',rep.erroresConstruccion); }
       if(Array.isArray(rep.advertencias) && rep.advertencias.length){
-        const extra=rep.advertencias.map(a=>`<div class="alert-card medio"><span class="alert-icon">🗂️</span><div class="alert-text"><b>Reporte generado.</b> La trazabilidad no pudo guardarse: ${escapeHtml(a.mensaje||a.codigo||'error histórico')}.</div></div>`).join('');
+        const extra=rep.advertencias.map(a=>`<div class="alert-card medio"><span class="alert-icon">⚠️</span><div class="alert-text"><b>Advertencia de operación:</b> ${escapeHtml(a.mensaje||a.codigo||'dato incompleto')}.</div></div>`).join('');
         document.getElementById('repAlertas').insertAdjacentHTML('afterbegin',extra);
       }
     } catch(renderErr) {
@@ -1135,6 +1177,24 @@ async function generarReporte(){
     registrarErrorDetalladoUI('reporte','generarReporte',err,{url});
     alertas.innerHTML = `<div class="alert-card critico"><span class="alert-icon">⚠️</span><div class="alert-text"><b>No fue posible procesar el reporte.</b> Revise que Turnos, Citaciones y StatusBreakdown correspondan al período seleccionado.</div></div>`;
   }
+}
+
+async function guardarSnapshotHistorico(){
+  const status=document.getElementById('snapshotStatus');
+  const btn=document.getElementById('btnSnapshotHistorico');
+  const fecha=user?.fecha || document.getElementById('scopeFecha')?.value || '';
+  if(!fecha){ if(status) status.textContent='Seleccione fecha operacional.'; return; }
+  if(btn) btn.disabled=true;
+  if(status) status.textContent=`Validando operación ${fecha}...`;
+  try{
+    const r=await fetch(API+'/api/historico/snapshot',{method:'POST',headers:authHeaders(),body:JSON.stringify({fecha})});
+    const data=await leerRespuestaApiSegura(r);
+    if(!r.ok || data?.error) throw new Error(data?.detalle || data?.error || `HTTP ${r.status}`);
+    if(status) status.textContent=`✅ Snapshot ${fecha} guardado`;
+  }catch(err){
+    registrarErrorDetalladoUI('historico','guardarSnapshotHistorico',err,{fecha});
+    if(status) status.textContent=`❌ ${err.message||String(err)}`;
+  }finally{ if(btn) btn.disabled=false; }
 }
 
 function escapeHtml(value){
@@ -1952,6 +2012,8 @@ function cambiarModulo(modulo, desplazar=false){
   document.getElementById('tabOperacion').classList.toggle('active',!hist);
   document.getElementById('tabHistorico').classList.toggle('active',hist);
   const qOp=document.getElementById('quickOperacion'), qHist=document.getElementById('quickHistorico');
+  const opDateControl=document.getElementById('opDateControl');
+  if(opDateControl) opDateControl.style.display=hist?'none':'';
   if(qOp){ qOp.classList.toggle('active',!hist); qOp.classList.toggle('secondary',hist); }
   if(qHist){ qHist.classList.toggle('active',hist); qHist.classList.toggle('secondary',!hist); }
   if(desplazar) window.scrollTo({top:0,behavior:'smooth'});
@@ -2024,17 +2086,21 @@ async function cargarHistorico(){
     const data=await leerRespuestaApiSegura(r);
     if(!data || typeof data!=='object') throw new Error('Respuesta histórica inválida');
     historicoUltimo=data;
-    const incompletos=Array.isArray(data.diasIncompletos)?data.diasIncompletos.length:0;
-    document.getElementById('histAlcance').textContent=`${data.diasConDatos} día(s) completos · ${incompletos} día(s) sin StatusBreakdown · ${data.from} → ${data.to}`;
+    validarTrazabilidadHistoricaUI(data);
+    validarConsistenciaHistoricaUI(data);
+    document.getElementById('histAlcance').textContent=`${data.diasConDatos||0} día(s) con snapshot · ${data.from} → ${data.to}`;
     const diag=document.getElementById('histDiagnostico');
     if(diag){
-      const partes=[];
-      partes.push(`Fechas Turnos detectadas: ${data.fechasTurnosDetectadas||0}`);
-      partes.push(`Fechas StatusBreakdown detectadas: ${data.fechasStatusDetectadas||0}`);
-      if(data.turnosSinFecha) partes.push('⚠ Turnos sin fecha/semana utilizable: el histórico no puede reconstruirse por día');
-      if(data.statusSinFecha) partes.push('⚠ StatusBreakdown sin fecha utilizable');
-      diag.textContent=partes.join(' · ');
+      const errores=Array.isArray(data.consistenciaHistorica?.errores)?data.consistenciaHistorica.errores:[];
+      diag.textContent=`Fuente: historicalSnapshots · Validación: ${data.validacionHistorica?.ok?'OK':'ERROR'} · Consistencia: ${data.consistenciaHistorica?.ok?'OK':('Revisar '+errores.length+' registro(s)')}`;
     }
+    const audit=data.audit||{};
+    const set=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=val??'—';};
+    set('auditOpFecha',user?.fecha||'—');
+    set('auditUltSnapshot',audit.ultimoSnapshotHistorico||'—');
+    set('auditSemanas',audit.semanasDisponibles??0);
+    set('auditDias',audit.diasDisponibles??0);
+    set('auditRegistros',audit.registrosHistoricos??0);
     renderHistoricoDashboard(data);
   }catch(err){
     const diag=document.getElementById('histDiagnostico'); if(diag) diag.textContent='No fue posible consultar la trazabilidad.';
@@ -2044,12 +2110,7 @@ async function cargarHistorico(){
 
 function renderHistoricoDashboard(data){
   const a=data.acumulado||{};
-  const incompletos=Array.isArray(data.diasIncompletos)?data.diasIncompletos:[];
-  const histWarn=document.getElementById('histAlcance');
-  if(histWarn && incompletos.length){
-    const fechas=incompletos.slice(0,6).map(x=>x.fecha).join(', ')+(incompletos.length>6?'…':'');
-    histWarn.title=`Fechas omitidas por falta de StatusBreakdown: ${fechas}`;
-  }
+  const histWarn=document.getElementById('histAlcance'); if(histWarn) histWarn.title='Datos obtenidos exclusivamente desde snapshots históricos guardados.';
   const cards=[
     ['Adherencia acumulada',fmtHist(a.adherenciaPct,'%'),'Referencia operacional'],
     ['Programados acumulados',fmtHist(a.programados),'Semana 25 → fecha'],
@@ -2068,7 +2129,7 @@ function renderHistoricoDashboard(data){
   const plantas=data.plantas||[];
   document.getElementById('histBody').innerHTML=plantas.length?plantas.map(p=>`<tr>
     <td>${escapeHtml(p.zona)}</td><td><b>${escapeHtml(p.planta)}</b></td><td>${p.programados}</td><td>${p.logeados}</td><td>${p.asignados}</td><td>${p.primeraCarga}</td><td>${p.pendientes}</td><td><b>${fmtHist(p.adherenciaPct,'%')}</b></td>
-  </tr>`).join(''):'<tr><td colspan="8" class="history-empty">No hay datos históricos para los filtros seleccionados.</td></tr>';
+  </tr>`).join(''):'<tr><td colspan="8" class="history-empty">No hay snapshots históricos para los filtros seleccionados. Guarde snapshots desde Operación Nacional para construir la trazabilidad.</td></tr>';
 
   renderHistChart(data.weekly||[]);
 }
