@@ -132,7 +132,13 @@ function normalizeName(v) {
 }
 function normalizeId(v) {
   if (v === null || v === undefined) return '';
-  return String(v).trim().replace(/\.0$/, '');
+  let s = String(v).trim().replace(/\.0$/, '');
+  if (!s) return '';
+  if (/^[\d\s.,-]+$/.test(s)) {
+    s = s.replace(/[^0-9]/g, '').replace(/^0+(?=\d)/, '');
+    return s;
+  }
+  return normalizeName(s).replace(/\s+/g, '');
 }
 function normalizeRows(rows) {
   return rows.map((row) => {
@@ -407,16 +413,26 @@ const MASTER_ZONE_PLANTS = Object.fromEntries(
 const PLANT_ALIASES = {
   'espejo': 'Lo Espejo',
   'lo espejo': 'Lo Espejo',
+  'lo espejo 1': 'Lo Espejo',
+  'lo espejo 2': 'Lo Espejo',
   'central mix': 'Central Mix',
+  'divisa central mix': 'Central Mix',
+  'la divisa central mix': 'Central Mix',
   'oriente': 'Planta Oriente',
   'planta oriente': 'Planta Oriente',
+  'divisa oriente': 'Planta Oriente',
+  'la divisa oriente': 'Planta Oriente',
   'poniente': 'Planta Poniente',
   'planta poniente': 'Planta Poniente',
+  'divisa poniente': 'Planta Poniente',
+  'la divisa poniente': 'Planta Poniente',
   'vina': 'Viña del Mar',
   'vina del mar': 'Viña del Mar',
   'concepcion': 'Concepción Hualpén',
+  'concepcion 1': 'Concepción Hualpén',
   'concepcion hualpen': 'Concepción Hualpén',
   'hualpen': 'Concepción Hualpén',
+  'iquique ah': 'Iquique',
   'villarica': 'Villarrica'
 };
 
@@ -425,6 +441,12 @@ function canonicalPlantName(rawName) {
   if (!raw) return 'Sin planta';
   const norm = normalizeName(raw);
   if (PLANT_ALIASES[norm]) return PLANT_ALIASES[norm];
+  if (/central mix/.test(norm)) return 'Central Mix';
+  if (/\b(divisa )?oriente\b/.test(norm)) return 'Planta Oriente';
+  if (/\b(divisa )?poniente\b/.test(norm)) return 'Planta Poniente';
+  if (/\blo espejo\b/.test(norm)) return 'Lo Espejo';
+  if (/^concepcion(\s|$)/.test(norm) || /hualpen/.test(norm)) return 'Concepción Hualpén';
+  if (/^iquique(\s|$)/.test(norm)) return 'Iquique';
   for (const nombres of Object.values(MASTER_ZONE_PLANTS)) {
     const found = nombres.find(n => normalizeName(n) === norm);
     if (found) return found;
@@ -1236,6 +1258,7 @@ app.get('/api/reporte', requireAuth, (req, res) => {
           adelantadosCantidad:adelantados.length,
           filasSinReconocer:unknown,
           filasSinReconocerDetalle:{ plantaVacia:0, codigoDesconocido:unknown },
+          fuentes: sourceCoverageForDate(fecha),
         },
         porPlanta:byPlant,
         rankingAdelantados:[...adelantados].sort((a,b)=>(Number(b.adelantoMin)||0)-(Number(a.adelantoMin)||0)).slice(0,10),
@@ -1299,6 +1322,54 @@ function chooseHistoricalBaseRows(from, to) {
   return [...byDate.values()].sort((a,b)=>a.fecha.localeCompare(b.fecha));
 }
 
+
+function recordsToPlantRows(records) {
+  const safe = Array.isArray(records) ? records : [];
+  const plantNames = [...new Set(safe.map(r=>safeText(r?.planta)).filter(Boolean))];
+  return plantNames.map(planta=>{
+    const rs=safe.filter(r=>r?.planta===planta);
+    const logged=rs.filter(r=>hasMinute(r?.logeoMin));
+    const tm=rs.filter(r=>hasMinute(r?.tiempoMuertoMin));
+    return {
+      planta,
+      zona:ensurePlant(planta).zona,
+      region:ensurePlant(planta).region,
+      turnos:rs.length,
+      citaciones:rs.filter(r=>r?.citacionAplicada===true).length,
+      logeo:logged.length,
+      asignados:rs.filter(r=>hasMinute(r?.asignacionMin)).length,
+      primeraCarga:rs.filter(r=>hasMinute(r?.primeraCargaMin)).length,
+      pendientesIngreso:rs.filter(r=>!hasMinute(r?.logeoMin)).length,
+      adherenciaLogeo:rs.length?round1(logged.length/rs.length*100):null,
+      cumplimientoReferencia:rs.length?round1(rs.filter(r=>r?.categoria==='a_tiempo').length/rs.length*100):null,
+      tiempoMuertoPromedioMin:tm.length?round1(tm.reduce((sum,r)=>sum+(Number(r?.tiempoMuertoMin)||0),0)/tm.length):null,
+    };
+  });
+}
+
+function loadedTurnoDates(from='', to='') {
+  const profile=datasetDateProfile(Array.isArray(getTurnos())?getTurnos():[], 'turnos');
+  return (Array.isArray(profile?.fechas)?profile.fechas:[])
+    .map(x=>safeText(x?.fecha))
+    .filter(Boolean)
+    .filter(d=>(!from||d>=from)&&(!to||d<=to))
+    .sort();
+}
+
+function sourceCoverageForDate(fecha) {
+  const turnos=filterRowsForDate(getTurnos(),fecha,'turnos');
+  const citaciones=filterRowsForDate(getCitaciones(),fecha,'citaciones');
+  const logeo=filterRowsForDate(getLogeo(),fecha,'logeo');
+  const uniqueLogOps=new Set(logeo.flatMap(r=>operatorMatchKeys(r)).filter(k=>k.startsWith('id:'))).size;
+  return {
+    fecha,
+    turnosFilas:turnos.length,
+    citacionesFilas:citaciones.length,
+    logeoFilas:logeo.length,
+    operadoresLogeoUnicos:uniqueLogOps,
+  };
+}
+
 function historicalPlantRows(snapshot) {
   return Array.isArray(snapshot?.porPlanta) ? snapshot.porPlanta : [];
 }
@@ -1334,14 +1405,23 @@ app.get('/api/historico/dashboard', requireAuth, (req,res) => {
     const zona = safeText(req.query.zona || '');
     const plantasFiltro = req.query.plantas ? String(req.query.plantas).split(',').map(safeText).filter(Boolean) : [];
 
-    const snapshots = chooseHistoricalBaseRows(from,to);
+    const fechasTurnos = loadedTurnoDates(from,to);
     const daily = [];
-    for (const snap of snapshots) {
-      let plants = historicalPlantRows(snap);
-      if (zona) plants = plants.filter(p=>p.zona===zona);
-      if (plantasFiltro.length) plants = plants.filter(p=>plantasFiltro.includes(p.planta));
+    const diasIncompletos = [];
+
+    for (const fecha of fechasTurnos) {
+      const coverage = sourceCoverageForDate(fecha);
+      if (coverage.turnosFilas > 0 && coverage.logeoFilas === 0) {
+        diasIncompletos.push({ ...coverage, motivo:'Sin StatusBreakdown para la fecha' });
+        continue;
+      }
+      const built = buildOperatorRecords(fecha);
+      let records = Array.isArray(built) ? built : [];
+      if (zona) records = records.filter(r=>r?.zona===zona);
+      if (plantasFiltro.length) records = records.filter(r=>plantasFiltro.includes(r?.planta));
+      const plants = recordsToPlantRows(records);
       if (!plants.length) continue;
-      daily.push({ fecha:snap.fecha, plants });
+      daily.push({ fecha, plants, coverage });
     }
 
     const weeklyMap = new Map();
@@ -1357,10 +1437,9 @@ app.get('/api/historico/dashboard', requireAuth, (req,res) => {
 
     const allPlants = daily.flatMap(d=>d.plants);
     const acumulado = aggregatePlantHistoricalRows(allPlants);
-
     const zoneNames = ['Norte','Centro','Sur'];
     const zonas = zoneNames.map(z=>{
-      const items = daily.flatMap(d=>d.plants.filter(p=>p.zona===z));
+      const items = daily.flatMap(d=>d.plants.filter(p=>p?.zona===z));
       return { zona:z, ...aggregatePlantHistoricalRows(items) };
     });
 
@@ -1377,17 +1456,21 @@ app.get('/api/historico/dashboard', requireAuth, (req,res) => {
       ...aggregatePlantHistoricalRows(items),
     })).sort((a,b)=>a.zona.localeCompare(b.zona)||a.planta.localeCompare(b.planta));
 
-    res.json({
+    return res.json({
       from,to,zona:zona||null,plantasFiltro,
-      snapshots:snapshots.length,
+      fuente:'datasets_cargados',
+      snapshots:daily.length,
       diasConDatos:daily.length,
+      diasIncompletos,
+      fechasTurnosDetectadas:fechasTurnos.length,
       weekly,
       acumulado,
       zonas,
       plantas,
     });
   } catch (err) {
-    res.status(500).json({ error:'No se pudo construir la trazabilidad histórica', detalle:err?.message||String(err) });
+    registrarErrorDetallado({ modulo:'historico', funcion:'GET /api/historico/dashboard', error:err?.message||String(err), stack:err?.stack });
+    return res.status(422).json({ error:'No se pudo construir la trazabilidad histórica', detalle:err?.message||String(err) });
   }
 });
 
@@ -1411,9 +1494,9 @@ app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 if (require.main === module && process.env.CCO_TEST_MODE !== '1') {
   server.listen(PORT, () => {
-    console.log(`[CCO][startup] CCO Intelligence v2.2.0 activo en puerto ${PORT}`);
+    console.log(`[CCO][startup] CCO Intelligence v2.4.0 activo en puerto ${PORT}`);
     if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producción.');
   });
 }
 
-module.exports = { app, server, state, _test:{ buildOperatorRecords, buildRecordsWithDiagnostics, validateDataset, normalizeRows, parseTimeMinutes, parseDateKey, filterRowsForDate, ensurePlant, registrarErrorDetallado, FIELDS } };
+module.exports = { app, server, state, _test:{ buildOperatorRecords, buildRecordsWithDiagnostics, validateDataset, normalizeRows, parseTimeMinutes, parseDateKey, filterRowsForDate, ensurePlant, canonicalPlantName, normalizeId, sourceCoverageForDate, recordsToPlantRows, registrarErrorDetallado, FIELDS } };
