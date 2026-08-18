@@ -885,54 +885,58 @@ app.get('/api/tabla-operadores', requireAuth, (req, res) => {
 });
 
 app.get('/api/analisis-operadores', requireAuth, (req, res) => {
-  const planta = safeText(req.query.planta || '');
-  if (!planta) return res.status(400).json({ error:'Planta requerida' });
-  const fecha = safeText(req.query.fecha || req.user.fecha || '');
-  const records = buildOperatorRecords(fecha).filter(r=>r.planta===planta);
-  if (!records.length) return res.json({
-    diagnostico:'ATENCIÓN', diagnosticoLineas:['No hay turnos válidos para esta planta.'],
-    resumen:{ totalOperadores:0, conLogeo:0, sinLogeo:0, adherenciaTurnoPct:null, atrasadosPct:null, atrasadosCriticos:0, adelantadosPct:null, logeadosSinAsignacion:0, esperaAsignacionPromedioMin:null },
-    ranking:[], rankingTiempoMuerto:[], logeadosEsperandoAhora:0, operadores:[]
-  });
-  const conLogeo = records.filter(r=>r.logeoMin!==null);
-  const sinLogeo = records.length-conLogeo.length;
-  const atrasados = records.filter(r=>['atraso_leve','atraso_critico'].includes(r.categoria));
-  const criticos = records.filter(r=>r.categoria==='atraso_critico');
-  const adelantados = records.filter(r=>r.categoria==='adelantado');
-  const tm = records.filter(r=>r.tiempoMuertoMin!==null);
-  const esperando = records.filter(r=>r.logeoMin!==null && r.asignacionMin===null).length;
-  const adherence = round1(conLogeo.length / records.length * 100);
-  const cfg = ensurePlant(planta);
-  let diagnostico = 'ESTABLE';
-  if (adherence < 70 || criticos.length >= Math.max(2, Math.ceil(records.length*.2))) diagnostico='CRÍTICO';
-  else if (adherence < 90 || esperando > 0 || tm.some(r=>r.tiempoMuertoMin>cfg.tol_asig)) diagnostico='ATENCIÓN';
-  const lines=[];
-  if(sinLogeo) lines.push(`${sinLogeo} operador(es) sin logeo registrado.`);
-  if(criticos.length) lines.push(`${criticos.length} operador(es) con atraso crítico.`);
-  if(esperando) lines.push(`${esperando} operador(es) logeados aún sin primera asignación.`);
-  if(tm.length) lines.push(`Tiempo muerto promedio logeo → asignación: ${round1(tm.reduce((s,r)=>s+r.tiempoMuertoMin,0)/tm.length)} min.`);
-
-  res.json({
-    diagnostico,
-    diagnosticoLineas: lines,
-    resumen:{
-      totalOperadores:records.length,
-      conLogeo:conLogeo.length,
-      sinLogeo,
-      adherenciaTurnoPct:adherence,
-      atrasadosPct:round1(atrasados.length/records.length*100),
-      atrasadosCriticos:criticos.length,
-      adelantadosPct:round1(adelantados.length/records.length*100),
-      logeadosSinAsignacion:esperando,
-      esperaAsignacionPromedioMin:tm.length?round1(tm.reduce((s,r)=>s+r.tiempoMuertoMin,0)/tm.length):null,
-    },
-    ranking:[...records].filter(r=>r.atrasoTurnoMin!==null).sort((a,b)=>Math.abs(b.atrasoTurnoMin)-Math.abs(a.atrasoTurnoMin)).slice(0,10),
-    rankingTiempoMuerto:[...tm].sort((a,b)=>b.tiempoMuertoMin-a.tiempoMuertoMin).slice(0,10).map(r=>({...r, tiempoMuertoCategoria:r.tiempoMuertoMin<=30?'ok':r.tiempoMuertoMin<=60?'atencion':'critico'})),
-    logeadosEsperandoAhora:esperando,
-    operadores:records,
-  });
+  try {
+    const planta = safeText(req.query.planta || '');
+    if (!planta) return res.status(400).json({ error:'Planta requerida' });
+    const fecha = safeText(req.query.fecha || req.user.fecha || '');
+    const records = buildOperatorRecords(fecha).filter(r=>r.planta===planta);
+    if (!records.length) return res.json({
+      diagnostico:'ATENCIÓN', diagnosticoLineas:['No hay turnos válidos para esta planta.'],
+      resumen:{ totalOperadores:0, conLogeo:0, sinLogeo:0, adherenciaTurnoPct:null, atrasadosPct:null, atrasadosCriticos:0, adelantadosPct:null, logeadosSinAsignacion:0, esperaAsignacionPromedioMin:null },
+      ranking:[], rankingTiempoMuerto:[], logeadosEsperandoAhora:0, operadores:[]
+    });
+    const conLogeo = records.filter(r=>r.logeoMin!==null);
+    const sinLogeo = records.length-conLogeo.length;
+    const atrasados = records.filter(r=>['atraso_leve','atraso_critico'].includes(r.categoria));
+    const criticos = records.filter(r=>r.categoria==='atraso_critico');
+    const adelantados = records.filter(r=>r.categoria==='adelantado');
+    const tm = records.filter(r=>r.tiempoMuertoMin!==null);
+    const esperando = records.filter(r=>r.logeoMin!==null && r.asignacionMin===null).length;
+    const adherence = round1(conLogeo.length / records.length * 100);
+    const cfg = ensurePlant(planta);
+    let diagnostico = 'ESTABLE';
+    if (adherence < 70 || criticos.length >= Math.max(2, Math.ceil(records.length*.2))) diagnostico='CRÍTICO';
+    else if (adherence < 90 || esperando > 0 || tm.some(r=>r.tiempoMuertoMin>cfg.tol_asig)) diagnostico='ATENCIÓN';
+    const lines=[];
+    if(sinLogeo) lines.push(`${sinLogeo} operador(es) sin logeo registrado.`);
+    if(criticos.length) lines.push(`${criticos.length} operador(es) con atraso crítico.`);
+    if(esperando) lines.push(`${esperando} operador(es) logeados aún sin primera asignación.`);
+    if(tm.length) lines.push(`Tiempo muerto promedio logeo → asignación: ${round1(tm.reduce((s,r)=>s+r.tiempoMuertoMin,0)/tm.length)} min.`);
+  
+    res.json({
+      diagnostico,
+      diagnosticoLineas: lines,
+      resumen:{
+        totalOperadores:records.length,
+        conLogeo:conLogeo.length,
+        sinLogeo,
+        adherenciaTurnoPct:adherence,
+        atrasadosPct:round1(atrasados.length/records.length*100),
+        atrasadosCriticos:criticos.length,
+        adelantadosPct:round1(adelantados.length/records.length*100),
+        logeadosSinAsignacion:esperando,
+        esperaAsignacionPromedioMin:tm.length?round1(tm.reduce((s,r)=>s+r.tiempoMuertoMin,0)/tm.length):null,
+      },
+      ranking:[...records].filter(r=>r.atrasoTurnoMin!==null).sort((a,b)=>Math.abs(b.atrasoTurnoMin)-Math.abs(a.atrasoTurnoMin)).slice(0,10),
+      rankingTiempoMuerto:[...tm].sort((a,b)=>b.tiempoMuertoMin-a.tiempoMuertoMin).slice(0,10).map(r=>({...r, tiempoMuertoCategoria:r.tiempoMuertoMin<=30?'ok':r.tiempoMuertoMin<=60?'atencion':'critico'})),
+      logeadosEsperandoAhora:esperando,
+      operadores:records,
+    });
+  } catch (err) {
+    console.error('ERROR /api/analisis-operadores:', err && err.stack ? err.stack : err);
+    return res.status(500).json({ error:'Error interno al analizar operadores', detalle:err?.message || String(err) });
+  }
 });
-
 
 function historyScopeKey({ zona=null, region=null, planta=null, plantasFiltro=null } = {}) {
   if (planta) return `PLANTA:${planta}`;
@@ -943,7 +947,8 @@ function historyScopeKey({ zona=null, region=null, planta=null, plantasFiltro=nu
 }
 
 function saveHistorySnapshot(payload, req) {
-  if (!payload || !payload.fecha || !payload.resumen) return;
+  if (!payload || !payload.fecha || !payload.resumen) return { ok:false, skipped:true };
+  if (!Array.isArray(state.historico)) state.historico = [];
   const scope = {
     zona: payload.zona || null,
     region: payload.region || null,
@@ -970,6 +975,7 @@ function saveHistorySnapshot(payload, req) {
   }
   state.historico = state.historico.slice(0, 5000);
   persistState();
+  return { ok:true, scopeKey };
 }
 
 function isoWeekKey(dateStr) {
@@ -1092,14 +1098,19 @@ app.get('/api/reporte', requireAuth, (req, res) => {
         rankingAdelantados:[...adelantados].sort((a,b)=>b.adelantoMin-a.adelantoMin).slice(0,10),
         rankingTiempoMuertoNacional:[...tmAll].sort((a,b)=>b.tiempoMuertoMin-a.tiempoMuertoMin).slice(0,10),
       };
-      saveHistorySnapshot(payload, req);
+      try {
+        saveHistorySnapshot(payload, req);
+      } catch (historyErr) {
+        console.error('WARN histórico: el reporte diario se entregará igualmente:', historyErr && historyErr.stack ? historyErr.stack : historyErr);
+        payload.advertencias = [...(payload.advertencias || []), { codigo:'HISTORICO_NO_GUARDADO', mensaje: historyErr?.message || String(historyErr) }];
+      }
       return res.json(payload);
   } catch (err) {
     console.error('ERROR /api/reporte:', err && err.stack ? err.stack : err);
     return res.status(500).json({
       error: 'Error interno al construir el reporte',
       detalle: err?.message || String(err),
-      version: '1.9.0'
+      version: '2.0.1'
     });
   }
 });
@@ -1246,7 +1257,7 @@ io.on('connection', (socket) => {
 app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 server.listen(PORT, () => {
-  console.log(`CCO Intelligence v2.0.0 activo en puerto ${PORT}`);
+  console.log(`CCO Intelligence v2.0.1 activo en puerto ${PORT}`);
   if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') {
     console.warn('ADVERTENCIA: configure AUTH_SECRET en producción.');
   }
