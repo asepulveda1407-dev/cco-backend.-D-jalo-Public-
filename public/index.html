@@ -175,6 +175,16 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 .module-tabs{position:sticky;top:8px;z-index:150;background:#f7fbff;box-shadow:0 5px 16px rgba(16,42,67,.08)}
 @media(max-width:760px){.module-switcher{right:10px;bottom:10px;left:10px;justify-content:center}.module-switcher button{flex:1}.module-tabs{top:4px}}
 
+
+/* v2.1 navegación principal siempre visible */
+.module-switcher{position:sticky!important;top:57px!important;right:auto!important;bottom:auto!important;left:auto!important;z-index:9000!important;display:flex!important;align-items:center;justify-content:center;gap:8px;width:100%;padding:8px 14px;margin:0;background:#ffffff;border:0;border-bottom:1px solid var(--line);border-radius:0;box-shadow:0 5px 16px rgba(16,42,67,.10);backdrop-filter:none}
+.module-switcher-label{font-size:10px;font-weight:800;letter-spacing:.55px;color:#607a91;margin-right:4px}
+.module-switcher button{margin:0!important;padding:10px 16px!important;font-size:12px!important;font-weight:800!important;border-radius:9px!important;min-width:190px}
+.module-tabs{display:none!important}
+@media(max-width:760px){.module-switcher{top:55px!important;left:auto!important;right:auto!important;bottom:auto!important;padding:7px 8px}.module-switcher-label{display:none}.module-switcher button{min-width:0;flex:1;padding:9px 8px!important;font-size:11px!important}}
+.batch-folder-btn{flex:0 0 auto!important;margin:0!important;padding:7px 10px!important;white-space:nowrap}
+.batch-help{font-size:10px;color:var(--mut);margin:6px 0 0}
+
 </style>
 </head>
 <body>
@@ -213,16 +223,17 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v2.1</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
     <label style="margin:0;font-size:10px">Fecha operacional <input id="scopeFecha" type="date" onchange="cambiarFechaOperacional()" style="width:145px;margin-left:5px"></label>
-    <span id="connPill" class="pill">Conectando…</span>
+    <span id="appVersion" class="pill">v2.1</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
-<div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar módulo CCO">
-  <button type="button" id="quickOperacion" class="active">📊 Operación</button>
-  <button type="button" id="quickHistorico" class="secondary">📈 Trazabilidad</button>
+<div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
+  <span class="module-switcher-label">VISTA CCO</span>
+  <button type="button" id="quickOperacion" class="active">📊 Operación Nacional</button>
+  <button type="button" id="quickHistorico" class="secondary">📈 Trazabilidad Histórica</button>
 </div>
 <main>
 
@@ -319,22 +330,23 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
     <h2>Carga de datos <span class="small">(Excel de Turnos, Citaciones y Logeo — se procesa en tu navegador, solo se envían las filas ya leídas)</span></h2>
     <div class="upload-row">
       <label class="filelabel"><span class="status-dot" id="dotTurnos"></span>Turnos (programación)</label>
-      <input type="file" id="fileTurnos" accept=".xlsx,.xls,.csv">
+      <input type="file" id="fileTurnos" accept=".xlsx,.xls,.csv"><input type="file" id="folderTurnos" accept=".xlsx,.xls,.csv" webkitdirectory directory multiple style="display:none"><button type="button" class="secondary batch-folder-btn" id="btnFolderTurnos">📁 Cargar carpeta</button>
       <span class="upload-status" id="statusTurnos">Sin datos</span>
     </div>
     <div id="pickerTurnos"></div>
     <div class="upload-row">
       <label class="filelabel"><span class="status-dot" id="dotCitaciones"></span>Citaciones</label>
-      <input type="file" id="fileCitaciones" accept=".xlsx,.xls,.csv">
+      <input type="file" id="fileCitaciones" accept=".xlsx,.xls,.csv"><input type="file" id="folderCitaciones" accept=".xlsx,.xls,.csv" webkitdirectory directory multiple style="display:none"><button type="button" class="secondary batch-folder-btn" id="btnFolderCitaciones">📁 Cargar carpeta</button>
       <span class="upload-status" id="statusCitaciones">Sin datos</span>
     </div>
     <div id="pickerCitaciones"></div>
     <div class="upload-row">
       <label class="filelabel"><span class="status-dot" id="dotLogeo"></span>Logeo (marcación real)</label>
-      <input type="file" id="fileLogeo" accept=".xlsx,.xls,.csv">
+      <input type="file" id="fileLogeo" accept=".xlsx,.xls,.csv"><input type="file" id="folderLogeo" accept=".xlsx,.xls,.csv" webkitdirectory directory multiple style="display:none"><button type="button" class="secondary batch-folder-btn" id="btnFolderLogeo">📁 Cargar carpeta</button>
       <span class="upload-status" id="statusLogeo">Sin datos</span>
     </div>
     <div id="pickerLogeo"></div>
+    <p class="batch-help">También puedes seleccionar una carpeta por cada fuente. CCO combinará todos los .xls, .xlsx y .csv compatibles de esa carpeta en una sola carga.</p>
     <button onclick="generarReporte()">Generar reporte ejecutivo</button>
     <button class="secondary" onclick="copiarReporte()">Copiar texto</button>
     <button class="wa-btn" onclick="enviarPorCorreo()">📧 Enviar por correo (Outlook)</button>
@@ -644,6 +656,56 @@ Object.keys(TIPOS_ARCHIVO).forEach(inputId=>{
   });
 });
 
+
+// v2.1 — Carga masiva desde carpeta (Chrome / Edge). Cada carpeta debe contener
+// archivos de la misma fuente: Turnos, Citaciones o StatusBreakdown/Logeo.
+const CARPETAS_ARCHIVO = {
+  folderTurnos:{tipo:'turnos', boton:'btnFolderTurnos'},
+  folderCitaciones:{tipo:'citaciones', boton:'btnFolderCitaciones'},
+  folderLogeo:{tipo:'logeo', boton:'btnFolderLogeo'},
+};
+Object.entries(CARPETAS_ARCHIVO).forEach(([inputId,cfg])=>{
+  const input=document.getElementById(inputId), btn=document.getElementById(cfg.boton);
+  btn?.addEventListener('click',()=>input?.click());
+  input?.addEventListener('change',async e=>{
+    const files=[...(e.target.files||[])].filter(f=>/\.(xlsx|xls|csv)$/i.test(f.name));
+    if(!files.length){ setDot(cfg.tipo,'err'); setStatusText(cfg.tipo,'La carpeta no contiene Excel/CSV compatibles.','err'); return; }
+    await procesarCarpeta(cfg.tipo, files);
+    e.target.value='';
+  });
+});
+
+function hojaSugeridaLote(tipo, wb){
+  const conteos=wb.SheetNames.map(nombre=>({nombre,filas:contarFilasHoja(wb,nombre)})).sort((a,b)=>b.filas-a.filas);
+  const conFirma=conteos.find(c=>hojaTieneColumnasFirma(wb,c.nombre,tipo));
+  return (conFirma||conteos[0]||{}).nombre || wb.SheetNames[0];
+}
+async function procesarCarpeta(tipo, files){
+  setDot(tipo,'busy'); setStatusText(tipo,`Leyendo carpeta: ${files.length} archivo(s)...`);
+  const acumuladas=[]; const errores=[]; const usados=[];
+  for(let i=0;i<files.length;i++){
+    const file=files[i];
+    try{
+      setStatusText(tipo,`Procesando ${i+1}/${files.length}: ${file.name}`);
+      const ab=await file.arrayBuffer();
+      const wb=XLSX.read(new Uint8Array(ab),{type:'array',cellDates:true});
+      const sheet=hojaSugeridaLote(tipo,wb);
+      if(!sheet) throw new Error('sin hoja utilizable');
+      const filaHeader=detectarFilaHeader(wb,sheet);
+      const rows=XLSX.utils.sheet_to_json(wb.Sheets[sheet],{defval:null,range:filaHeader});
+      if(rows.length){ acumuladas.push(...rows); usados.push(`${file.name} · ${sheet}`); }
+      else errores.push(`${file.name}: hoja vacía`);
+    }catch(err){ errores.push(`${file.name}: ${err.message||err}`); }
+  }
+  if(!acumuladas.length){
+    setDot(tipo,'err'); setStatusText(tipo,`No se pudieron extraer filas. ${errores.slice(0,2).join(' | ')}`,'err'); return;
+  }
+  const etiqueta=`Carpeta (${usados.length} archivos) · ${usados.slice(0,3).join(' | ')}${usados.length>3?' | …':''}`;
+  setStatusText(tipo,`${acumuladas.length} filas combinadas de ${usados.length} archivo(s). Subiendo...`);
+  subirIngesta(tipo, acumuladas, etiqueta);
+  if(errores.length) console.warn('Archivos omitidos en carga de carpeta:',errores);
+}
+
 function contarFilasHoja(wb, nombreHoja){
   const hoja = wb.Sheets[nombreHoja];
   const registros = XLSX.utils.sheet_to_json(hoja, {defval:null});
@@ -906,11 +968,12 @@ async function generarReporte(){
 
     if(!response.ok || rep.error){
       const detalle = rep.detalle ? ` · ${rep.detalle}` : '';
-      throw new Error((rep.error || `HTTP ${response.status}`) + detalle);
+      throw new Error((rep.error || `HTTP ${response.status}`) + detalle + (rep.version ? ` · backend ${rep.version}` : ''));
     }
 
     try {
       renderReporte(rep);
+      if(Array.isArray(rep.erroresConstruccion) && rep.erroresConstruccion.length){ console.warn('Operadores aislados por errores de datos:',rep.erroresConstruccion); }
       if(Array.isArray(rep.advertencias) && rep.advertencias.length){
         const extra=rep.advertencias.map(a=>`<div class="alert-card medio"><span class="alert-icon">🗂️</span><div class="alert-text"><b>Reporte generado.</b> La trazabilidad no pudo guardarse: ${escapeHtml(a.mensaje||a.codigo||'error histórico')}.</div></div>`).join('');
         document.getElementById('repAlertas').insertAdjacentHTML('afterbegin',extra);
