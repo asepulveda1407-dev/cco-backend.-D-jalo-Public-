@@ -176,12 +176,12 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 @media(max-width:760px){.module-switcher{right:10px;bottom:10px;left:10px;justify-content:center}.module-switcher button{flex:1}.module-tabs{top:4px}}
 
 
-/* v2.1 navegación principal siempre visible */
-.module-switcher{position:sticky!important;top:57px!important;right:auto!important;bottom:auto!important;left:auto!important;z-index:9000!important;display:flex!important;align-items:center;justify-content:center;gap:8px;width:100%;padding:8px 14px;margin:0;background:#ffffff;border:0;border-bottom:1px solid var(--line);border-radius:0;box-shadow:0 5px 16px rgba(16,42,67,.10);backdrop-filter:none}
-.module-switcher-label{font-size:10px;font-weight:800;letter-spacing:.55px;color:#607a91;margin-right:4px}
-.module-switcher button{margin:0!important;padding:10px 16px!important;font-size:12px!important;font-weight:800!important;border-radius:9px!important;min-width:190px}
+/* v2.2 navegación principal: selector fijo siempre visible */
+.module-switcher{position:fixed!important;top:12px!important;right:16px!important;bottom:auto!important;left:auto!important;z-index:99999!important;display:flex!important;align-items:center!important;justify-content:center!important;gap:6px!important;width:auto!important;padding:6px!important;margin:0!important;background:rgba(255,255,255,.98)!important;border:1px solid var(--line)!important;border-radius:12px!important;box-shadow:0 8px 24px rgba(16,42,67,.16)!important;backdrop-filter:blur(8px)!important}
+.module-switcher-label{font-size:9px;font-weight:800;letter-spacing:.5px;color:#607a91;margin:0 3px}
+.module-switcher button{margin:0!important;padding:8px 11px!important;font-size:11px!important;font-weight:800!important;border-radius:8px!important;min-width:0!important;white-space:nowrap!important}
 .module-tabs{display:none!important}
-@media(max-width:760px){.module-switcher{top:55px!important;left:auto!important;right:auto!important;bottom:auto!important;padding:7px 8px}.module-switcher-label{display:none}.module-switcher button{min-width:0;flex:1;padding:9px 8px!important;font-size:11px!important}}
+@media(max-width:760px){.module-switcher{top:auto!important;bottom:10px!important;left:10px!important;right:10px!important}.module-switcher-label{display:none}.module-switcher button{flex:1!important}}
 .batch-folder-btn{flex:0 0 auto!important;margin:0!important;padding:7px 10px!important;white-space:nowrap}
 .batch-help{font-size:10px;color:var(--mut);margin:6px 0 0}
 
@@ -223,11 +223,11 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v2.1</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v2.2</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
     <label style="margin:0;font-size:10px">Fecha operacional <input id="scopeFecha" type="date" onchange="cambiarFechaOperacional()" style="width:145px;margin-left:5px"></label>
-    <span id="appVersion" class="pill">v2.1</span><span id="connPill" class="pill">Conectando…</span>
+    <span id="appVersion" class="pill">v2.2</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
 <div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
@@ -528,7 +528,7 @@ function cargarPlantasLogin(){
     .then(list=>{
       sel.innerHTML = '<option value="">Todas las plantas</option>' + list.map(p=>`<option value="${p.nombre}">${p.nombre}${p.region && p.region!==p.zona ? ' · '+p.region : ''}</option>`).join('');
       if([...sel.options].some(o=>o.value===anterior)) sel.value = anterior;
-    }).catch(()=>{ sel.innerHTML='<option value="">No se pudieron cargar plantas</option>'; });
+    }).catch(err=>{ registrarErrorDetalladoUI('catalogo','cargarPlantasLogin',err); sel.innerHTML='<option value="">No se pudieron cargar plantas</option>'; });
 }
 setTimeout(()=>{ cargarRegionesLogin(); cargarPlantasLogin(); },0);
 
@@ -657,7 +657,7 @@ Object.keys(TIPOS_ARCHIVO).forEach(inputId=>{
 });
 
 
-// v2.1 — Carga masiva desde carpeta (Chrome / Edge). Cada carpeta debe contener
+// v2.2 — Carga masiva desde carpeta (Chrome / Edge). Cada carpeta debe contener
 // archivos de la misma fuente: Turnos, Citaciones o StatusBreakdown/Logeo.
 const CARPETAS_ARCHIVO = {
   folderTurnos:{tipo:'turnos', boton:'btnFolderTurnos'},
@@ -877,7 +877,7 @@ function cargarEstadoIngesta(){
     Object.entries(estado).forEach(([tipo, info])=>{
       if(info.cantidad>0) marcarIngestaStatus(tipo, info.cantidad, info.subido_por, false);
     });
-  }).catch(()=>{});
+  }).catch(err=>{ registrarErrorDetalladoUI('ingesta','cargarEstadoIngesta',err); });
 }
 
 // --- Tabla completa de operadores (id, nombre, planta, turno, citación, logeo, asignación, tiempo muerto, estado) ---
@@ -925,7 +925,7 @@ function cargarTablaOperadores(){
         </td></tr>`;
       }
     })
-    .catch(()=>{ tbody.innerHTML = '<tr><td colspan="11" style="padding:12px;color:var(--red)">Error de conexión al cargar la tabla</td></tr>'; });
+    .catch(err=>{ registrarErrorDetalladoUI('operadores','cargarTablaOperadores',err); tbody.innerHTML = '<tr><td colspan="11" style="padding:12px;text-align:center">Información incompleta para construir la tabla.</td></tr>'; });
 }
 
 // --- Reporte ejecutivo (alertas + gráfico + detalle) ---
@@ -940,6 +940,28 @@ function clasificarSeveridad(adherencia){
 }
 const COLOR_SEV = { critico:'#f25f6d', medio:'#f3b447', ok:'#2bc47d', anomalia:'#35bfd0', na:'#3a4a63' };
 const ICONO_SEV = { critico:'🔴', medio:'🟡', ok:'🟢', anomalia:'🔵', na:'⚪' };
+
+function registrarErrorDetalladoUI(modulo, funcion, error, contexto={}){
+  const detalle={modulo,funcion,error:error?.message||String(error||'Error desconocido'),stack:error?.stack||'',timestamp:new Date().toISOString(),contexto};
+  console.error('[CCO][UI]',detalle);
+  return detalle;
+}
+function mensajeSinDatos(texto='Sin información disponible para el período seleccionado'){
+  return `<div class="history-empty">${escapeHtml(texto)}</div>`;
+}
+function normalizarReporte(rep){
+  if(!rep || typeof rep!=='object') throw new Error('Respuesta de reporte inválida');
+  const resumen = rep.resumen && typeof rep.resumen==='object' ? rep.resumen : {};
+  return {
+    ...rep,
+    resumen,
+    porPlanta:Array.isArray(rep.porPlanta)?rep.porPlanta:[],
+    rankingAdelantados:Array.isArray(rep.rankingAdelantados)?rep.rankingAdelantados:[],
+    rankingTiempoMuertoNacional:Array.isArray(rep.rankingTiempoMuertoNacional)?rep.rankingTiempoMuertoNacional:[],
+    erroresConstruccion:Array.isArray(rep.erroresConstruccion)?rep.erroresConstruccion:[],
+    advertencias:Array.isArray(rep.advertencias)?rep.advertencias:[]
+  };
+}
 
 async function generarReporte(){
   const box = document.getElementById('reporteBox');
@@ -968,7 +990,17 @@ async function generarReporte(){
 
     if(!response.ok || rep.error){
       const detalle = rep.detalle ? ` · ${rep.detalle}` : '';
-      throw new Error((rep.error || `HTTP ${response.status}`) + detalle + (rep.version ? ` · backend ${rep.version}` : ''));
+      throw new Error((rep.error || `HTTP ${response.status}`) + detalle);
+    }
+    rep = normalizarReporte(rep);
+    if(rep.empty){
+      document.getElementById('repKpisNacionales').innerHTML='';
+      document.getElementById('repTablaBody').innerHTML='<tr><td colspan="10" style="text-align:center;padding:18px">Sin información disponible para el período seleccionado</td></tr>';
+      document.getElementById('repRankingAdelantados').innerHTML='<tr><td colspan="8" style="text-align:center;padding:14px">Sin información disponible para el período seleccionado</td></tr>';
+      document.getElementById('repRankingTiempoMuerto').innerHTML='<tr><td colspan="8" style="text-align:center;padding:14px">Sin información disponible para el período seleccionado</td></tr>';
+      alertas.innerHTML=`<div class="alert-card info"><span class="alert-icon">ℹ️</span><div class="alert-text"><b>${escapeHtml(rep.mensaje||'Sin información disponible para el período seleccionado')}</b></div></div>`;
+      if(repChartInstance){ repChartInstance.destroy(); repChartInstance=null; }
+      return;
     }
 
     try {
@@ -979,12 +1011,12 @@ async function generarReporte(){
         document.getElementById('repAlertas').insertAdjacentHTML('afterbegin',extra);
       }
     } catch(renderErr) {
-      console.error('Error renderizando reporte CCO:', renderErr, rep);
-      alertas.innerHTML = `<div class="alert-card critico"><span class="alert-icon">⚠️</span><div class="alert-text"><b>Error al dibujar el reporte:</b> ${escapeHtml(renderErr.message || String(renderErr))}. Los datos fueron recibidos correctamente desde el backend.</div></div>`;
+      registrarErrorDetalladoUI('reporte','renderReporte',renderErr,{fecha:rep?.fecha||''});
+      alertas.innerHTML = `<div class="alert-card critico"><span class="alert-icon">⚠️</span><div class="alert-text"><b>No fue posible visualizar el reporte.</b> Información incompleta o inválida. Revise los archivos cargados.</div></div>`;
     }
   } catch(err) {
-    console.error('Error generando reporte CCO:', err);
-    alertas.innerHTML = `<div class="alert-card critico"><span class="alert-icon">⚠️</span><div class="alert-text"><b>No se pudo generar el reporte:</b> ${escapeHtml(err.message || String(err))}</div></div>`;
+    registrarErrorDetalladoUI('reporte','generarReporte',err,{url});
+    alertas.innerHTML = `<div class="alert-card critico"><span class="alert-icon">⚠️</span><div class="alert-text"><b>No fue posible procesar el reporte.</b> Revise que Turnos, Citaciones y StatusBreakdown correspondan al período seleccionado.</div></div>`;
   }
 }
 
@@ -993,6 +1025,8 @@ function escapeHtml(value){
 }
 
 function renderReporte(rep){
+  rep = normalizarReporte(rep);
+  if(rep.empty) return;
   const alcance = rep.region ? `${rep.zona||'Centro'} · ${rep.region}` : (rep.zona ? `Zona ${rep.zona}` : (rep.plantasFiltro ? `${rep.plantasFiltro.length} planta(s) seleccionada(s)` : 'Todas las plantas'));
   document.getElementById('repMeta').textContent =
     `Generado por ${rep.generado_por} · ${new Date(rep.generado_en).toLocaleString('es-CL')} · Fecha ${rep.fecha||user?.fecha||'—'} · ${alcance}`;
@@ -1455,7 +1489,7 @@ function cargarOperadoresDePlanta(){
       sel.innerHTML = '<option value="">— General / sin operador específico —</option>' +
         list.map(o=>`<option value="${o.id}" data-nombre="${o.nombre}">${o.nombre}</option>`).join('');
     })
-    .catch(()=>{ sel.innerHTML = '<option value="">— General / sin operador específico —</option>'; });
+    .catch(err=>{ registrarErrorDetalladoUI('bitacora','cargarOperadoresDePlanta',err); sel.innerHTML = '<option value="">— Sin información disponible —</option>'; });
 }
 
 function registrarBitacora(){
@@ -1511,10 +1545,12 @@ function cargarAnalisisOperadores(){
   fetch(API+'/api/analisis-operadores?planta='+encodeURIComponent(planta)+'&fecha='+encodeURIComponent(user?.fecha||''),{headers:authHeaders()})
     .then(async r=>{ const raw=await r.text(); let data={}; try{ data=raw?JSON.parse(raw):{}; }catch(e){ throw new Error('Respuesta inválida del servidor (HTTP '+r.status+')'); } if(!r.ok || data.error) throw new Error((data.error||('HTTP '+r.status))+(data.detalle?' · '+data.detalle:'')); return data; })
     .then(data=>renderAnalisisOperadores(data))
-    .catch(err=>{ document.getElementById('opDiagLineas').innerHTML = '<div class="alert-card critico"><span class="alert-icon">⚠️</span><div class="alert-text"><b>No se pudo analizar la planta:</b> '+escapeHtml(err.message||String(err))+'</div></div>'; });
+    .catch(err=>{ registrarErrorDetalladoUI('operadores','cargarAnalisisOperadores',err,{planta}); document.getElementById('opDiagLineas').innerHTML = '<div class="alert-card medio"><span class="alert-icon">ℹ️</span><div class="alert-text"><b>Información incompleta para la planta seleccionada.</b> Revise fecha y archivos cargados.</div></div>'; });
 }
 
 function renderAnalisisOperadores(data){
+  if(!data || typeof data!=='object') throw new Error('Respuesta de análisis inválida');
+  data.diagnosticoLineas=Array.isArray(data.diagnosticoLineas)?data.diagnosticoLineas:[]; data.ranking=Array.isArray(data.ranking)?data.ranking:[]; data.rankingTiempoMuerto=Array.isArray(data.rankingTiempoMuerto)?data.rankingTiempoMuerto:[]; data.operadores=Array.isArray(data.operadores)?data.operadores:[]; data.resumen=data.resumen&&typeof data.resumen==='object'?data.resumen:{};
   const badge = document.getElementById('opDiagBadge');
   badge.textContent = data.diagnostico;
   badge.className = 'diag-badge '+data.diagnostico;
@@ -1918,6 +1954,9 @@ function roundRect(ctx, x, y, w, h, r){
   ctx.arcTo(x, y, x+w, y, r);
   ctx.closePath();
 }
+
+window.addEventListener('error',(event)=>{ registrarErrorDetalladoUI('runtime','window.error',event.error||event.message,{archivo:event.filename||'',linea:event.lineno||0}); });
+window.addEventListener('unhandledrejection',(event)=>{ registrarErrorDetalladoUI('runtime','unhandledrejection',event.reason||'Promise rechazada'); });
 </script>
 </body>
 </html>
