@@ -293,13 +293,13 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
               <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--line)">Nombre</th>
               <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--line)">Planta</th>
               <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--line)">Turno</th>
-              <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--line)">Citación</th>
+              <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--line)">Citación aplicada</th>
               <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--line)">Logeo</th>
               <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--line)">Asignación</th>
               <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--line)">Primera carga</th>
               <th style="padding:6px 8px;text-align:right;border-bottom:1px solid var(--line)">T. muerto</th>
               <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--line)">Estado operacional</th>
-              <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--line)">Adherencia</th>
+              <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--line)">Cumplimiento ref.</th>
             </tr>
           </thead>
           <tbody id="tablaOperadoresBody"></tbody>
@@ -317,12 +317,12 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
       <div class="rep-header"><span class="rep-titulo">KPIs nacionales del alcance seleccionado</span></div>
       <div class="kpi-grid" id="repKpisNacionales"></div>
 
-      <div class="rep-header"><span class="rep-titulo">Adherencia al turno por planta (% logeo vs. turnos programados)</span></div>
+      <div class="rep-header"><span class="rep-titulo">Cumplimiento de referencia operacional por planta (% dentro de tolerancia)</span></div>
       <div class="chart-wrap"><canvas id="repChart"></canvas></div>
 
       <div class="rep-header"><span class="rep-titulo">🏃 Operadores con mayor adelanto <span class="small">(Operaciones — replanificar turnos/citaciones)</span></span></div>
       <table class="rep-tabla">
-        <thead><tr><th>ID</th><th>Nombre</th><th>Planta</th><th>Hora turno</th><th>Hora citación</th><th>Hora logeo</th><th>Hora asignación</th><th>Adelanto</th></tr></thead>
+        <thead><tr><th>ID</th><th>Nombre</th><th>Planta</th><th>Hora turno</th><th>Hora citación</th><th>Hora logeo</th><th>Hora asignación</th><th>Adelanto vs ref.</th></tr></thead>
         <tbody id="repRankingAdelantados"></tbody>
       </table>
       <p class="small" style="margin:4px 0 0">"Hora citación" solo aparece si el archivo de Citaciones cargado trae columna de ID de operador (formato "Citación_Operadores"). El formato antiguo de despachos/pedidos por planta no la incluye, y se mostrará "—".</p>
@@ -780,7 +780,7 @@ function cargarTablaOperadores(){
           <td style="padding:5px 8px;border-bottom:1px solid var(--line)">${o.nombre}</td>
           <td style="padding:5px 8px;border-bottom:1px solid var(--line)">${o.planta}</td>
           <td style="padding:5px 8px;border-bottom:1px solid var(--line)${o.horaTurnoSospechosa?';background:rgba(220,38,38,0.35);font-weight:700':''}" title="${o.horaTurnoSospechosa?'Fuera del rango operativo 07:00-11:00 — dato posiblemente corrupto en el Excel de Turnos':''}">${o.horaTurno ?? '—'}${o.horaTurnoSospechosa?' ⚠️':''}</td>
-          <td style="padding:5px 8px;border-bottom:1px solid var(--line)">${o.horaCitacion ?? '—'}</td>
+          <td style="padding:5px 8px;border-bottom:1px solid var(--line)">${o.citacionAplicada ? '<b>'+o.horaCitacion+' ✓</b>' : '—'}</td>
           <td style="padding:5px 8px;border-bottom:1px solid var(--line)">${o.horaLogeo ?? '—'}</td>
           <td style="padding:5px 8px;border-bottom:1px solid var(--line)">${o.horaAsignacion ?? '—'}</td>
           <td style="padding:5px 8px;border-bottom:1px solid var(--line)">${o.horaPrimeraCarga ?? '—'}</td>
@@ -842,7 +842,7 @@ function renderReporte(rep){
   const pendientes = rep.resumen.pendientesIngreso ?? Math.max(0,total-logeados);
   const kpisNac = [
     ['Programados exigibles', total, alcance, 'info'],
-    ['Con logeo', logeados, total?Math.round(logeados/total*1000)/10+'% del turno':'—', logeados===total?'ok':'info'],
+    ['Con logeo', logeados, total?Math.round(logeados/total*1000)/10+'% de cobertura':'—', logeados===total?'ok':'info'],
     ['Pendientes de ingreso', pendientes, pendientes?'Requieren seguimiento':'Cobertura completa', pendientes?'warn':'ok'],
     ['Asignados', rep.resumen.asignados ?? 0, 'Estado ASIGNADO detectado', 'info'],
     ['Primera carga', rep.resumen.primeraCarga ?? 0, 'Primer CARGANDO/CARGADO detectado', 'ok'],
@@ -853,13 +853,16 @@ function renderReporte(rep){
   `).join('');
 
   // --- Alertas, ordenadas por severidad (crítico primero) ---
-  const filas = [...rep.porPlanta].map(f=>({...f, severidad: clasificarSeveridad(f.adherenciaLogeo)}));
-  const criticas = filas.filter(f=>f.severidad==='critico').sort((a,b)=>a.adherenciaLogeo-b.adherenciaLogeo);
-  const medias = filas.filter(f=>f.severidad==='medio').sort((a,b)=>a.adherenciaLogeo-b.adherenciaLogeo);
-  const anomalas = filas.filter(f=>f.severidad==='anomalia').sort((a,b)=>b.adherenciaLogeo-a.adherenciaLogeo);
+  const filas = [...rep.porPlanta].map(f=>({...f, severidad: clasificarSeveridad(f.cumplimientoReferencia)}));
+  const criticas = filas.filter(f=>f.severidad==='critico').sort((a,b)=>(a.cumplimientoReferencia??0)-(b.cumplimientoReferencia??0));
+  const medias = filas.filter(f=>f.severidad==='medio').sort((a,b)=>(a.cumplimientoReferencia??0)-(b.cumplimientoReferencia??0));
+  const anomalas = filas.filter(f=>f.severidad==='anomalia').sort((a,b)=>(b.cumplimientoReferencia??0)-(a.cumplimientoReferencia??0));
   const sinDatos = filas.filter(f=>f.turnos===0);
 
   let alertasHtml = '';
+  const citAplicadas = rep.resumen.operadoresConCitacion ?? 0;
+  const porTurno = rep.resumen.operadoresPorTurno ?? Math.max(0,total-citAplicadas);
+  alertasHtml += `<div class="alert-card info"><span class="alert-icon">🎯</span><div class="alert-text"><b>Referencia operacional:</b> ${citAplicadas} operador(es) evaluados contra <b>citación</b> por requerir adelanto y ${porTurno} contra <b>turno</b>. Cumplimiento general: <b>${rep.resumen.cumplimientoReferenciaPct ?? '—'}%</b>${rep.resumen.cumplimientoCitacionPct!==null && rep.resumen.cumplimientoCitacionPct!==undefined ? ` · Citación ${rep.resumen.cumplimientoCitacionPct}%` : ''}${rep.resumen.cumplimientoTurnoPct!==null && rep.resumen.cumplimientoTurnoPct!==undefined ? ` · Turno ${rep.resumen.cumplimientoTurnoPct}%` : ''}.</div></div>`;
   if((rep.resumen.pendientesIngreso||0)>0){
     alertasHtml += `<div class="alert-card medio"><span class="alert-icon">⏳</span><div class="alert-text"><b>${rep.resumen.pendientesIngreso} operador(es) pendientes de ingreso.</b> Están programados para la fecha seleccionada y no tienen evento LOGIN/PRE-VIAJE.</div></div>`;
   }
@@ -871,17 +874,17 @@ function renderReporte(rep){
   }
   if(criticas.length){
     alertasHtml += `<div class="alert-card critico"><span class="alert-icon">🔴</span><div class="alert-text">
-      <b>${criticas.length} planta${criticas.length>1?'s':''} en estado crítico</b> (adherencia de logeo bajo 50%): ${criticas.map(f=>`${f.planta} (${f.adherenciaLogeo}%)`).join(', ')}.
+      <b>${criticas.length} planta${criticas.length>1?'s':''} en estado crítico</b> (cumplimiento de referencia bajo 50%): ${criticas.map(f=>`${f.planta} (${f.cumplimientoReferencia}%)`).join(', ')}.
     </div></div>`;
   }
   if(medias.length){
     alertasHtml += `<div class="alert-card medio"><span class="alert-icon">🟡</span><div class="alert-text">
-      <b>${medias.length} planta${medias.length>1?'s':''} para revisar</b> (adherencia entre 50% y 90%): ${medias.map(f=>`${f.planta} (${f.adherenciaLogeo}%)`).join(', ')}.
+      <b>${medias.length} planta${medias.length>1?'s':''} para revisar</b> (cumplimiento de referencia entre 50% y 90%): ${medias.map(f=>`${f.planta} (${f.cumplimientoReferencia}%)`).join(', ')}.
     </div></div>`;
   }
   if(anomalas.length){
     alertasHtml += `<div class="alert-card info"><span class="alert-icon">🔵</span><div class="alert-text">
-      <b>${anomalas.length} planta${anomalas.length>1?'s':''} con dato inconsistente</b> (más marcaciones de logeo que turnos programados — revisar duplicados o turnos faltantes): ${anomalas.map(f=>`${f.planta} (${f.adherenciaLogeo}%)`).join(', ')}.
+      <b>${anomalas.length} planta${anomalas.length>1?'s':''} con dato inconsistente</b>: ${anomalas.map(f=>`${f.planta} (${f.cumplimientoReferencia}%)`).join(', ')}.
     </div></div>`;
   }
   if(sinDatos.length){
@@ -907,13 +910,13 @@ function renderReporte(rep){
   }
   if(!criticas.length && !medias.length && !anomalas.length){
     alertasHtml += `<div class="alert-card ok"><span class="alert-icon">✅</span><div class="alert-text">
-      <b>Sin alertas críticas.</b> Todas las plantas con datos cargados muestran adherencia de logeo igual o superior a 90%.
+      <b>Sin alertas críticas.</b> Todas las plantas con datos cargados muestran cumplimiento de referencia igual o superior a 90%.
     </div></div>`;
   }
   document.getElementById('repAlertas').innerHTML = alertasHtml;
 
-  // --- Gráfico: adherencia de logeo por planta, ordenado de peor a mejor ---
-  const conDatos = filas.filter(f=>f.adherenciaLogeo!==null).sort((a,b)=>a.adherenciaLogeo-b.adherenciaLogeo);
+  // --- Gráfico: cumplimiento de referencia operacional por planta ---
+  const conDatos = filas.filter(f=>f.cumplimientoReferencia!==null).sort((a,b)=>(a.cumplimientoReferencia??0)-(b.cumplimientoReferencia??0));
   const ctx = document.getElementById('repChart').getContext('2d');
   if(repChartInstance) repChartInstance.destroy();
   repChartInstance = new Chart(ctx, {
@@ -921,8 +924,8 @@ function renderReporte(rep){
     data: {
       labels: conDatos.map(f=>f.planta),
       datasets: [{
-        label: 'Adherencia de logeo (%)',
-        data: conDatos.map(f=>f.adherenciaLogeo),
+        label: 'Cumplimiento referencia (%)',
+        data: conDatos.map(f=>f.cumplimientoReferencia),
         backgroundColor: conDatos.map(f=>COLOR_SEV[f.severidad]),
         borderRadius: 4,
       }]
@@ -933,7 +936,7 @@ function renderReporte(rep){
       maintainAspectRatio: false,
       plugins: { legend: { display:false }, tooltip:{ callbacks:{ label: c=>c.parsed.x+'%' } } },
       scales: {
-        x: { min:0, max: Math.max(100, ...conDatos.map(f=>f.adherenciaLogeo), 10), ticks:{color:'#71859a'}, grid:{color:'#d9e4ef'} },
+        x: { min:0, max: Math.max(100, ...conDatos.map(f=>f.cumplimientoReferencia), 10), ticks:{color:'#71859a'}, grid:{color:'#d9e4ef'} },
         y: { ticks:{color:'#365873', font:{size:10}}, grid:{display:false} }
       }
     }
@@ -950,7 +953,7 @@ function renderReporte(rep){
     <tr>
       <td><span class="pill-sev ${f.severidad}">${ICONO_SEV[f.severidad]} ${etiquetas[f.severidad]}</span></td>
       <td>${f.planta}</td><td>${f.zona}</td><td>${f.turnos}</td><td>${f.citaciones}</td><td>${f.logeo}</td><td>${f.asignados??0}</td><td>${f.primeraCarga??0}</td>
-      <td>${f.adherenciaLogeo!==null?f.adherenciaLogeo+'%':'—'}</td>
+      <td>${f.cumplimientoReferencia!==null?f.cumplimientoReferencia+'%':'—'}</td>
     </tr>`;
   }).join('');
 
@@ -959,7 +962,7 @@ function renderReporte(rep){
     ? rep.rankingAdelantados.map(o=>`
       <tr>
         <td>${o.id}</td><td>${o.nombre}</td><td>${o.planta}</td>
-        <td>${o.turno||'—'}</td><td>${o.citacionHora||'—'}</td><td>${o.logeo||'—'}</td><td>${o.asignacion||'—'}</td>
+        <td>${o.turno||'—'}</td><td>${o.citacionAplicada ? '<b>'+o.citacionHora+' ✓</b>' : '—'}</td><td>${o.logeo||'—'}</td><td>${o.asignacion||'—'}</td>
         <td><span class="pill-cat adelantado">${o.adelantoMin} min</span></td>
       </tr>`).join('')
     : '<tr><td colspan="8" class="small" style="text-align:center;padding:10px">Sin operadores adelantados en el alcance seleccionado.</td></tr>';
@@ -969,7 +972,7 @@ function renderReporte(rep){
     ? rep.rankingTiempoMuertoNacional.map(o=>`
       <tr>
         <td>${o.id}</td><td>${o.nombre}</td><td>${o.planta}</td>
-        <td>${o.turno||'—'}</td><td>${o.citacionHora||'—'}</td><td>${o.logeo||'—'}</td><td>${o.asignacion||'—'}</td>
+        <td>${o.turno||'—'}</td><td>${o.citacionAplicada ? '<b>'+o.citacionHora+' ✓</b>' : '—'}</td><td>${o.logeo||'—'}</td><td>${o.asignacion||'—'}</td>
         <td><span class="pill-cat atraso_leve">${o.esperaMin} min</span></td>
       </tr>`).join('')
     : '<tr><td colspan="8" class="small" style="text-align:center;padding:10px">Sin datos suficientes en el alcance seleccionado.</td></tr>';
@@ -1007,7 +1010,9 @@ function renderReporte(rep){
   let texto = `*📊 REPORTE EJECUTIVO CCO*\n_${new Date(rep.generado_en).toLocaleString('es-CL')} · ${rep.generado_por} · ${alcance}_\n\n`;
   texto += `*KPIs NACIONALES*\n`;
   texto += `Operadores exigibles: *${rep.resumen.totalTurnos}*\n`;
-  texto += `Citaciones: *${rep.resumen.totalCitaciones}*\n`;
+  texto += `Citaciones aplicadas: *${rep.resumen.totalCitaciones}*\n`;
+  texto += `Referencia operacional: *${rep.resumen.operadoresConCitacion||0} por citación* · *${rep.resumen.operadoresPorTurno||0} por turno*\n`;
+  if(rep.resumen.cumplimientoReferenciaPct!==null) texto += `Cumplimiento referencia: *${rep.resumen.cumplimientoReferenciaPct}%*\n`;
   texto += `Con logeo: *${rep.resumen.logeadosAlCorte ?? rep.resumen.totalLogeo}*\n`;
   texto += `Pendientes de ingreso: *${rep.resumen.pendientesIngreso ?? 0}*\n`;
   texto += `Asignados: *${rep.resumen.asignados ?? 0}*\n`;
@@ -1361,7 +1366,7 @@ function renderAnalisisOperadores(data){
 
   const r = data.resumen;
   const kpis = [
-    ['Adherencia a turno', r.adherenciaTurnoPct!==null?r.adherenciaTurnoPct+'%':'—', `${r.totalOperadores} operadores exigibles`],
+    ['Cobertura de ingreso', r.adherenciaTurnoPct!==null?r.adherenciaTurnoPct+'%':'—', `${r.totalOperadores} operadores exigibles`],
     ['Con logeo registrado', r.conLogeo+' / '+r.totalOperadores, r.sinLogeo+' sin logeo'],
     ['Atrasados', r.atrasadosPct!==null?r.atrasadosPct+'%':'—', r.atrasadosCriticos+' en atraso crítico'],
     ['Adelantados', r.adelantadosPct!==null?r.adelantadosPct+'%':'—', 'llegaron antes de lo esperado'],
@@ -1463,7 +1468,7 @@ function descargarImagenReporte(){
   if(plantasTiempoMuertoAlto.length) alertLineas.push({color:COLORES.amarillo, texto:`⏱️ ${plantasTiempoMuertoAlto.length} planta(s) con tiempo muerto sobre 30 min`});
   if(!alertLineas.length) alertLineas.push({color:COLORES.verde, texto:'✅ Sin alertas críticas'});
 
-  const conDatos = [...filas].filter(f=>f.adherenciaLogeo!==null).sort((a,b)=>a.adherenciaLogeo-b.adherenciaLogeo);
+  const conDatos = [...filas].filter(f=>f.cumplimientoReferencia!==null).sort((a,b)=>(a.cumplimientoReferencia??0)-(b.cumplimientoReferencia??0));
   const filaAlturaChart = 22;
   const chartH = Math.max(140, conDatos.length*filaAlturaChart + 50);
 
@@ -1524,7 +1529,7 @@ function descargarImagenReporte(){
 
   // --- Título del gráfico ---
   ctx.fillStyle = COLORES.txt; ctx.font = '700 14px Arial';
-  ctx.fillText('Adherencia al turno por planta (% logeo vs. turnos programados)', PADX, y+16);
+  ctx.fillText('Cumplimiento de referencia operacional por planta (% dentro de tolerancia)', PADX, y+16);
   y += chartTituloH;
 
   // --- Gráfico de barras (dibujado a mano, mismos colores de severidad) ---
