@@ -168,6 +168,12 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 .history-empty{padding:22px;text-align:center;color:var(--mut)}
 .history-note{font-size:10px;color:var(--mut);margin-top:8px}
 @media(max-width:760px){.history-toolbar{grid-template-columns:1fr 1fr}.module-tabs{flex-wrap:wrap}}
+.module-switcher{position:fixed;right:18px;bottom:18px;z-index:9999;display:flex;gap:6px;padding:7px;background:rgba(255,255,255,.96);border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 30px rgba(16,42,67,.16);backdrop-filter:blur(8px)}
+.module-switcher button{margin:0;padding:9px 12px;border-radius:9px;font-size:11px;white-space:nowrap}
+.module-switcher button.secondary{background:#fff;color:#365873;border:1px solid #cbdbea}
+.module-switcher .active{background:var(--blue);color:#fff;border-color:var(--blue)}
+.module-tabs{position:sticky;top:8px;z-index:150;background:#f7fbff;box-shadow:0 5px 16px rgba(16,42,67,.08)}
+@media(max-width:760px){.module-switcher{right:10px;bottom:10px;left:10px;justify-content:center}.module-switcher button{flex:1}.module-tabs{top:4px}}
 
 </style>
 </head>
@@ -214,6 +220,10 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
     <span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
+<div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar módulo CCO">
+  <button type="button" id="quickOperacion" class="active">📊 Operación</button>
+  <button type="button" id="quickHistorico" class="secondary">📈 Trazabilidad</button>
+</div>
 <main>
 
   <div id="ccoTabs" class="module-tabs">
@@ -901,6 +911,10 @@ async function generarReporte(){
 
     try {
       renderReporte(rep);
+      if(Array.isArray(rep.advertencias) && rep.advertencias.length){
+        const extra=rep.advertencias.map(a=>`<div class="alert-card medio"><span class="alert-icon">🗂️</span><div class="alert-text"><b>Reporte generado.</b> La trazabilidad no pudo guardarse: ${escapeHtml(a.mensaje||a.codigo||'error histórico')}.</div></div>`).join('');
+        document.getElementById('repAlertas').insertAdjacentHTML('afterbegin',extra);
+      }
     } catch(renderErr) {
       console.error('Error renderizando reporte CCO:', renderErr, rep);
       alertas.innerHTML = `<div class="alert-card critico"><span class="alert-icon">⚠️</span><div class="alert-text"><b>Error al dibujar el reporte:</b> ${escapeHtml(renderErr.message || String(renderErr))}. Los datos fueron recibidos correctamente desde el backend.</div></div>`;
@@ -1432,11 +1446,9 @@ function cargarAnalisisOperadores(){
   document.getElementById('opDiagLineas').innerHTML = '<div class="small">Cargando...</div>';
 
   fetch(API+'/api/analisis-operadores?planta='+encodeURIComponent(planta)+'&fecha='+encodeURIComponent(user?.fecha||''),{headers:authHeaders()})
-    .then(r=>r.json()).then(data=>{
-      if(data.error){ document.getElementById('opDiagLineas').innerHTML = 'Error: '+data.error; return; }
-      renderAnalisisOperadores(data);
-    })
-    .catch(()=>{ document.getElementById('opDiagLineas').innerHTML = 'Error de conexión'; });
+    .then(async r=>{ const raw=await r.text(); let data={}; try{ data=raw?JSON.parse(raw):{}; }catch(e){ throw new Error('Respuesta inválida del servidor (HTTP '+r.status+')'); } if(!r.ok || data.error) throw new Error((data.error||('HTTP '+r.status))+(data.detalle?' · '+data.detalle:'')); return data; })
+    .then(data=>renderAnalisisOperadores(data))
+    .catch(err=>{ document.getElementById('opDiagLineas').innerHTML = '<div class="alert-card critico"><span class="alert-icon">⚠️</span><div class="alert-text"><b>No se pudo analizar la planta:</b> '+escapeHtml(err.message||String(err))+'</div></div>'; });
 }
 
 function renderAnalisisOperadores(data){
@@ -1699,6 +1711,8 @@ function initModuleTabs(){
   });
   document.getElementById('tabOperacion')?.addEventListener('click',()=>cambiarModulo('operacion'));
   document.getElementById('tabHistorico')?.addEventListener('click',()=>cambiarModulo('historico'));
+  document.getElementById('quickOperacion')?.addEventListener('click',()=>cambiarModulo('operacion', true));
+  document.getElementById('quickHistorico')?.addEventListener('click',()=>cambiarModulo('historico', true));
   document.getElementById('histConsultar')?.addEventListener('click',cargarHistorico);
   document.getElementById('histExportar')?.addEventListener('click',exportarHistoricoCSV);
   document.getElementById('histZona')?.addEventListener('change',()=>{ poblarHistPlantas(true); cargarHistorico(); });
@@ -1707,12 +1721,16 @@ function initModuleTabs(){
   setHistRangeSemana25();
 }
 
-function cambiarModulo(modulo){
+function cambiarModulo(modulo, desplazar=false){
   const hist = modulo==='historico';
   document.querySelectorAll('#app main > .operation-view').forEach(el=>el.style.display=hist?'none':'');
   document.getElementById('historicoPanel').style.display=hist?'block':'none';
   document.getElementById('tabOperacion').classList.toggle('active',!hist);
   document.getElementById('tabHistorico').classList.toggle('active',hist);
+  const qOp=document.getElementById('quickOperacion'), qHist=document.getElementById('quickHistorico');
+  if(qOp){ qOp.classList.toggle('active',!hist); qOp.classList.toggle('secondary',hist); }
+  if(qHist){ qHist.classList.toggle('active',hist); qHist.classList.toggle('secondary',!hist); }
+  if(desplazar) window.scrollTo({top:0,behavior:'smooth'});
   if(hist){ poblarHistPlantas(false); cargarHistorico(); }
 }
 
