@@ -16,6 +16,7 @@ const APP_ORIGIN = process.env.APP_ORIGIN || '';
 const AUTH_SECRET = process.env.AUTH_SECRET || 'cco-dev-secret-change-me';
 const DATA_FILE = path.resolve(process.env.DATA_FILE || path.join(__dirname, 'data', 'cco-state.json'));
 const PUBLIC_DIR = path.join(__dirname, 'public');
+const PLANT_DICTIONARY_FILE = path.join(__dirname, 'config', 'plant-dictionary.json');
 
 const app = express();
 const server = http.createServer(app);
@@ -168,7 +169,7 @@ const FIELDS = {
   nombre: ['operador','nombre_operador','nom_operador','operario','nombre','employee_name','nombre_funcionario','nombre empleado','nombre_empleado'],
   firstName: ['primero_empleado','primero empleado','first_name','firstname','nombre_funcionario','nombre funcionario'],
   lastName: ['ultimo_empleado','último empleado','ultimo empleado','last_name','lastname','apellido_funcionario','apellido funcionario'],
-  planta: ['planta','planta_origen','origen','plta','descripcion_planta','descripción planta','plant'],
+  planta: ['planta','planta_origen','origen','plta','descripcion_planta','descripción planta','plant','codigo_command','código command','cod_planta_command','cod planta command','local_cmd','local cmd','centro_sap','centro sap','puesto_carga','puesto carga','shortname','short_name','local_inventario','local inventario','puesto_expedicion','puesto expedición'],
   zona: ['zona','region','región'],
   turno: ['turno_inicio','hora_inicio','hora_ingreso','hora ingreso','horaingreso','turno','inicio_turno'],
   citacion: ['citacion','citación','cita','hora_citacion','hora citacion','citacion_sugerida','citación sugerida'],
@@ -457,6 +458,82 @@ function classifyOperationalEvent(rawEstado) {
 }
 
 // ============================================================================
+// DICCIONARIO CORPORATIVO DE PLANTAS (v2.7)
+// Fuente: config/plant-dictionary.json, derivado del Excel entregado por Operaciones.
+// Resuelve nombres, Código Command, LOCAL CMD, CENTRO SAP, ShortName y Local Inventario.
+// Los alias ambiguos (por ejemplo P13A compartido por Central/Oriente/Poniente) NO se
+// resuelven automáticamente: se exige una clave más específica para evitar cruces falsos.
+// ============================================================================
+function loadPlantDictionary() {
+  try {
+    if (!fs.existsSync(PLANT_DICTIONARY_FILE)) {
+      console.warn('[CCO][plant-dictionary] archivo no encontrado:', PLANT_DICTIONARY_FILE);
+      return { version:null, source_file:null, plants:[], conflicts:{} };
+    }
+    const parsed = JSON.parse(fs.readFileSync(PLANT_DICTIONARY_FILE, 'utf8'));
+    return {
+      version: safeText(parsed?.version),
+      source_file: safeText(parsed?.source_file),
+      plants: Array.isArray(parsed?.plants) ? parsed.plants : [],
+      conflicts: parsed?.conflicts && typeof parsed.conflicts === 'object' ? parsed.conflicts : {},
+    };
+  } catch (err) {
+    console.error('[CCO][plant-dictionary] No se pudo cargar:', err?.message || err);
+    return { version:null, source_file:null, plants:[], conflicts:{} };
+  }
+}
+const PLANT_DICTIONARY = loadPlantDictionary();
+const PLANT_DICTIONARY_LOOKUP = new Map();
+const PLANT_DICTIONARY_CONFLICTS = new Set(Object.keys(PLANT_DICTIONARY.conflicts || {}));
+for (const rec of PLANT_DICTIONARY.plants) {
+  const keys = [rec?.canonical, ...(Array.isArray(rec?.aliases) ? rec.aliases : [])];
+  for (const raw of keys) {
+    const k = normalizeName(raw);
+    if (!k || PLANT_DICTIONARY_CONFLICTS.has(k)) continue;
+    if (!PLANT_DICTIONARY_LOOKUP.has(k)) PLANT_DICTIONARY_LOOKUP.set(k, rec);
+  }
+}
+function dictionaryPlantRecord(rawValue) {
+  const key = normalizeName(rawValue);
+  if (!key || PLANT_DICTIONARY_CONFLICTS.has(key)) return null;
+  return PLANT_DICTIONARY_LOOKUP.get(key) || null;
+}
+function dictionaryCanonicalPlant(rawValue) {
+  const rec = dictionaryPlantRecord(rawValue);
+  return safeText(rec?.canonical) || '';
+}
+function dictionaryOperationalZone(rawValue) {
+  const z = safeText(dictionaryPlantRecord(rawValue)?.zona);
+  return ['Norte','Centro','Sur'].includes(z) ? z : '';
+}
+function dictionaryRegion(rawValue) {
+  return safeText(dictionaryPlantRecord(rawValue)?.region);
+}
+function plantIdentifierCandidates(row) {
+  if (!row || typeof row !== 'object') return [];
+  const out = [];
+  for (const alias of FIELDS.planta) {
+    const value = row?.[normalizeKey(alias)];
+    if (value !== null && value !== undefined && String(value).trim() !== '') out.push(value);
+  }
+  return [...new Set(out.map(v=>String(v).trim()).filter(Boolean))];
+}
+function resolvePlantFromRow(row) {
+  const candidates = plantIdentifierCandidates(row);
+  // Prioridad 1: cualquier identificador inequívoco presente en el diccionario.
+  for (const value of candidates) {
+    const resolved = dictionaryCanonicalPlant(value);
+    if (resolved) return resolved;
+  }
+  // Prioridad 2: nombre/alias conocido por las reglas heredadas de CCO.
+  for (const value of candidates) {
+    const resolved = canonicalPlantName(value);
+    if (resolved && resolved !== 'Sin planta') return resolved;
+  }
+  return 'Sin planta';
+}
+
+// ============================================================================
 // DICCIONARIO MAESTRO DE ZONAS OPERACIONALES
 // Solo existen 3 zonas: Norte, Centro y Sur.
 // Centro agrupa RM + V + VI Región.
@@ -508,6 +585,8 @@ const PLANT_ALIASES = {
 function canonicalPlantName(rawName) {
   const raw = safeText(rawName);
   if (!raw) return 'Sin planta';
+  const fromDictionary = dictionaryCanonicalPlant(raw);
+  if (fromDictionary) return fromDictionary;
   const norm = normalizeName(raw);
   if (PLANT_ALIASES[norm]) return PLANT_ALIASES[norm];
   if (/central mix/.test(norm)) return 'Central Mix';
@@ -534,6 +613,8 @@ function canonicalZone(rawZone) {
 }
 
 function inferZona(planta, rawZone='') {
+  const dz = dictionaryOperationalZone(planta);
+  if (dz) return dz;
   const z = canonicalZone(rawZone);
   if (z) return z;
   const p = normalizeName(planta);
@@ -546,7 +627,8 @@ function inferZona(planta, rawZone='') {
 }
 
 function inferRegion(planta, rawRegion='', rawZone='') {
-  const r = normalizeName(rawRegion);
+  const dictRegion = dictionaryRegion(planta);
+  const r = normalizeName(rawRegion || dictRegion);
   const p = normalizeName(planta);
   const z = inferZona(planta, rawZone);
   if (z === 'Norte') return 'Norte';
@@ -590,6 +672,15 @@ function masterPlantCatalog() {
       for (const nombre of nombres) merged.set(normalizeName(nombre), { nombre, zona, region });
     }
   }
+  // El diccionario amplía el catálogo y cruza códigos/nombres; no reemplaza las reglas
+  // de negocio del CCO. Solo se incorporan plantas con zona operacional Norte/Centro/Sur.
+  for (const rec of PLANT_DICTIONARY.plants) {
+    const nombre = canonicalPlantName(rec?.canonical);
+    const zona = inferZona(nombre, rec?.zona);
+    const region = inferRegion(nombre, rec?.region, rec?.zona);
+    if (!nombre || nombre === 'Sin planta' || !['Norte','Centro','Sur'].includes(zona)) continue;
+    if (!merged.has(normalizeName(nombre))) merged.set(normalizeName(nombre), { nombre, zona, region });
+  }
   return [...merged.values()];
 }
 
@@ -601,9 +692,9 @@ function validateDataset(type, rows) {
       rejected.push(row); errors.push(`Fila ${index + 1}: operador/ID no encontrado`); return;
     }
     if (type === 'turnos') {
-      const plant = pick(row, FIELDS.planta);
+      const plant = resolvePlantFromRow(row);
       const shift = pick(row, FIELDS.turno);
-      if (!plant) { rejected.push(row); errors.push(`Fila ${index + 1}: planta no encontrada`); return; }
+      if (!plant || plant === 'Sin planta') { rejected.push(row); errors.push(`Fila ${index + 1}: planta/código no encontrado en diccionario`); return; }
       if (parseTimeMinutes(shift) === null) { rejected.push(row); errors.push(`Fila ${index + 1}: hora de turno inválida`); return; }
     }
     if (type === 'logeo') {
@@ -691,7 +782,7 @@ function buildOperatorRecords(fecha = '') {
     try {
     const key = operatorKey(t) || `row:${idx}`;
     const { id, nombre } = rowOperator(t);
-    const plantaOriginal = safeText(pick(t, FIELDS.planta)) || 'Sin planta';
+    const plantaOriginal = resolvePlantFromRow(t);
     const pCfg = ensurePlant(plantaOriginal, safeText(pick(t, FIELDS.zona)) || undefined);
     const planta = pCfg.nombre;
     const turnoMin = parseTimeMinutes(pick(t, FIELDS.turno));
@@ -867,13 +958,14 @@ function filterScope(records, query) {
 
 function datasetPlantCount(type, planta) {
   const rows = state.datasets[type].datos || [];
-  return rows.filter(r => safeText(pick(r, FIELDS.planta)) === planta).length;
+  return rows.filter(r => resolvePlantFromRow(r) === canonicalPlantName(planta)).length;
 }
 
 app.get('/health', (req, res) => res.json({
   ok: true,
   service: 'CCO Intelligence',
-  version: '2.2.0',
+  version: '2.7.0',
+  plant_dictionary: { loaded: PLANT_DICTIONARY.plants.length, conflicts: Object.keys(PLANT_DICTIONARY.conflicts || {}).length, source: PLANT_DICTIONARY.source_file },
   env: NODE_ENV,
   timestamp: nowIso(),
   uptime_s: Math.round(process.uptime()),
@@ -961,7 +1053,7 @@ app.post('/api/ingesta', requireAuth, (req, res) => {
 
     if (tipo === 'turnos') {
       for (const row of result.valid) {
-        ensurePlant(pick(row, FIELDS.planta), pick(row, FIELDS.zona));
+        ensurePlant(resolvePlantFromRow(row), pick(row, FIELDS.zona));
       }
     }
 
@@ -1021,6 +1113,16 @@ app.get('/api/ingesta/estado', requireAuth, (req, res) => {
   });
 });
 
+app.get('/api/catalogo/diccionario-plantas', requireAuth, (req, res) => {
+  res.json({
+    version: PLANT_DICTIONARY.version,
+    source: PLANT_DICTIONARY.source_file,
+    plantas: PLANT_DICTIONARY.plants.length,
+    aliases_resolubles: PLANT_DICTIONARY_LOOKUP.size,
+    conflictos: PLANT_DICTIONARY.conflicts || {},
+  });
+});
+
 app.get('/api/catalogo/plantas', (req, res) => {
   const zona = canonicalZone(safeText(req.query.zona || ''));
   const region = safeText(req.query.region || '');
@@ -1065,7 +1167,7 @@ app.get('/api/operadores', requireAuth, (req, res) => {
   const seen = new Map();
   const fecha = safeText(req.query.fecha || req.user.fecha || '');
   for (const row of filterRowsForDate(getTurnos(), fecha, 'turnos')) {
-    if (planta && safeText(pick(row, FIELDS.planta)) !== planta) continue;
+    if (planta && resolvePlantFromRow(row) !== canonicalPlantName(planta)) continue;
     const op = rowOperator(row);
     if (!seen.has(op.id)) seen.set(op.id, op);
   }
@@ -1274,7 +1376,7 @@ function saveHistorySnapshot(payload, req) {
     resumen: structuredClone(payload.resumen),
     porPlanta: Array.isArray(payload.porPlanta) ? structuredClone(payload.porPlanta) : [],
     origen: snapshotSourceAudit(payload.fecha),
-    origen_version: '2.6',
+    origen_version: '2.7',
   };
   const idx = snapshots.findIndex(h => h.fecha === snapshot.fecha && h.scopeKey === scopeKey);
   if (idx >= 0) { snapshot.id = snapshots[idx].id; snapshots[idx] = snapshot; }
@@ -1433,7 +1535,7 @@ app.get('/api/reporte', requireAuth, (req, res) => {
       return res.json(payload);
   } catch (err) {
     registrarErrorDetallado({ modulo:'reporte', funcion:'GET /api/reporte', error:err?.message || String(err), stack:err?.stack, contexto:{ query:req.query, usuario:req.user?.nombre || '' } });
-    return res.status(422).json({ error:'No fue posible procesar el reporte con los datos disponibles', detalle:err?.message || String(err), mensaje_usuario:'Información incompleta o inválida. Revise los archivos cargados.', version:'2.6.0' });
+    return res.status(422).json({ error:'No fue posible procesar el reporte con los datos disponibles', detalle:err?.message || String(err), mensaje_usuario:'Información incompleta o inválida. Revise los archivos cargados.', version:'2.7.0' });
   }
 });
 
@@ -1677,7 +1779,8 @@ app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 if (require.main === module && process.env.CCO_TEST_MODE !== '1') {
   server.listen(PORT, () => {
-    console.log(`[CCO][startup] CCO Intelligence v2.6.0 activo en puerto ${PORT}`);
+    console.log(`[CCO][startup] CCO Intelligence v2.7.0 activo en puerto ${PORT}`);
+    console.log(`[CCO][startup] Diccionario plantas: ${PLANT_DICTIONARY.plants.length} plantas, ${PLANT_DICTIONARY_LOOKUP.size} alias resolubles, ${Object.keys(PLANT_DICTIONARY.conflicts||{}).length} alias ambiguos`);
     if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producción.');
   });
 }
