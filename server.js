@@ -801,47 +801,106 @@ app.post('/api/ingesta', requireAuth, (req, res) => {
     const tipo = safeText(req.body?.tipo);
     const incoming = req.body?.datos ?? req.body?.registros;
     const archivo = safeText(req.body?.archivo || 'archivo');
-    if (!['turnos','citaciones','logeo'].includes(tipo)) return res.status(400).json({ error: `Tipo desconocido: ${tipo}` });
-    if (!Array.isArray(incoming) || incoming.length === 0) return res.status(400).json({ error: 'El archivo no contiene filas válidas para procesar' });
+    const modoRaw = safeText(req.body?.modo || 'replace').toLowerCase();
+    const modo = ['replace','append'].includes(modoRaw) ? modoRaw : 'replace';
+
+    if (!['turnos','citaciones','logeo'].includes(tipo)) {
+      return res.status(400).json({ error: `Tipo desconocido: ${tipo}` });
+    }
+    if (!Array.isArray(incoming) || incoming.length === 0) {
+      return res.status(400).json({ error: 'El lote no contiene filas válidas para procesar' });
+    }
+
     const normalized = normalizeRows(incoming);
     const result = validateDataset(tipo, normalized);
-    if (!result.valid.length) return res.status(400).json({ error: 'Ninguna fila superó la validación', errores: result.errors.slice(0,10) });
-    const dateProfile = datasetDateProfile(result.valid, tipo);
+    if (!result.valid.length) {
+      return res.status(400).json({
+        error: 'Ninguna fila del lote superó la validación',
+        errores: result.errors.slice(0,10),
+      });
+    }
+
+    const anteriores = modo === 'append' && Array.isArray(state.datasets?.[tipo]?.datos)
+      ? state.datasets[tipo].datos
+      : [];
+    const combinados = modo === 'append'
+      ? [...anteriores, ...result.valid]
+      : [...result.valid];
+
+    const dateProfile = datasetDateProfile(combinados, tipo);
+    const metaAnterior = modo === 'append' ? (state.datasets?.[tipo]?.metadatos || {}) : {};
+    const archivosPrevios = Array.isArray(metaAnterior.archivos) ? metaAnterior.archivos : [];
+    const archivos = [...new Set([...archivosPrevios, archivo].filter(Boolean))];
 
     state.datasets[tipo] = {
-      datos: result.valid,
+      datos: combinados,
       metadatos: {
-        cantidad: result.valid.length,
-        filas_totales: incoming.length,
-        filas_validas: result.valid.length,
-        filas_rechazadas: result.rejected.length,
-        errores: result.errors.slice(0,20),
-        archivo,
-        subido_por: req.user.nombre,
+        cantidad: combinados.length,
+        filas_totales: Number(metaAnterior.filas_totales || 0) + incoming.length,
+        filas_validas: Number(metaAnterior.filas_validas || 0) + result.valid.length,
+        filas_rechazadas: Number(metaAnterior.filas_rechazadas || 0) + result.rejected.length,
+        errores: [...(Array.isArray(metaAnterior.errores) ? metaAnterior.errores : []), ...result.errors].slice(-50),
+        archivo: archivos.length > 1 ? `${archivos.length} archivos` : (archivos[0] || archivo),
+        archivos,
+        subido_por: req.user?.nombre || 'Sistema',
         cargado_en: nowIso(),
         fechas_detectadas: dateProfile.fechas,
         fecha_unica: dateProfile.fecha_unica,
+        modo_ultima_carga: modo,
       },
     };
+
     if (tipo === 'turnos') {
-      for (const row of result.valid) ensurePlant(pick(row, FIELDS.planta), pick(row, FIELDS.zona));
+      for (const row of result.valid) {
+        ensurePlant(pick(row, FIELDS.planta), pick(row, FIELDS.zona));
+      }
     }
-    state.audit.unshift({ id: crypto.randomUUID(), action:'ingesta', tipo, archivo, usuario:req.user.nombre, fecha:nowIso() });
+
+    state.audit.unshift({
+      id: crypto.randomUUID(),
+      action: 'ingesta_lote',
+      tipo,
+      modo,
+      archivo,
+      filas_lote: incoming.length,
+      filas_validas_lote: result.valid.length,
+      filas_rechazadas_lote: result.rejected.length,
+      acumulado: combinados.length,
+      usuario: req.user?.nombre || 'Sistema',
+      fecha: nowIso(),
+    });
     state.audit = state.audit.slice(0, 2000);
     persistState();
+
     const info = {
       tipo,
-      cantidad: result.valid.length,
-      subido_por: req.user.nombre,
+      modo,
+      cantidad: combinados.length,
+      cantidad_lote: result.valid.length,
+      subido_por: req.user?.nombre || 'Sistema',
       filas_rechazadas: result.rejected.length,
       fechas_detectadas: dateProfile.fechas,
       fecha_unica: dateProfile.fecha_unica,
     };
     io.emit('ingesta:actualizada', info);
-    res.json({ ok:true, ...info, errores: result.errors.slice(0,5) });
+    return res.json({ ok:true, ...info, errores: result.errors.slice(0,5) });
   } catch (err) {
-    registrarErrorDetallado({ modulo:'ingesta', funcion:'POST /api/ingesta', error:err?.message || String(err), stack:err?.stack, contexto:{ tipo:req.body?.tipo || '', archivo:req.body?.archivo || '' } });
-    res.status(422).json({ error:'No fue posible procesar el archivo', detalle:err?.message || String(err) });
+    registrarErrorDetallado({
+      modulo:'ingesta',
+      funcion:'POST /api/ingesta',
+      error:err?.message || String(err),
+      stack:err?.stack,
+      contexto:{
+        tipo:req.body?.tipo || '',
+        archivo:req.body?.archivo || '',
+        modo:req.body?.modo || '',
+        filas:Array.isArray(req.body?.datos) ? req.body.datos.length : null,
+      }
+    });
+    return res.status(422).json({
+      error:'No fue posible procesar el lote',
+      detalle:err?.message || String(err),
+    });
   }
 });
 
@@ -1333,6 +1392,16 @@ app.get('/api/historico/dashboard', requireAuth, (req,res) => {
 });
 
 app.get('/api/audit', requireAuth, (req,res)=>res.json(state.audit.slice(0,500)));
+
+// Cualquier ruta /api inexistente SIEMPRE responde JSON. Esto evita que el
+// frontend intente interpretar index.html (<!DOCTYPE ...>) como JSON.
+app.use('/api', (req, res) => {
+  res.status(404).json({
+    error: 'Endpoint API no encontrado',
+    metodo: req.method,
+    ruta: req.originalUrl,
+  });
+});
 
 io.on('connection', (socket) => {
   socket.on('join', ({ planta } = {}) => { if (planta) socket.join(`planta:${planta}`); });
