@@ -48,6 +48,7 @@ const DEFAULT_STATE = {
   bitacora: [],
   audit: [],
   historico: [],
+  historicalSnapshots: [],
 };
 
 let state = loadState();
@@ -64,6 +65,7 @@ function loadState() {
       bitacora: Array.isArray(parsed.bitacora) ? parsed.bitacora : [],
       audit: Array.isArray(parsed.audit) ? parsed.audit : [],
       historico: Array.isArray(parsed.historico) ? parsed.historico : [],
+      historicalSnapshots: Array.isArray(parsed.historicalSnapshots) ? parsed.historicalSnapshots : (Array.isArray(parsed.historico) ? parsed.historico : []),
     };
   } catch (err) {
     console.error('No se pudo leer persistencia; se inicia estado limpio:', err.message);
@@ -1182,36 +1184,105 @@ function historyScopeKey({ zona=null, region=null, planta=null, plantasFiltro=nu
   return 'NACIONAL';
 }
 
+
+function getHistoricalSnapshots() {
+  if (!Array.isArray(state.historicalSnapshots)) {
+    state.historicalSnapshots = Array.isArray(state.historico) ? [...state.historico] : [];
+  }
+  return state.historicalSnapshots;
+}
+
+function snapshotSourceAudit(fecha) {
+  const tipos=['turnos','citaciones','logeo'];
+  const fuentes={};
+  for (const tipo of tipos) {
+    const meta = state?.datasets?.[tipo]?.metadatos || {};
+    fuentes[tipo] = {
+      archivos: Array.isArray(meta.archivos) ? [...meta.archivos] : (meta.archivo ? [meta.archivo] : []),
+      revision: Number(meta.revision || 0),
+      cantidad: Number(meta.cantidad || 0),
+      cargado_en: meta.cargado_en || null,
+      subido_por: meta.subido_por || null,
+      filas_fecha: filterRowsForDate(getDatasetRows(tipo), fecha, tipo).length,
+    };
+  }
+  return fuentes;
+}
+
+function validarOperacionDiaria(payload, fecha) {
+  if (!payload || typeof payload !== 'object') throw new Error('Payload diario inválido');
+  if (!fecha || payload.fecha !== fecha) throw new Error('La fecha del reporte no coincide con la fecha operacional activa');
+  const r = payload.resumen || {};
+  const nums=['programadosExigibles','logeadosAlCorte','pendientesIngreso','asignados','primeraCarga'];
+  for (const k of nums) if (!Number.isFinite(Number(r[k]))) throw new Error(`KPI diario inválido: ${k}`);
+  const p=Number(r.programadosExigibles), l=Number(r.logeadosAlCorte), pend=Number(r.pendientesIngreso), a=Number(r.asignados), c=Number(r.primeraCarga);
+  if (p < 0 || l < 0 || pend < 0 || a < 0 || c < 0) throw new Error('Los KPIs diarios no pueden ser negativos');
+  if (l > p) throw new Error('Con logeo no puede superar Programados');
+  if (pend !== Math.max(0,p-l)) throw new Error('Pendientes no coincide con Programados - Con logeo');
+  if (a > l) throw new Error('Asignados no puede superar Con logeo');
+  if (c > a) throw new Error('Primera carga no puede superar Asignados');
+  const fuentes = r.fuentes || sourceCoverageForDate(fecha);
+  if (!fuentes || Number(fuentes.turnosFilas||0) <= 0) throw new Error('No existen Turnos para la fecha operacional');
+  if (Number(fuentes.logeoFilas||0) <= 0) throw new Error('No existe StatusBreakdown para la fecha operacional');
+  return { ok:true, fuentes };
+}
+
+function validarTrazabilidadHistorica(rows) {
+  if (!Array.isArray(rows)) throw new TypeError('historicalSnapshots debe ser un arreglo');
+  const errores=[];
+  for (const [i,snap] of rows.entries()) {
+    if (!snap || typeof snap !== 'object') { errores.push(`Snapshot ${i+1} inválido`); continue; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(snap.fecha||''))) errores.push(`Snapshot ${i+1} sin fecha válida`);
+    if (!snap.resumen || typeof snap.resumen !== 'object') errores.push(`Snapshot ${i+1} sin resumen`);
+    if (!Array.isArray(snap.porPlanta)) errores.push(`Snapshot ${i+1} sin apertura por planta`);
+  }
+  return { ok:errores.length===0, errores };
+}
+
+function validarConsistenciaHistorica(rows) {
+  const errores=[];
+  for (const snap of rows) {
+    const r=snap?.resumen || {};
+    const p=Number(r.programadosExigibles ?? r.totalTurnos ?? 0);
+    const l=Number(r.logeadosAlCorte ?? r.totalLogeo ?? 0);
+    const pend=Number(r.pendientesIngreso ?? Math.max(0,p-l));
+    const a=Number(r.asignados ?? 0);
+    const c=Number(r.primeraCarga ?? 0);
+    if ([p,l,pend,a,c].some(x=>!Number.isFinite(x) || x<0)) errores.push(`${snap?.fecha||'sin fecha'}: KPI histórico inválido`);
+    if (l>p) errores.push(`${snap?.fecha||'sin fecha'}: Logeados > Programados`);
+    if (pend!==Math.max(0,p-l)) errores.push(`${snap?.fecha||'sin fecha'}: Pendientes inconsistente`);
+    if (a>l) errores.push(`${snap?.fecha||'sin fecha'}: Asignados > Logeados`);
+    if (c>a) errores.push(`${snap?.fecha||'sin fecha'}: Primera carga > Asignados`);
+  }
+  return { ok:errores.length===0, errores };
+}
+
 function saveHistorySnapshot(payload, req) {
-  if (!payload || !payload.fecha || !payload.resumen) return { ok:false, skipped:true };
-  if (!Array.isArray(state.historico)) state.historico = [];
-  const scope = {
-    zona: payload.zona || null,
-    region: payload.region || null,
-    planta: req.user?.planta || null,
-    plantasFiltro: payload.plantasFiltro || null,
-  };
-  const scopeKey = historyScopeKey(scope);
+  if (!payload || !payload.fecha || !payload.resumen) throw new Error('No se puede crear snapshot: reporte diario incompleto');
+  validarOperacionDiaria(payload, payload.fecha);
+  const snapshots = getHistoricalSnapshots();
+  const scope = { zona:null, region:null, planta:null, plantasFiltro:null };
+  const scopeKey = 'NACIONAL';
   const snapshot = {
     id: crypto.randomUUID(),
+    tipo: 'historicalSnapshot',
     fecha: payload.fecha,
     scopeKey,
     scope,
-    generado_en: payload.generado_en || nowIso(),
-    generado_por: payload.generado_por || req.user?.nombre || 'Sistema',
-    resumen: payload.resumen,
-    porPlanta: payload.porPlanta || [],
+    generado_en: nowIso(),
+    generado_por: req.user?.nombre || 'Sistema',
+    resumen: structuredClone(payload.resumen),
+    porPlanta: Array.isArray(payload.porPlanta) ? structuredClone(payload.porPlanta) : [],
+    origen: snapshotSourceAudit(payload.fecha),
+    origen_version: '2.6',
   };
-  const idx = state.historico.findIndex(h => h.fecha === snapshot.fecha && h.scopeKey === scopeKey);
-  if (idx >= 0) {
-    snapshot.id = state.historico[idx].id;
-    state.historico[idx] = snapshot;
-  } else {
-    state.historico.unshift(snapshot);
-  }
-  state.historico = state.historico.slice(0, 5000);
+  const idx = snapshots.findIndex(h => h.fecha === snapshot.fecha && h.scopeKey === scopeKey);
+  if (idx >= 0) { snapshot.id = snapshots[idx].id; snapshots[idx] = snapshot; }
+  else snapshots.unshift(snapshot);
+  state.historicalSnapshots = snapshots.slice(0,5000);
+  state.historico = state.historicalSnapshots; // compatibilidad de lectura con versiones anteriores
   persistState();
-  return { ok:true, scopeKey };
+  return { ok:true, snapshotId:snapshot.id, fecha:snapshot.fecha, scopeKey };
 }
 
 function isoWeekKey(dateStr) {
@@ -1354,15 +1425,61 @@ app.get('/api/reporte', requireAuth, (req, res) => {
         payload.advertencias = [...(payload.advertencias || []), {codigo:'FILAS_OMITIDAS', mensaje:`${built.errors.length} operador(es) no pudieron procesarse y fueron aislados sin bloquear el reporte.`}];
       }
       try {
-        saveHistorySnapshot(payload, req);
-      } catch (historyErr) {
-        console.error('WARN histórico: el reporte diario se entregará igualmente:', historyErr && historyErr.stack ? historyErr.stack : historyErr);
-        payload.advertencias = [...(payload.advertencias || []), { codigo:'HISTORICO_NO_GUARDADO', mensaje: historyErr?.message || String(historyErr) }];
+        payload.validacionOperacion = validarOperacionDiaria(payload, fecha);
+      } catch (validationErr) {
+        registrarErrorDetallado({ modulo:'operacion', funcion:'validarOperacionDiaria', error:validationErr?.message||String(validationErr), stack:validationErr?.stack, contexto:{fecha} });
+        return res.status(422).json({ error:'No fue posible validar la operación diaria', detalle:validationErr?.message||String(validationErr), fecha });
       }
       return res.json(payload);
   } catch (err) {
     registrarErrorDetallado({ modulo:'reporte', funcion:'GET /api/reporte', error:err?.message || String(err), stack:err?.stack, contexto:{ query:req.query, usuario:req.user?.nombre || '' } });
-    return res.status(422).json({ error:'No fue posible procesar el reporte con los datos disponibles', detalle:err?.message || String(err), mensaje_usuario:'Información incompleta o inválida. Revise los archivos cargados.', version:'2.2.0' });
+    return res.status(422).json({ error:'No fue posible procesar el reporte con los datos disponibles', detalle:err?.message || String(err), mensaje_usuario:'Información incompleta o inválida. Revise los archivos cargados.', version:'2.6.0' });
+  }
+});
+
+
+app.post('/api/historico/snapshot', requireAuth, (req,res) => {
+  try {
+    const fecha=safeText(req.body?.fecha || req.query?.fecha || req.user?.fecha || '');
+    if (!fecha) return res.status(400).json({error:'Fecha requerida para crear snapshot'});
+    const built=buildRecordsWithDiagnostics(fecha);
+    let records=Array.isArray(built?.records)?built.records:[];
+    if (req.user?.zona) records=records.filter(r=>r?.zona===req.user.zona);
+    if (req.user?.region) records=records.filter(r=>r?.region===req.user.region);
+    if (req.user?.planta) records=records.filter(r=>r?.planta===req.user.planta);
+    if (!records.length) return res.status(422).json({error:'No existen datos diarios válidos para crear snapshot',fecha});
+    const porPlanta=recordsToPlantRows(records);
+    const tmAll=records.filter(r=>hasMinute(r?.tiempoMuertoMin));
+    const cit=records.filter(r=>r?.citacionAplicada);
+    const noCit=records.filter(r=>!r?.citacionAplicada);
+    const payload={
+      fecha, generado_por:req.user?.nombre||'Sistema', generado_en:nowIso(),
+      resumen:{
+        totalTurnos:records.length, programadosExigibles:records.length,
+        totalCitaciones:cit.length, operadoresConCitacion:cit.length, operadoresPorTurno:noCit.length,
+        cumplimientoReferenciaPct:records.length?round1(records.filter(r=>r?.categoria==='a_tiempo').length/records.length*100):null,
+        cumplimientoCitacionPct:cit.length?round1(cit.filter(r=>r?.categoria==='a_tiempo').length/cit.length*100):null,
+        cumplimientoTurnoPct:noCit.length?round1(noCit.filter(r=>r?.categoria==='a_tiempo').length/noCit.length*100):null,
+        totalLogeo:records.filter(r=>hasMinute(r?.logeoMin)).length,
+        logeadosAlCorte:records.filter(r=>hasMinute(r?.logeoMin)).length,
+        pendientesIngreso:records.filter(r=>!hasMinute(r?.logeoMin)).length,
+        asignados:records.filter(r=>hasMinute(r?.asignacionMin)).length,
+        primeraCarga:records.filter(r=>hasMinute(r?.primeraCargaMin)).length,
+        operadoresCriticos:records.filter(r=>r?.categoria==='atraso_critico' || (hasMinute(r?.logeoMin)&&!hasMinute(r?.asignacionMin))).length,
+        tiempoMuertoPromedioMin:tmAll.length?round1(tmAll.reduce((s,r)=>s+(Number(r?.tiempoMuertoMin)||0),0)/tmAll.length):null,
+        fuentes:sourceCoverageForDate(fecha),
+      },
+      porPlanta,
+    };
+    validarOperacionDiaria(payload,fecha);
+    const result=saveHistorySnapshot(payload,req);
+    state.audit.unshift({id:crypto.randomUUID(),action:'snapshot_historico_creado',fecha,snapshot_id:result.snapshotId,user:req.user?.nombre||'Sistema',timestamp:nowIso()});
+    persistState();
+    io.emit('historico:snapshot_creado',{fecha,snapshotId:result.snapshotId});
+    return res.json({ok:true,...result,mensaje:`Snapshot histórico ${fecha} guardado correctamente`});
+  } catch(err) {
+    registrarErrorDetallado({modulo:'historico',funcion:'POST /api/historico/snapshot',error:err?.message||String(err),stack:err?.stack,contexto:{fecha:req.body?.fecha||req.query?.fecha||''}});
+    return res.status(422).json({error:'No fue posible crear el snapshot histórico',detalle:err?.message||String(err)});
   }
 });
 
@@ -1376,7 +1493,7 @@ app.get('/api/historico', requireAuth, (req,res) => {
   const planta = safeText(req.query.planta || req.user.planta || '');
   const plantasFiltro = req.query.plantas ? String(req.query.plantas).split(',').map(safeText).filter(Boolean) : null;
   const scopeKey = historyScopeKey({ zona: zona||null, region: region||null, planta: planta||null, plantasFiltro });
-  let rows = state.historico.filter(h => h.scopeKey === scopeKey);
+  let rows = getHistoricalSnapshots().filter(h => h.scopeKey === scopeKey);
   if (from) rows = rows.filter(h => h.fecha >= from);
   if (to) rows = rows.filter(h => h.fecha <= to);
   rows.sort((a,b)=>a.fecha.localeCompare(b.fecha));
@@ -1391,21 +1508,6 @@ app.get('/api/historico', requireAuth, (req,res) => {
     series,
   });
 });
-
-
-function chooseHistoricalBaseRows(from, to) {
-  let rows = state.historico.filter(h => (!from || h.fecha >= from) && (!to || h.fecha <= to));
-  const national = rows.filter(h => h.scopeKey === 'NACIONAL');
-  if (national.length) return national.sort((a,b)=>a.fecha.localeCompare(b.fecha));
-
-  // Fallback: one snapshot per date, preferring the widest available scope.
-  const priority = (h) => h.scopeKey === 'NACIONAL' ? 0 : h.scopeKey?.startsWith('ZONA:') ? 1 : h.scopeKey?.startsWith('REGION:') ? 2 : h.scopeKey?.startsWith('PLANTAS:') ? 3 : 4;
-  const byDate = new Map();
-  for (const h of rows.sort((a,b)=>priority(a)-priority(b))) {
-    if (!byDate.has(h.fecha)) byDate.set(h.fecha, h);
-  }
-  return [...byDate.values()].sort((a,b)=>a.fecha.localeCompare(b.fecha));
-}
 
 
 function recordsToPlantRows(records) {
@@ -1432,13 +1534,6 @@ function recordsToPlantRows(records) {
   });
 }
 
-function loadedTurnoDates(from='', to='') {
-  const idx = datasetDateIndex('turnos');
-  return [...idx.byDate.keys()]
-    .filter(d=>(!from||d>=from)&&(!to||d<=to))
-    .sort();
-}
-
 function sourceCoverageForDate(fecha) {
   const turnos=filterRowsForDate(getTurnos(),fecha,'turnos');
   const citaciones=filterRowsForDate(getCitaciones(),fecha,'citaciones');
@@ -1451,10 +1546,6 @@ function sourceCoverageForDate(fecha) {
     logeoFilas:logeo.length,
     operadoresLogeoUnicos:uniqueLogOps,
   };
-}
-
-function historicalPlantRows(snapshot) {
-  return Array.isArray(snapshot?.porPlanta) ? snapshot.porPlanta : [];
 }
 
 function aggregatePlantHistoricalRows(items) {
@@ -1482,97 +1573,87 @@ function aggregatePlantHistoricalRows(items) {
 
 app.get('/api/historico/dashboard', requireAuth, (req,res) => {
   try {
-    const currentYear = new Date().getFullYear();
-    const from = safeText(req.query.from || `${currentYear}-06-16`);
-    const to = safeText(req.query.to || new Date().toISOString().slice(0,10));
-    const zona = safeText(req.query.zona || '');
-    const plantasFiltro = req.query.plantas ? String(req.query.plantas).split(',').map(safeText).filter(Boolean) : [];
+    const currentYear=new Date().getFullYear();
+    const from=safeText(req.query.from || `${currentYear}-06-15`);
+    const to=safeText(req.query.to || new Date().toISOString().slice(0,10));
+    const zona=safeText(req.query.zona || '');
+    const plantasFiltro=req.query.plantas ? String(req.query.plantas).split(',').map(safeText).filter(Boolean) : [];
 
-    const fechasTurnos = loadedTurnoDates(from,to);
-    const fechasStatus = [...datasetDateIndex('logeo').byDate.keys()].filter(d=>(!from||d>=from)&&(!to||d<=to)).sort();
-    const daily = [];
-    const diasIncompletos = [];
+    const allSnapshots=getHistoricalSnapshots();
+    const validacion=validarTrazabilidadHistorica(allSnapshots);
+    const consistencia=validarConsistenciaHistorica(allSnapshots);
+    if (!validacion.ok) return res.status(422).json({error:'Repositorio histórico inválido',detalle:validacion.errores.slice(0,10)});
 
-    for (const fecha of fechasTurnos) {
-      const coverage = sourceCoverageForDate(fecha);
-      if (coverage.turnosFilas > 0 && coverage.logeoFilas === 0) {
-        diasIncompletos.push({ ...coverage, motivo:'Sin StatusBreakdown para la fecha' });
-        continue;
+    const periodSnapshots=allSnapshots
+      .filter(s=>s?.scopeKey==='NACIONAL')
+      .filter(s=>(!from||s?.fecha>=from)&&(!to||s?.fecha<=to))
+      .sort((a,b)=>String(a?.fecha||'').localeCompare(String(b?.fecha||'')));
+
+    const daily=[];
+    for (const snap of periodSnapshots) {
+      let plants=Array.isArray(snap?.porPlanta)?snap.porPlanta.map(x=>({...x})):[];
+      if (zona) plants=plants.filter(p=>p?.zona===zona);
+      if (plantasFiltro.length) {
+        if (plantasFiltro.includes('__NINGUNA__')) plants=[];
+        else plants=plants.filter(p=>plantasFiltro.includes(p?.planta));
       }
-      const built = buildOperatorRecords(fecha);
-      let records = Array.isArray(built) ? built : [];
-      if (zona) records = records.filter(r=>r?.zona===zona);
-      if (plantasFiltro.length) records = records.filter(r=>plantasFiltro.includes(r?.planta));
-      const plants = recordsToPlantRows(records);
       if (!plants.length) continue;
-      daily.push({ fecha, plants, coverage });
+      daily.push({fecha:snap.fecha,plants,snapshotId:snap.id,generado_en:snap.generado_en,origen:snap.origen||null});
     }
 
-    // Fallback seguro: si los Turnos cargados no traen fecha/semana suficiente para reconstruir
-    // el histórico, se aprovechan snapshots existentes sin duplicar fechas ya calculadas.
-    const existingDates = new Set(daily.map(d=>d.fecha));
-    const snapshots = Array.isArray(state.historico) ? state.historico.filter(h => (!from || h?.fecha >= from) && (!to || h?.fecha <= to)) : [];
-    for (const snap of snapshots) {
-      if (!snap?.fecha || existingDates.has(snap.fecha)) continue;
-      let plants = historicalPlantRows(snap);
-      if (zona) plants = plants.filter(p=>p?.zona===zona);
-      if (plantasFiltro.length) plants = plants.filter(p=>plantasFiltro.includes(p?.planta));
-      if (!plants.length) continue;
-      daily.push({ fecha:snap.fecha, plants, coverage:{turnosFilas:plants.reduce((a,p)=>a+(Number(p?.turnos)||0),0), logeoFilas:plants.reduce((a,p)=>a+(Number(p?.logeo)||0),0)}, source:'snapshot' });
-      existingDates.add(snap.fecha);
-    }
-    daily.sort((a,b)=>a.fecha.localeCompare(b.fecha));
-
-    const weeklyMap = new Map();
+    const weeklyMap=new Map();
     for (const day of daily) {
-      const wk = isoWeekKey(day.fecha);
-      if (!weeklyMap.has(wk)) weeklyMap.set(wk, []);
-      weeklyMap.get(wk).push(...day.plants);
+      const key=isoWeekKey(day.fecha);
+      if (!weeklyMap.has(key)) weeklyMap.set(key,[]);
+      weeklyMap.get(key).push(day);
     }
-    const weekly = [...weeklyMap.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([semana,items])=>({
-      semana,
-      ...aggregatePlantHistoricalRows(items),
-    }));
-
-    const allPlants = daily.flatMap(d=>d.plants);
-    const acumulado = aggregatePlantHistoricalRows(allPlants);
-    const zoneNames = ['Norte','Centro','Sur'];
-    const zonas = zoneNames.map(z=>{
-      const items = daily.flatMap(d=>d.plants.filter(p=>p?.zona===z));
-      return { zona:z, ...aggregatePlantHistoricalRows(items) };
+    const weekly=[...weeklyMap.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([semana,days])=>{
+      const plants=days.flatMap(d=>d.plants);
+      const agg=aggregatePlantHistoricalRows(plants);
+      return {semana,dias:days.length,...agg,adherenciaPct:agg.adherenciaPct};
     });
 
-    const plantMap = new Map();
-    for (const day of daily) {
-      for (const p of day.plants) {
-        if (!plantMap.has(p.planta)) plantMap.set(p.planta, []);
-        plantMap.get(p.planta).push(p);
-      }
+    const allPlantRows=daily.flatMap(d=>d.plants);
+    const acumulado=aggregatePlantHistoricalRows(allPlantRows);
+    const byZone=new Map();
+    for (const row of allPlantRows) {
+      const z=safeText(row?.zona)||'Sin zona';
+      if (!byZone.has(z)) byZone.set(z,[]);
+      byZone.get(z).push(row);
     }
-    const plantas = [...plantMap.entries()].map(([planta,items])=>({
-      planta,
-      zona: items[0]?.zona || ensurePlant(planta).zona,
-      ...aggregatePlantHistoricalRows(items),
-    })).sort((a,b)=>a.zona.localeCompare(b.zona)||a.planta.localeCompare(b.planta));
+    const zonas=[...byZone.entries()].map(([z,items])=>({zona:z,...aggregatePlantHistoricalRows(items)})).sort((a,b)=>a.zona.localeCompare(b.zona));
+    const byPlant=new Map();
+    for (const row of allPlantRows) {
+      const key=`${safeText(row?.zona)}|${safeText(row?.planta)}`;
+      if (!byPlant.has(key)) byPlant.set(key,[]);
+      byPlant.get(key).push(row);
+    }
+    const plantas=[...byPlant.entries()].map(([key,items])=>{const [z,p]=key.split('|'); return {zona:z,planta:p,...aggregatePlantHistoricalRows(items)}}).sort((a,b)=>a.zona.localeCompare(b.zona)||a.planta.localeCompare(b.planta));
+
+    const allNational=allSnapshots.filter(s=>s?.scopeKey==='NACIONAL').sort((a,b)=>String(a?.fecha||'').localeCompare(String(b?.fecha||'')));
+    const uniqueDays=[...new Set(allNational.map(s=>s?.fecha).filter(Boolean))];
+    const uniqueWeeks=[...new Set(uniqueDays.map(isoWeekKey))];
+    const ultimo=allNational.length?allNational[allNational.length-1]:null;
 
     return res.json({
-      from,to,zona:zona||null,plantasFiltro,
-      fuente:'datasets_cargados',
-      snapshots:daily.length,
-      diasConDatos:daily.length,
-      diasIncompletos,
-      fechasTurnosDetectadas:fechasTurnos.length,
-      fechasStatusDetectadas:fechasStatus.length,
-      turnosSinFecha: datasetDateIndex('turnos').explicitCount === 0 && getTurnos().length > 0,
-      statusSinFecha: datasetDateIndex('logeo').explicitCount === 0 && getLogeo().length > 0,
-      weekly,
-      acumulado,
-      zonas,
-      plantas,
+      ok:true, source:'historicalSnapshots', from,to,zona,plantasFiltro,
+      dailySnapshots:daily.length, diasConDatos:daily.length,
+      weekly, acumulado, zonas, plantas,
+      validacionHistorica:validacion,
+      consistenciaHistorica:consistencia,
+      audit:{
+        fechaOperacionNacional:req.user?.fecha||null,
+        ultimoSnapshotHistorico:ultimo?.fecha||null,
+        ultimoSnapshotGeneradoEn:ultimo?.generado_en||null,
+        semanasDisponibles:uniqueWeeks.length,
+        diasDisponibles:uniqueDays.length,
+        registrosHistoricos:allNational.length,
+      },
+      snapshotsDisponibles:allNational.map(s=>({fecha:s.fecha,id:s.id,generado_en:s.generado_en,generado_por:s.generado_por,origen:s.origen||null})),
     });
-  } catch (err) {
-    registrarErrorDetallado({ modulo:'historico', funcion:'GET /api/historico/dashboard', error:err?.message||String(err), stack:err?.stack });
-    return res.status(422).json({ error:'No se pudo construir la trazabilidad histórica', detalle:err?.message||String(err) });
+  } catch(err) {
+    registrarErrorDetallado({modulo:'historico',funcion:'GET /api/historico/dashboard',error:err?.message||String(err),stack:err?.stack});
+    return res.status(422).json({error:'No fue posible consultar la trazabilidad histórica',detalle:err?.message||String(err)});
   }
 });
 
@@ -1596,7 +1677,7 @@ app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 if (require.main === module && process.env.CCO_TEST_MODE !== '1') {
   server.listen(PORT, () => {
-    console.log(`[CCO][startup] CCO Intelligence v2.5.0 activo en puerto ${PORT}`);
+    console.log(`[CCO][startup] CCO Intelligence v2.6.0 activo en puerto ${PORT}`);
     if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producción.');
   });
 }
