@@ -176,7 +176,7 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 @media(max-width:760px){.module-switcher{right:10px;bottom:10px;left:10px;justify-content:center}.module-switcher button{flex:1}.module-tabs{top:4px}}
 
 
-/* v2.4 navegación principal: selector fijo siempre visible */
+/* v2.5 navegación principal: selector fijo siempre visible */
 .module-switcher{position:fixed!important;top:12px!important;right:16px!important;bottom:auto!important;left:auto!important;z-index:99999!important;display:flex!important;align-items:center!important;justify-content:center!important;gap:6px!important;width:auto!important;padding:6px!important;margin:0!important;background:rgba(255,255,255,.98)!important;border:1px solid var(--line)!important;border-radius:12px!important;box-shadow:0 8px 24px rgba(16,42,67,.16)!important;backdrop-filter:blur(8px)!important}
 .module-switcher-label{font-size:9px;font-weight:800;letter-spacing:.5px;color:#607a91;margin:0 3px}
 .module-switcher button{margin:0!important;padding:8px 11px!important;font-size:11px!important;font-weight:800!important;border-radius:8px!important;min-width:0!important;white-space:nowrap!important}
@@ -223,11 +223,11 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v2.4</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v2.5</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
     <label style="margin:0;font-size:10px">Fecha operacional <input id="scopeFecha" type="date" onchange="cambiarFechaOperacional()" style="width:145px;margin-left:5px"></label>
-    <span id="appVersion" class="pill">v2.4</span><span id="connPill" class="pill">Conectando…</span>
+    <span id="appVersion" class="pill">v2.5</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
 <div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
@@ -260,6 +260,7 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
       <button type="button" class="secondary" id="histExportar">Exportar histórico CSV</button>
       <span class="small" id="histAlcance" style="align-self:center"></span>
     </div>
+    <div id="histDiagnostico" class="history-note" style="margin:6px 0 10px"></div>
     <div id="histPlantasLista" class="multiselect-box"></div>
 
     <div class="rep-header"><span class="rep-titulo">Adherencia general por semana</span><span class="rep-meta">Desde semana 25</span></div>
@@ -280,7 +281,7 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
         <tbody id="histBody"><tr><td colspan="8" class="history-empty">Aún no se ha consultado el histórico.</td></tr></tbody>
       </table>
     </div>
-    <div class="history-note">La trazabilidad utiliza las fotografías guardadas al generar reportes. Para semanas anteriores sin datos guardados, carga los archivos correspondientes y genera el reporte de ese día.</div>
+    <div class="history-note">La trazabilidad se reconstruye directamente desde los archivos cargados. Para histórico semanal, Turnos debe incluir fecha o combinación Semana + Día; StatusBreakdown debe incluir fecha/hora del evento.</div>
   </div>
 
   <div class="card">
@@ -657,7 +658,7 @@ Object.keys(TIPOS_ARCHIVO).forEach(inputId=>{
 });
 
 
-// v2.4 — Carga masiva desde carpeta (Chrome / Edge). Cada carpeta debe contener
+// v2.5 — Carga masiva optimizada desde carpeta (Chrome / Edge). Cada carpeta debe contener
 // archivos de la misma fuente: Turnos, Citaciones o StatusBreakdown/Logeo.
 const CARPETAS_ARCHIVO = {
   folderTurnos:{tipo:'turnos', boton:'btnFolderTurnos'},
@@ -681,29 +682,71 @@ function hojaSugeridaLote(tipo, wb){
   return (conFirma||conteos[0]||{}).nombre || wb.SheetNames[0];
 }
 async function procesarCarpeta(tipo, files){
-  setDot(tipo,'busy'); setStatusText(tipo,`Leyendo carpeta: ${files.length} archivo(s)...`);
-  const acumuladas=[]; const errores=[]; const usados=[];
+  setDot(tipo,'busy');
+  const errores=[]; let totalExtraidas=0; let totalArchivos=0; let primeraCarga=true;
+  const BATCH_SIZE = tipo==='logeo' ? 1800 : 1200;
   for(let i=0;i<files.length;i++){
     const file=files[i];
     try{
-      setStatusText(tipo,`Procesando ${i+1}/${files.length}: ${file.name}`);
+      setStatusText(tipo,`Leyendo ${i+1}/${files.length}: ${file.name}`);
       const ab=await file.arrayBuffer();
-      const wb=XLSX.read(new Uint8Array(ab),{type:'array',cellDates:true});
+      const wb=XLSX.read(new Uint8Array(ab),{type:'array',cellDates:true,dense:true});
       const sheet=hojaSugeridaLote(tipo,wb);
       if(!sheet) throw new Error('sin hoja utilizable');
       const filaHeader=detectarFilaHeader(wb,sheet);
-      const rows=XLSX.utils.sheet_to_json(wb.Sheets[sheet],{defval:null,range:filaHeader});
-      if(rows.length){ acumuladas.push(...rows); usados.push(`${file.name} · ${sheet}`); }
-      else errores.push(`${file.name}: hoja vacía`);
-    }catch(err){ errores.push(`${file.name}: ${err.message||err}`); }
+      let rows=XLSX.utils.sheet_to_json(wb.Sheets[sheet],{defval:null,range:filaHeader});
+      if(tipo==='logeo') rows=compactarStatusRows(rows);
+      if(!rows.length){ errores.push(`${file.name}: hoja vacía`); continue; }
+      totalArchivos++; totalExtraidas += rows.length;
+      const lotes=Math.ceil(rows.length/BATCH_SIZE);
+      for(let lote=0;lote<lotes;lote++){
+        const datosLote=rows.slice(lote*BATCH_SIZE,(lote+1)*BATCH_SIZE);
+        const esUltimoArchivo=i===files.length-1;
+        const esUltimoLote=lote===lotes-1;
+        setStatusText(tipo,`Procesando archivo ${i+1}/${files.length} · lote ${lote+1}/${lotes} · ${totalExtraidas.toLocaleString('es-CL')} filas leídas`);
+        const resp=await enviarLoteIngesta(tipo,datosLote,`${file.name} · ${sheet}`,primeraCarga?'replace':'append',lote+1,lotes,esUltimoArchivo&&esUltimoLote);
+        if(!resp) throw new Error('el servidor no confirmó el lote');
+        primeraCarga=false;
+        await ccoYield();
+      }
+      rows=null;
+    }catch(err){
+      errores.push(`${file.name}: ${err?.message||err}`);
+      registrarErrorDetalladoUI('ingesta','procesarCarpeta',err);
+    }
   }
-  if(!acumuladas.length){
-    setDot(tipo,'err'); setStatusText(tipo,`No se pudieron extraer filas. ${errores.slice(0,2).join(' | ')}`,'err'); return;
+  if(primeraCarga){
+    setDot(tipo,'err'); setStatusText(tipo,`No se pudieron procesar archivos. ${errores.slice(0,2).join(' | ')}`,'err'); return;
   }
-  const etiqueta=`Carpeta (${usados.length} archivos) · ${usados.slice(0,3).join(' | ')}${usados.length>3?' | …':''}`;
-  setStatusText(tipo,`${acumuladas.length} filas combinadas de ${usados.length} archivo(s). Subiendo...`);
-  await subirIngesta(tipo, acumuladas, etiqueta);
-  if(errores.length) console.warn('Archivos omitidos en carga de carpeta:',errores);
+  setDot(tipo,'ok');
+  setStatusText(tipo,`${totalExtraidas.toLocaleString('es-CL')} filas · ${totalArchivos} archivo(s) procesados${errores.length?` · ${errores.length} omitido(s)`:''}`,'ok');
+  cargarEstadoIngesta();
+}
+
+function ccoYield(){ return new Promise(resolve=>setTimeout(resolve,0)); }
+
+function normalizeHeaderClient(k){
+  return String(k??'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+}
+function compactarStatusRows(rows){
+  if(!Array.isArray(rows)) return [];
+  const patrones=[/numero.*funcionario/,/id.*operador/,/^rut$/,/(primero|nombre).*empleado/,/(ultimo|apellido).*empleado/,/descripcion.*estado/,/^estado$/,/^status$/,/(planta|plant)/,/(hora.*inicio|fecha.*inicio|timestamp|datetime|fecha.*hora|hora.*estado|fecha.*estado)/];
+  return rows.map(row=>{
+    const out={};
+    for(const [k,v] of Object.entries(row||{})){
+      const nk=normalizeHeaderClient(k);
+      if(patrones.some(re=>re.test(nk))) out[k]=v;
+    }
+    return Object.keys(out).length?out:row;
+  });
+}
+
+async function enviarLoteIngesta(tipo,datosLote,nombreArchivo,modo,lote,totalLotes,finalizar=false){
+  const response=await fetch(API+'/api/ingesta',{
+    method:'POST', headers:authHeaders(),
+    body:JSON.stringify({tipo,datos:datosLote,archivo:nombreArchivo,modo,lote,total_lotes:totalLotes,finalizar})
+  });
+  return leerRespuestaApiSegura(response);
 }
 
 function contarFilasHoja(wb, nombreHoja){
@@ -869,7 +912,8 @@ async function subirIngesta(tipo, registros, nombreArchivo){
       throw new Error('La sesión CCO no está autenticada. Vuelve a ingresar.');
     }
 
-    const BATCH_SIZE = 750;
+    if(tipo==='logeo') registros=compactarStatusRows(registros);
+    const BATCH_SIZE = tipo==='logeo' ? 1800 : 1200;
     const totalLotes = Math.ceil(registros.length / BATCH_SIZE);
     let ultimaRespuesta = null;
 
@@ -882,25 +926,12 @@ async function subirIngesta(tipo, registros, nombreArchivo){
       const modo = lote===0 ? 'replace' : 'append';
       setStatusText(tipo, `Subiendo lote ${lote+1}/${totalLotes} · ${Math.min(inicio+datosLote.length, registros.length)}/${registros.length} filas...`);
 
-      let response;
       try{
-        response = await fetch(API+'/api/ingesta',{
-          method:'POST',
-          headers:authHeaders(),
-          body:JSON.stringify({
-            tipo,
-            datos:datosLote,
-            archivo:nombreArchivo,
-            modo,
-            lote:lote+1,
-            total_lotes:totalLotes
-          })
-        });
+        ultimaRespuesta = await enviarLoteIngesta(tipo,datosLote,nombreArchivo,modo,lote+1,totalLotes,lote===totalLotes-1);
       }catch(networkErr){
-        throw new Error(`No fue posible contactar el servidor durante el lote ${lote+1}/${totalLotes}: ${networkErr?.message || networkErr}`);
+        throw new Error(`No fue posible procesar el lote ${lote+1}/${totalLotes}: ${networkErr?.message || networkErr}`);
       }
-
-      ultimaRespuesta = await leerRespuestaApiSegura(response);
+      await ccoYield();
     }
 
     const resp = ultimaRespuesta;
@@ -1990,13 +2021,23 @@ async function cargarHistorico(){
   body.innerHTML='<tr><td colspan="8" class="history-empty">Consultando trazabilidad...</td></tr>';
   try{
     const r=await fetch(API+'/api/historico/dashboard?'+histDashboardParams().toString(),{headers:authHeaders()});
-    const data=await r.json();
-    if(!r.ok) throw new Error(data.detalle||data.error||('HTTP '+r.status));
+    const data=await leerRespuestaApiSegura(r);
+    if(!data || typeof data!=='object') throw new Error('Respuesta histórica inválida');
     historicoUltimo=data;
     const incompletos=Array.isArray(data.diasIncompletos)?data.diasIncompletos.length:0;
     document.getElementById('histAlcance').textContent=`${data.diasConDatos} día(s) completos · ${incompletos} día(s) sin StatusBreakdown · ${data.from} → ${data.to}`;
+    const diag=document.getElementById('histDiagnostico');
+    if(diag){
+      const partes=[];
+      partes.push(`Fechas Turnos detectadas: ${data.fechasTurnosDetectadas||0}`);
+      partes.push(`Fechas StatusBreakdown detectadas: ${data.fechasStatusDetectadas||0}`);
+      if(data.turnosSinFecha) partes.push('⚠ Turnos sin fecha/semana utilizable: el histórico no puede reconstruirse por día');
+      if(data.statusSinFecha) partes.push('⚠ StatusBreakdown sin fecha utilizable');
+      diag.textContent=partes.join(' · ');
+    }
     renderHistoricoDashboard(data);
   }catch(err){
+    const diag=document.getElementById('histDiagnostico'); if(diag) diag.textContent='No fue posible consultar la trazabilidad.';
     body.innerHTML=`<tr><td colspan="8" class="history-empty" style="color:var(--red)">Error al consultar histórico: ${escapeHtml(err.message||String(err))}</td></tr>`;
   }
 }
