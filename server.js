@@ -458,7 +458,7 @@ function classifyOperationalEvent(rawEstado) {
 }
 
 // ============================================================================
-// DICCIONARIO CORPORATIVO DE PLANTAS (v2.7)
+// DICCIONARIO CORPORATIVO DE PLANTAS (v2.8)
 // Fuente: config/plant-dictionary.json, derivado del Excel entregado por Operaciones.
 // Resuelve nombres, Código Command, LOCAL CMD, CENTRO SAP, ShortName y Local Inventario.
 // Los alias ambiguos (por ejemplo P13A compartido por Central/Oriente/Poniente) NO se
@@ -964,7 +964,7 @@ function datasetPlantCount(type, planta) {
 app.get('/health', (req, res) => res.json({
   ok: true,
   service: 'CCO Intelligence',
-  version: '2.7.0',
+  version: '2.8.0',
   plant_dictionary: { loaded: PLANT_DICTIONARY.plants.length, conflicts: Object.keys(PLANT_DICTIONARY.conflicts || {}).length, source: PLANT_DICTIONARY.source_file },
   env: NODE_ENV,
   timestamp: nowIso(),
@@ -1376,7 +1376,7 @@ function saveHistorySnapshot(payload, req) {
     resumen: structuredClone(payload.resumen),
     porPlanta: Array.isArray(payload.porPlanta) ? structuredClone(payload.porPlanta) : [],
     origen: snapshotSourceAudit(payload.fecha),
-    origen_version: '2.7',
+    origen_version: '2.8',
   };
   const idx = snapshots.findIndex(h => h.fecha === snapshot.fecha && h.scopeKey === scopeKey);
   if (idx >= 0) { snapshot.id = snapshots[idx].id; snapshots[idx] = snapshot; }
@@ -1535,7 +1535,7 @@ app.get('/api/reporte', requireAuth, (req, res) => {
       return res.json(payload);
   } catch (err) {
     registrarErrorDetallado({ modulo:'reporte', funcion:'GET /api/reporte', error:err?.message || String(err), stack:err?.stack, contexto:{ query:req.query, usuario:req.user?.nombre || '' } });
-    return res.status(422).json({ error:'No fue posible procesar el reporte con los datos disponibles', detalle:err?.message || String(err), mensaje_usuario:'Información incompleta o inválida. Revise los archivos cargados.', version:'2.7.0' });
+    return res.status(422).json({ error:'No fue posible procesar el reporte con los datos disponibles', detalle:err?.message || String(err), mensaje_usuario:'Información incompleta o inválida. Revise los archivos cargados.', version:'2.8.0' });
   }
 });
 
@@ -1779,7 +1779,7 @@ app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 if (require.main === module && process.env.CCO_TEST_MODE !== '1') {
   server.listen(PORT, () => {
-    console.log(`[CCO][startup] CCO Intelligence v2.7.0 activo en puerto ${PORT}`);
+    console.log(`[CCO][startup] CCO Intelligence v2.8.0 activo en puerto ${PORT}`);
     console.log(`[CCO][startup] Diccionario plantas: ${PLANT_DICTIONARY.plants.length} plantas, ${PLANT_DICTIONARY_LOOKUP.size} alias resolubles, ${Object.keys(PLANT_DICTIONARY.conflicts||{}).length} alias ambiguos`);
     if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producción.');
   });
