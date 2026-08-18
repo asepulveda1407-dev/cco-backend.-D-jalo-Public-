@@ -157,6 +157,18 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 .status-dot{background:#c7d4e1}.status-dot.ok{background:#27ae60}.status-dot.err{background:#eb5757}.status-dot.busy{background:#f2b01e}
 @media(max-width:760px){main{padding:10px}.upload-row{align-items:flex-start;flex-direction:column}.upload-status{flex:auto;text-align:left;justify-content:flex-start}.gate{margin:16px 10px}}
 
+
+.module-tabs{display:flex;gap:8px;align-items:center;margin-bottom:14px;padding:6px;background:#eef5fb;border:1px solid #d2e0ed;border-radius:12px}
+.module-tab{margin:0;background:transparent;color:#49657e;border:1px solid transparent;padding:8px 12px;border-radius:8px}
+.module-tab.active{background:var(--blue);color:white;border-color:var(--blue)}
+.history-toolbar{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:10px;align-items:end}
+.history-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:14px 0}
+.history-table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:white}
+.history-table{min-width:900px;margin:0}
+.history-empty{padding:22px;text-align:center;color:var(--mut)}
+.history-note{font-size:10px;color:var(--mut);margin-top:8px}
+@media(max-width:760px){.history-toolbar{grid-template-columns:1fr 1fr}.module-tabs{flex-wrap:wrap}}
+
 </style>
 </head>
 <body>
@@ -203,6 +215,52 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
   </div>
 </header>
 <main>
+
+  <div id="ccoTabs" class="module-tabs">
+    <button type="button" id="tabOperacion" class="module-tab active">Operación actual</button>
+    <button type="button" id="tabHistorico" class="module-tab">Trazabilidad histórica</button>
+  </div>
+
+  <div id="historicoPanel" class="card" style="display:none">
+    <h2>Trazabilidad histórica <span class="small">(Semana 25 a la fecha)</span></h2>
+    <p class="small">Tablero histórico conectado: la adherencia semanal, los acumulados, la apertura por zona y los KPIs por planta responden a los mismos filtros.</p>
+
+    <div class="history-toolbar" style="grid-template-columns:repeat(4,minmax(150px,1fr))">
+      <div><label>Desde</label><input id="histDesde" type="date"></div>
+      <div><label>Hasta</label><input id="histHasta" type="date"></div>
+      <div><label>Zona</label><select id="histZona"><option value="">Todas las zonas</option><option value="Norte">Norte</option><option value="Centro">Centro</option><option value="Sur">Sur</option></select></div>
+      <div><button type="button" id="histConsultar" style="width:100%">Actualizar trazabilidad</button></div>
+    </div>
+
+    <label style="margin-top:10px">Plantas <span class="small" id="histPlantasResumen">(todas seleccionadas)</span></label>
+    <div class="row" style="margin-bottom:6px">
+      <button type="button" class="secondary" id="histTodasPlantas">Marcar todas</button>
+      <button type="button" class="secondary" id="histNingunaPlanta">Desmarcar todas</button>
+      <button type="button" class="secondary" id="histExportar">Exportar histórico CSV</button>
+      <span class="small" id="histAlcance" style="align-self:center"></span>
+    </div>
+    <div id="histPlantasLista" class="multiselect-box"></div>
+
+    <div class="rep-header"><span class="rep-titulo">Adherencia general por semana</span><span class="rep-meta">Desde semana 25</span></div>
+    <div class="chart-wrap"><canvas id="histChart"></canvas></div>
+
+    <div class="rep-header"><span class="rep-titulo">Acumulados a la fecha</span></div>
+    <div id="histKpis" class="history-kpis"></div>
+
+    <div class="rep-header"><span class="rep-titulo">Apertura por zonas</span></div>
+    <div id="histZonas" class="history-kpis"></div>
+
+    <div class="rep-header"><span class="rep-titulo">KPIs por planta</span><span class="rep-meta">Responde a Zona + Plantas seleccionadas</span></div>
+    <div class="history-table-wrap">
+      <table class="history-table">
+        <thead><tr>
+          <th>Zona</th><th>Planta</th><th>Programados</th><th>Con logeo</th><th>Asignados</th><th>1ª carga</th><th>Pendientes</th><th>Adherencia</th>
+        </tr></thead>
+        <tbody id="histBody"><tr><td colspan="8" class="history-empty">Aún no se ha consultado el histórico.</td></tr></tbody>
+      </table>
+    </div>
+    <div class="history-note">La trazabilidad utiliza las fotografías guardadas al generar reportes. Para semanas anteriores sin datos guardados, carga los archivos correspondientes y genera el reporte de ese día.</div>
+  </div>
 
   <div class="card">
     <h2>Configuración por planta <span class="small">(colaborativa — cambia en una pestaña, mira la otra)</span></h2>
@@ -530,6 +588,7 @@ function iniciar(){
   cargarPlantas();
   cargarBitacora();
   cargarEstadoIngesta();
+  initModuleTabs();
 }
 
 // --- Carga de Excel (Turnos / Citaciones / Logeo), con selección de hoja ---
@@ -810,10 +869,11 @@ function clasificarSeveridad(adherencia){
 const COLOR_SEV = { critico:'#f25f6d', medio:'#f3b447', ok:'#2bc47d', anomalia:'#35bfd0', na:'#3a4a63' };
 const ICONO_SEV = { critico:'🔴', medio:'🟡', ok:'🟢', anomalia:'🔵', na:'⚪' };
 
-function generarReporte(){
+async function generarReporte(){
   const box = document.getElementById('reporteBox');
   box.style.display='block';
-  document.getElementById('repAlertas').innerHTML = '<div class="small">Generando...</div>';
+  const alertas = document.getElementById('repAlertas');
+  alertas.innerHTML = '<div class="small">Generando reporte...</div>';
 
   const zonaSel = document.getElementById('filtroZona')?.value || '';
   const regionSel = document.getElementById('filtroRegion')?.value || '';
@@ -821,14 +881,38 @@ function generarReporte(){
   if(zonaSel) params.set('zona', zonaSel);
   if(regionSel) params.set('region', regionSel);
   if(user?.fecha) params.set('fecha', user.fecha);
-  // Si el usuario desmarcó alguna planta en el multiselector, el reporte respeta exactamente esa selección
   if(plantasMarcadas !== null) params.set('plantas', [...plantasMarcadas].join(','));
   const qs = params.toString();
   const url = API+'/api/reporte' + (qs ? '?'+qs : '');
-  fetch(url,{headers:authHeaders()}).then(r=>r.json()).then(rep=>{
-    if(rep.error){ document.getElementById('repAlertas').innerHTML = 'Error: '+rep.error; return; }
-    renderReporte(rep);
-  }).catch(()=>{ document.getElementById('repAlertas').innerHTML = 'Error de conexión al generar el reporte'; });
+
+  try {
+    const response = await fetch(url,{headers:authHeaders()});
+    const raw = await response.text();
+    let rep;
+    try { rep = raw ? JSON.parse(raw) : {}; }
+    catch(parseErr){
+      throw new Error(`Respuesta inválida del servidor (HTTP ${response.status}). ${raw.slice(0,250)}`);
+    }
+
+    if(!response.ok || rep.error){
+      const detalle = rep.detalle ? ` · ${rep.detalle}` : '';
+      throw new Error((rep.error || `HTTP ${response.status}`) + detalle);
+    }
+
+    try {
+      renderReporte(rep);
+    } catch(renderErr) {
+      console.error('Error renderizando reporte CCO:', renderErr, rep);
+      alertas.innerHTML = `<div class="alert-card critico"><span class="alert-icon">⚠️</span><div class="alert-text"><b>Error al dibujar el reporte:</b> ${escapeHtml(renderErr.message || String(renderErr))}. Los datos fueron recibidos correctamente desde el backend.</div></div>`;
+    }
+  } catch(err) {
+    console.error('Error generando reporte CCO:', err);
+    alertas.innerHTML = `<div class="alert-card critico"><span class="alert-icon">⚠️</span><div class="alert-text"><b>No se pudo generar el reporte:</b> ${escapeHtml(err.message || String(err))}</div></div>`;
+  }
+}
+
+function escapeHtml(value){
+  return String(value ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 }
 
 function renderReporte(rep){
@@ -1598,6 +1682,150 @@ function descargarImagenReporte(){
   link.download = 'reporte-cco-'+new Date().toISOString().slice(0,10)+'.png';
   link.href = canvas.toDataURL('image/png', 1.0);
   link.click();
+}
+
+
+let historicoUltimo = null;
+let histChart = null;
+let histPlantasSeleccionadas = new Set();
+
+function initModuleTabs(){
+  if(window._ccoTabsInit) return;
+  window._ccoTabsInit = true;
+  const main = document.querySelector('#app main');
+  if(!main) return;
+  [...main.children].forEach(el=>{
+    if(el.id!=='ccoTabs' && el.id!=='historicoPanel') el.classList.add('operation-view');
+  });
+  document.getElementById('tabOperacion')?.addEventListener('click',()=>cambiarModulo('operacion'));
+  document.getElementById('tabHistorico')?.addEventListener('click',()=>cambiarModulo('historico'));
+  document.getElementById('histConsultar')?.addEventListener('click',cargarHistorico);
+  document.getElementById('histExportar')?.addEventListener('click',exportarHistoricoCSV);
+  document.getElementById('histZona')?.addEventListener('change',()=>{ poblarHistPlantas(true); cargarHistorico(); });
+  document.getElementById('histTodasPlantas')?.addEventListener('click',()=>{ marcarHistPlantas(true); cargarHistorico(); });
+  document.getElementById('histNingunaPlanta')?.addEventListener('click',()=>{ marcarHistPlantas(false); cargarHistorico(); });
+  setHistRangeSemana25();
+}
+
+function cambiarModulo(modulo){
+  const hist = modulo==='historico';
+  document.querySelectorAll('#app main > .operation-view').forEach(el=>el.style.display=hist?'none':'');
+  document.getElementById('historicoPanel').style.display=hist?'block':'none';
+  document.getElementById('tabOperacion').classList.toggle('active',!hist);
+  document.getElementById('tabHistorico').classList.toggle('active',hist);
+  if(hist){ poblarHistPlantas(false); cargarHistorico(); }
+}
+
+function dateKeyLocal(d){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function isoWeekStart(year, week){
+  const jan4 = new Date(year,0,4);
+  const day = jan4.getDay() || 7;
+  const mondayW1 = new Date(year,0,4-(day-1));
+  const d = new Date(mondayW1); d.setDate(mondayW1.getDate()+(week-1)*7); return d;
+}
+function setHistRangeSemana25(){
+  const hoy=new Date();
+  const desde=isoWeekStart(hoy.getFullYear(),25);
+  document.getElementById('histDesde').value=dateKeyLocal(desde);
+  document.getElementById('histHasta').value=dateKeyLocal(hoy);
+}
+
+function plantasHistoricasDisponibles(){
+  const zona=document.getElementById('histZona')?.value||'';
+  return (plantasCache||[]).filter(p=>!zona || p.zona===zona).sort((a,b)=>a.nombre.localeCompare(b.nombre));
+}
+function poblarHistPlantas(reset){
+  const disponibles=plantasHistoricasDisponibles();
+  if(reset || !histPlantasSeleccionadas.size){ histPlantasSeleccionadas=new Set(disponibles.map(p=>p.nombre)); }
+  else histPlantasSeleccionadas=new Set([...histPlantasSeleccionadas].filter(n=>disponibles.some(p=>p.nombre===n)));
+  const box=document.getElementById('histPlantasLista');
+  if(!box) return;
+  box.innerHTML=disponibles.map(p=>`<label><input type="checkbox" value="${escapeHtml(p.nombre)}" ${histPlantasSeleccionadas.has(p.nombre)?'checked':''}> ${escapeHtml(p.nombre)}</label>`).join('');
+  box.querySelectorAll('input[type=checkbox]').forEach(ch=>ch.addEventListener('change',()=>{
+    if(ch.checked) histPlantasSeleccionadas.add(ch.value); else histPlantasSeleccionadas.delete(ch.value);
+    actualizarResumenHistPlantas(); cargarHistorico();
+  }));
+  actualizarResumenHistPlantas();
+}
+function marcarHistPlantas(valor){
+  const disponibles=plantasHistoricasDisponibles();
+  histPlantasSeleccionadas=valor?new Set(disponibles.map(p=>p.nombre)):new Set();
+  document.querySelectorAll('#histPlantasLista input[type=checkbox]').forEach(ch=>ch.checked=valor);
+  actualizarResumenHistPlantas();
+}
+function actualizarResumenHistPlantas(){
+  const total=plantasHistoricasDisponibles().length, sel=histPlantasSeleccionadas.size;
+  const el=document.getElementById('histPlantasResumen');
+  if(el) el.textContent=sel===total?'(todas seleccionadas)':`(${sel} de ${total})`;
+}
+function histDashboardParams(){
+  const p=new URLSearchParams();
+  const desde=document.getElementById('histDesde')?.value||'';
+  const hasta=document.getElementById('histHasta')?.value||'';
+  const zona=document.getElementById('histZona')?.value||'';
+  if(desde)p.set('from',desde); if(hasta)p.set('to',hasta); if(zona)p.set('zona',zona);
+  const disponibles=plantasHistoricasDisponibles();
+  if(histPlantasSeleccionadas.size && histPlantasSeleccionadas.size<disponibles.length) p.set('plantas',[...histPlantasSeleccionadas].join(','));
+  if(histPlantasSeleccionadas.size===0) p.set('plantas','__NINGUNA__');
+  return p;
+}
+function fmtHist(v,suf=''){ return v===null||v===undefined?'—':`${v}${suf}`; }
+
+async function cargarHistorico(){
+  const body=document.getElementById('histBody');
+  if(!body) return;
+  body.innerHTML='<tr><td colspan="8" class="history-empty">Consultando trazabilidad...</td></tr>';
+  try{
+    const r=await fetch(API+'/api/historico/dashboard?'+histDashboardParams().toString(),{headers:authHeaders()});
+    const data=await r.json();
+    if(!r.ok) throw new Error(data.detalle||data.error||('HTTP '+r.status));
+    historicoUltimo=data;
+    document.getElementById('histAlcance').textContent=`${data.diasConDatos} día(s) con datos · ${data.from} → ${data.to}`;
+    renderHistoricoDashboard(data);
+  }catch(err){
+    body.innerHTML=`<tr><td colspan="8" class="history-empty" style="color:var(--red)">Error al consultar histórico: ${escapeHtml(err.message||String(err))}</td></tr>`;
+  }
+}
+
+function renderHistoricoDashboard(data){
+  const a=data.acumulado||{};
+  const cards=[
+    ['Adherencia acumulada',fmtHist(a.adherenciaPct,'%'),'Referencia operacional'],
+    ['Programados acumulados',fmtHist(a.programados),'Semana 25 → fecha'],
+    ['Con logeo acumulado',fmtHist(a.logeados),'Operadores registrados'],
+    ['Asignados acumulados',fmtHist(a.asignados),'Estado ASIGNADO'],
+    ['1ª carga acumulada',fmtHist(a.primeraCarga),'CARGANDO/CARGADO'],
+    ['Pendientes acumulados',fmtHist(a.pendientes),'Sin ingreso registrado'],
+  ];
+  document.getElementById('histKpis').innerHTML=cards.map(c=>`<div class="kpi-card"><div class="kpi-label">${c[0]}</div><div class="kpi-valor">${c[1]}</div><div class="kpi-sub">${c[2]}</div></div>`).join('');
+
+  document.getElementById('histZonas').innerHTML=(data.zonas||[]).map(z=>`<div class="kpi-card">
+    <div class="kpi-label">Zona ${escapeHtml(z.zona)}</div><div class="kpi-valor">${fmtHist(z.adherenciaPct,'%')}</div>
+    <div class="kpi-sub">Prog. ${z.programados} · Logeo ${z.logeados} · Asig. ${z.asignados} · 1ª carga ${z.primeraCarga}</div>
+  </div>`).join('');
+
+  const plantas=data.plantas||[];
+  document.getElementById('histBody').innerHTML=plantas.length?plantas.map(p=>`<tr>
+    <td>${escapeHtml(p.zona)}</td><td><b>${escapeHtml(p.planta)}</b></td><td>${p.programados}</td><td>${p.logeados}</td><td>${p.asignados}</td><td>${p.primeraCarga}</td><td>${p.pendientes}</td><td><b>${fmtHist(p.adherenciaPct,'%')}</b></td>
+  </tr>`).join(''):'<tr><td colspan="8" class="history-empty">No hay datos históricos para los filtros seleccionados.</td></tr>';
+
+  renderHistChart(data.weekly||[]);
+}
+
+function renderHistChart(weekly){
+  const ctx=document.getElementById('histChart'); if(!ctx) return;
+  if(histChart){ histChart.destroy(); histChart=null; }
+  histChart=new Chart(ctx,{type:'line',data:{labels:weekly.map(x=>x.semana),datasets:[{label:'Adherencia general %',data:weekly.map(x=>x.adherenciaPct),borderWidth:2,tension:.25,pointRadius:3,fill:false}]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%'}}},plugins:{legend:{display:true},tooltip:{callbacks:{label:c=>`Adherencia: ${c.parsed.y ?? '—'}%`}}}}});
+}
+
+function exportarHistoricoCSV(){
+  const rows=historicoUltimo?.plantas||[]; if(!rows.length){alert('No hay histórico para exportar.');return;}
+  const head=['Zona','Planta','Programados acumulados','Con logeo acumulado','Asignados acumulados','Primera carga acumulada','Pendientes acumulados','Adherencia %'];
+  const esc=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
+  const csv=[head,...rows.map(x=>[x.zona,x.planta,x.programados,x.logeados,x.asignados,x.primeraCarga,x.pendientes,x.adherenciaPct])].map(r=>r.map(esc).join(';')).join('\n');
+  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='trazabilidad-cco-semana25.csv'; a.click(); setTimeout(()=>URL.revokeObjectURL(url),500);
 }
 
 function roundRect(ctx, x, y, w, h, r){
