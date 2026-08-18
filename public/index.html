@@ -702,7 +702,29 @@ function subirIngesta(tipo, registros, nombreArchivo){
     })
     .then(resp=>{
       setDot(tipo,'ok');
-      marcarIngestaStatus(tipo, resp.cantidad, resp.subido_por, false);
+
+      // StatusBreakdown normalmente corresponde a un único día operacional.
+      // Si su fecha difiere de la fecha seleccionada, sincronizamos el CCO con
+      // la fecha real del archivo para evitar un reporte con 0 logeos/asignados.
+      if(tipo === 'logeo' && resp.fecha_unica){
+        const fechaAnterior = user?.fecha || '';
+        if(user && fechaAnterior !== resp.fecha_unica){
+          user.fecha = resp.fecha_unica;
+          const scope = document.getElementById('scopeFecha');
+          const gateFecha = document.getElementById('gFecha');
+          if(scope) scope.value = resp.fecha_unica;
+          if(gateFecha) gateFecha.value = resp.fecha_unica;
+          document.getElementById('userInfo').textContent = user.nombre+' · '+user.rol+(user.zona?' · '+user.zona:'')+(user.region?' · '+user.region:'')+(user.planta?' · '+user.planta:'')+' · '+user.fecha;
+          setStatusText(tipo, `${resp.cantidad} filas · ${resp.subido_por} · Fecha StatusBreakdown ${resp.fecha_unica} (fecha operacional sincronizada)`, 'ok');
+        } else {
+          setStatusText(tipo, `${resp.cantidad} filas · ${resp.subido_por} · Fecha ${resp.fecha_unica}`, 'ok');
+        }
+      } else {
+        marcarIngestaStatus(tipo, resp.cantidad, resp.subido_por, false);
+      }
+
+      // Si el reporte estaba abierto, se recalcula automáticamente con la fecha correcta.
+      if(tipo === 'logeo' && document.getElementById('reporteBox')?.style.display !== 'none') generarReporte();
     })
     .catch(err=>{
       setDot(tipo,'err');
