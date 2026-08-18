@@ -177,7 +177,7 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 @media(max-width:760px){.module-switcher{right:10px;bottom:10px;left:10px;justify-content:center}.module-switcher button{flex:1}.module-tabs{top:4px}}
 
 
-/* v2.7 navegación principal: selector fijo siempre visible */
+/* v2.8 navegación principal: selector fijo siempre visible */
 .module-switcher{position:fixed!important;top:12px!important;right:16px!important;bottom:auto!important;left:auto!important;z-index:99999!important;display:flex!important;align-items:center!important;justify-content:center!important;gap:6px!important;width:auto!important;padding:6px!important;margin:0!important;background:rgba(255,255,255,.98)!important;border:1px solid var(--line)!important;border-radius:12px!important;box-shadow:0 8px 24px rgba(16,42,67,.16)!important;backdrop-filter:blur(8px)!important}
 .module-switcher-label{font-size:9px;font-weight:800;letter-spacing:.5px;color:#607a91;margin:0 3px}
 .module-switcher button{margin:0!important;padding:8px 11px!important;font-size:11px!important;font-weight:800!important;border-radius:8px!important;min-width:0!important;white-space:nowrap!important}
@@ -207,7 +207,8 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
     <option value="coordinador">Coordinador</option>
   </select>
   <label>Fecha operacional</label>
-  <input id="gFecha" type="date">
+  <div class="pill" style="display:inline-block;margin:2px 0 8px">Hoy · <span id="gFechaLabel">—</span></div>
+  <input id="gFecha" type="hidden">
   <label>Zona</label>
   <select id="gZona" onchange="cargarRegionesLogin();cargarPlantasLogin()">
     <option value="">Todas las zonas</option>
@@ -224,11 +225,11 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v2.7</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v2.8</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
-    <label id="opDateControl" style="margin:0;font-size:10px">Fecha Operación Nacional <input id="scopeFecha" type="date" onchange="cambiarFechaOperacional()" style="width:145px;margin-left:5px"></label>
-    <span id="appVersion" class="pill">v2.7</span><span id="connPill" class="pill">Conectando…</span>
+    <div id="opDateControl" class="pill" style="margin:0">Operación de hoy · <b id="scopeFechaLabel">—</b><input id="scopeFecha" type="hidden"></div>
+    <span id="appVersion" class="pill">v2.8</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
 <div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
@@ -239,17 +240,17 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 <main>
 
   <div id="ccoTabs" class="module-tabs">
-    <button type="button" id="tabOperacion" class="module-tab active">Operación actual</button>
+    <button type="button" id="tabOperacion" class="module-tab active">Operación de hoy</button>
     <button type="button" id="tabHistorico" class="module-tab">Trazabilidad histórica</button>
   </div>
 
   <div id="historicoPanel" class="card" style="display:none">
-    <h2>Trazabilidad histórica <span class="small">(Semana 25 a la fecha)</span></h2>
+    <h2>Trazabilidad histórica <span class="small">(Semana 25 a la semana actual)</span></h2>
     <p class="small"><b>Fuente exclusiva:</b> snapshots históricos consolidados. Esta vista no lee Turnos, Citaciones ni StatusBreakdown activos. Sus filtros son independientes de Operación Nacional.</p>
 
     <div class="history-toolbar" style="grid-template-columns:repeat(4,minmax(150px,1fr))">
-      <div><label>Desde</label><input id="histDesde" type="date"></div>
-      <div><label>Hasta</label><input id="histHasta" type="date"></div>
+      <div><label>Semana desde</label><select id="histSemanaDesde"></select></div>
+      <div><label>Semana hasta</label><select id="histSemanaHasta"></select></div>
       <div><label>Zona</label><select id="histZona"><option value="">Todas las zonas</option><option value="Norte">Norte</option><option value="Centro">Centro</option><option value="Sur">Sur</option></select></div>
       <div><button type="button" id="histConsultar" style="width:100%">Actualizar trazabilidad</button></div>
     </div>
@@ -271,10 +272,10 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
     </div>
     <div id="histPlantasLista" class="multiselect-box"></div>
 
-    <div class="rep-header"><span class="rep-titulo">Adherencia general por semana</span><span class="rep-meta">Desde semana 25</span></div>
+    <div class="rep-header"><span class="rep-titulo">Adherencia general por semana</span><span class="rep-meta">Selección semanal</span></div>
     <div class="chart-wrap"><canvas id="histChart"></canvas><div id="histChartEmpty" class="history-empty" style="display:none;padding:24px;text-align:center">Sin información disponible para el período seleccionado</div></div>
 
-    <div class="rep-header"><span class="rep-titulo">Acumulados a la fecha</span></div>
+    <div class="rep-header"><span class="rep-titulo">Acumulados del rango semanal</span></div>
     <div id="histKpis" class="history-kpis"></div>
 
     <div class="rep-header"><span class="rep-titulo">Apertura por zonas</span></div>
@@ -508,6 +509,8 @@ document.getElementById('gApi').value = window.location.origin;
 const hoyLocal = new Date();
 const hoyKey = `${hoyLocal.getFullYear()}-${String(hoyLocal.getMonth()+1).padStart(2,'0')}-${String(hoyLocal.getDate()).padStart(2,'0')}`;
 document.getElementById('gFecha').value = hoyKey;
+const hoyLabelCL = hoyLocal.toLocaleDateString('es-CL');
+document.getElementById('gFechaLabel').textContent = hoyLabelCL;
 
 function regionesParaZona(zona){
   if(zona==='Centro') return ['RM','V Región','VI Región'];
@@ -555,7 +558,7 @@ function entrar(){
   const zona = document.getElementById('gZona').value;
   const region = document.getElementById('gRegion').value;
   const planta = document.getElementById('gPlanta').value;
-  const fecha = document.getElementById('gFecha').value || hoyKey;
+  const fecha = hoyKey;
   document.getElementById('gateErr').style.display='none';
   if(!API){ mostrarErrorGate('Ingresa la URL del backend.'); return; }
   if(!nombre){ mostrarErrorGate('Ingresa un nombre.'); return; }
@@ -565,12 +568,13 @@ function entrar(){
     body:JSON.stringify({nombre,rol,zona,region,planta,fecha})})
     .then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
     .then(data=>{
-      token = data.token; user = data.user;
+      token = data.token; user = {...data.user, fecha:hoyKey};
       document.getElementById('gate').style.display='none';
       document.getElementById('app').style.display='block';
       document.getElementById('apiShown').textContent = API;
       document.getElementById('userInfo').textContent = user.nombre+' · '+user.rol+(user.zona?' · '+user.zona:'')+(user.region?' · '+user.region:'')+(user.planta?' · '+user.planta:'')+(user.fecha?' · '+user.fecha:'');
-      document.getElementById('scopeFecha').value = user.fecha || hoyKey;
+      document.getElementById('scopeFecha').value = hoyKey;
+      document.getElementById('scopeFechaLabel').textContent = hoyLabelCL;
       iniciar();
     })
     .catch(()=> mostrarErrorGate(
@@ -580,13 +584,11 @@ function entrar(){
 }
 
 function cambiarFechaOperacional(){
-  const v = document.getElementById('scopeFecha').value;
-  if(!v || !user) return;
-  user.fecha = v;
-  document.getElementById('userInfo').textContent = user.nombre+' · '+user.rol+(user.zona?' · '+user.zona:'')+(user.region?' · '+user.region:'')+(user.planta?' · '+user.planta:'')+' · '+user.fecha;
-  if(document.getElementById('reporteBox').style.display !== 'none') generarReporte();
-  if(document.getElementById('opPlanta')?.value) cargarAnalisisOperadores();
-  if(document.getElementById('tablaOperadoresBox')?.style.display !== 'none') cargarTablaOperadores();
+  // v2.8: Operación Nacional queda bloqueada al día actual.
+  if(!user) return;
+  user.fecha = hoyKey;
+  const hidden=document.getElementById('scopeFecha'); if(hidden) hidden.value=hoyKey;
+  const lbl=document.getElementById('scopeFechaLabel'); if(lbl) lbl.textContent=hoyLabelCL;
 }
 
 function salir(){
@@ -667,7 +669,7 @@ Object.keys(TIPOS_ARCHIVO).forEach(inputId=>{
 });
 
 
-// v2.7 — Carga masiva optimizada desde carpeta (Chrome / Edge). Cada carpeta debe contener
+// v2.8 — Carga masiva optimizada desde carpeta (Chrome / Edge). Cada carpeta debe contener
 // archivos de la misma fuente: Turnos, Citaciones o StatusBreakdown/Logeo.
 const CARPETAS_ARCHIVO = {
   folderTurnos:{tipo:'turnos', boton:'btnFolderTurnos'},
@@ -949,30 +951,7 @@ async function subirIngesta(tipo, registros, nombreArchivo){
     setDot(tipo,'ok');
 
     if(tipo === 'logeo' && resp.fecha_unica){
-      const fechaAnterior = user?.fecha || '';
-      if(user && fechaAnterior !== resp.fecha_unica){
-        user.fecha = resp.fecha_unica;
-        const scope = document.getElementById('scopeFecha');
-        const gateFecha = document.getElementById('gFecha');
-        if(scope) scope.value = resp.fecha_unica;
-        if(gateFecha) gateFecha.value = resp.fecha_unica;
-        const infoUsuario = document.getElementById('userInfo');
-        if(infoUsuario){
-          infoUsuario.textContent =
-            (user?.nombre ?? 'Usuario')+' · '+(user?.rol ?? '—')+
-            (user?.zona?' · '+user.zona:'')+
-            (user?.region?' · '+user.region:'')+
-            (user?.planta?' · '+user.planta:'')+
-            ' · '+user.fecha;
-        }
-        setStatusText(
-          tipo,
-          `${resp.cantidad ?? registros.length} filas · ${resp.subido_por ?? '—'} · Fecha StatusBreakdown ${resp.fecha_unica} (fecha operacional sincronizada)`,
-          'ok'
-        );
-      }else{
-        setStatusText(tipo, `${resp.cantidad ?? registros.length} filas · ${resp.subido_por ?? '—'} · Fecha ${resp.fecha_unica}`, 'ok');
-      }
+      setStatusText(tipo, `${resp.cantidad ?? registros.length} filas · ${resp.subido_por ?? '—'} · Fecha detectada ${resp.fecha_unica} · Operación Nacional permanece en hoy (${hoyLabelCL})`, 'ok');
     }else{
       marcarIngestaStatus(tipo, resp.cantidad ?? registros.length, resp.subido_por ?? '—', false);
     }
@@ -2000,6 +1979,8 @@ function initModuleTabs(){
   document.getElementById('histConsultar')?.addEventListener('click',cargarHistorico);
   document.getElementById('histExportar')?.addEventListener('click',exportarHistoricoCSV);
   document.getElementById('histZona')?.addEventListener('change',()=>{ poblarHistPlantas(true); cargarHistorico(); });
+  document.getElementById('histSemanaDesde')?.addEventListener('change',cargarHistorico);
+  document.getElementById('histSemanaHasta')?.addEventListener('change',cargarHistorico);
   document.getElementById('histTodasPlantas')?.addEventListener('click',()=>{ marcarHistPlantas(true); cargarHistorico(); });
   document.getElementById('histNingunaPlanta')?.addEventListener('click',()=>{ marcarHistPlantas(false); cargarHistorico(); });
   setHistRangeSemana25();
@@ -2029,11 +2010,33 @@ function isoWeekStart(year, week){
   const mondayW1 = new Date(year,0,4-(day-1));
   const d = new Date(mondayW1); d.setDate(mondayW1.getDate()+(week-1)*7); return d;
 }
+function isoWeekNumber(date){
+  const d=new Date(Date.UTC(date.getFullYear(),date.getMonth(),date.getDate()));
+  const day=d.getUTCDay()||7; d.setUTCDate(d.getUTCDate()+4-day);
+  const yearStart=new Date(Date.UTC(d.getUTCFullYear(),0,1));
+  return Math.ceil((((d-yearStart)/86400000)+1)/7);
+}
+function isoWeekEnd(year, week){
+  const d=isoWeekStart(year,week); d.setDate(d.getDate()+6); return d;
+}
+function poblarSelectoresSemanas(){
+  const year=hoyLocal.getFullYear();
+  const currentWeek=Math.max(25,isoWeekNumber(hoyLocal));
+  const desde=document.getElementById('histSemanaDesde');
+  const hasta=document.getElementById('histSemanaHasta');
+  if(!desde||!hasta) return;
+  const options=[];
+  for(let w=25; w<=currentWeek; w++){
+    const ini=isoWeekStart(year,w), fin=isoWeekEnd(year,w);
+    const iniTxt=ini.toLocaleDateString('es-CL',{day:'2-digit',month:'2-digit'});
+    const finTxt=fin.toLocaleDateString('es-CL',{day:'2-digit',month:'2-digit'});
+    options.push(`<option value="${w}">Semana ${w} · ${iniTxt}–${finTxt}</option>`);
+  }
+  desde.innerHTML=options.join(''); hasta.innerHTML=options.join('');
+  desde.value='25'; hasta.value=String(currentWeek);
+}
 function setHistRangeSemana25(){
-  const hoy=new Date();
-  const desde=isoWeekStart(hoy.getFullYear(),25);
-  document.getElementById('histDesde').value=dateKeyLocal(desde);
-  document.getElementById('histHasta').value=dateKeyLocal(hoy);
+  poblarSelectoresSemanas();
 }
 
 function plantasHistoricasDisponibles(){
@@ -2066,10 +2069,17 @@ function actualizarResumenHistPlantas(){
 }
 function histDashboardParams(){
   const p=new URLSearchParams();
-  const desde=document.getElementById('histDesde')?.value||'';
-  const hasta=document.getElementById('histHasta')?.value||'';
+  const year=hoyLocal.getFullYear();
+  const semanaDesde=Number(document.getElementById('histSemanaDesde')?.value||25);
+  const semanaHasta=Number(document.getElementById('histSemanaHasta')?.value||isoWeekNumber(hoyLocal));
+  const desde=dateKeyLocal(isoWeekStart(year,Math.min(semanaDesde,semanaHasta)));
+  const finSemana=isoWeekEnd(year,Math.max(semanaDesde,semanaHasta));
+  const hastaDate=finSemana>hoyLocal?hoyLocal:finSemana;
+  const hasta=dateKeyLocal(hastaDate);
   const zona=document.getElementById('histZona')?.value||'';
-  if(desde)p.set('from',desde); if(hasta)p.set('to',hasta); if(zona)p.set('zona',zona);
+  p.set('from',desde); p.set('to',hasta); if(zona)p.set('zona',zona);
+  p.set('week_from',String(Math.min(semanaDesde,semanaHasta)));
+  p.set('week_to',String(Math.max(semanaDesde,semanaHasta)));
   const disponibles=plantasHistoricasDisponibles();
   if(histPlantasSeleccionadas.size && histPlantasSeleccionadas.size<disponibles.length) p.set('plantas',[...histPlantasSeleccionadas].join(','));
   if(histPlantasSeleccionadas.size===0) p.set('plantas','__NINGUNA__');
@@ -2088,7 +2098,8 @@ async function cargarHistorico(){
     historicoUltimo=data;
     validarTrazabilidadHistoricaUI(data);
     validarConsistenciaHistoricaUI(data);
-    document.getElementById('histAlcance').textContent=`${data.diasConDatos||0} día(s) con snapshot · ${data.from} → ${data.to}`;
+    const sw1=document.getElementById('histSemanaDesde')?.value||'25'; const sw2=document.getElementById('histSemanaHasta')?.value||sw1;
+    document.getElementById('histAlcance').textContent=`${data.diasConDatos||0} día(s) con snapshot · Semana ${sw1} → Semana ${sw2}`;
     const diag=document.getElementById('histDiagnostico');
     if(diag){
       const errores=Array.isArray(data.consistenciaHistorica?.errores)?data.consistenciaHistorica.errores:[];
@@ -2113,7 +2124,7 @@ function renderHistoricoDashboard(data){
   const histWarn=document.getElementById('histAlcance'); if(histWarn) histWarn.title='Datos obtenidos exclusivamente desde snapshots históricos guardados.';
   const cards=[
     ['Adherencia acumulada',fmtHist(a.adherenciaPct,'%'),'Referencia operacional'],
-    ['Programados acumulados',fmtHist(a.programados),'Semana 25 → fecha'],
+    ['Programados acumulados',fmtHist(a.programados),'Rango semanal seleccionado'],
     ['Con logeo acumulado',fmtHist(a.logeados),'Operadores registrados'],
     ['Asignados acumulados',fmtHist(a.asignados),'Estado ASIGNADO'],
     ['1ª carga acumulada',fmtHist(a.primeraCarga),'CARGANDO/CARGADO'],
