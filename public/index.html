@@ -176,7 +176,7 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 @media(max-width:760px){.module-switcher{right:10px;bottom:10px;left:10px;justify-content:center}.module-switcher button{flex:1}.module-tabs{top:4px}}
 
 
-/* v2.3 navegación principal: selector fijo siempre visible */
+/* v2.4 navegación principal: selector fijo siempre visible */
 .module-switcher{position:fixed!important;top:12px!important;right:16px!important;bottom:auto!important;left:auto!important;z-index:99999!important;display:flex!important;align-items:center!important;justify-content:center!important;gap:6px!important;width:auto!important;padding:6px!important;margin:0!important;background:rgba(255,255,255,.98)!important;border:1px solid var(--line)!important;border-radius:12px!important;box-shadow:0 8px 24px rgba(16,42,67,.16)!important;backdrop-filter:blur(8px)!important}
 .module-switcher-label{font-size:9px;font-weight:800;letter-spacing:.5px;color:#607a91;margin:0 3px}
 .module-switcher button{margin:0!important;padding:8px 11px!important;font-size:11px!important;font-weight:800!important;border-radius:8px!important;min-width:0!important;white-space:nowrap!important}
@@ -223,11 +223,11 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v2.3</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v2.4</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
     <label style="margin:0;font-size:10px">Fecha operacional <input id="scopeFecha" type="date" onchange="cambiarFechaOperacional()" style="width:145px;margin-left:5px"></label>
-    <span id="appVersion" class="pill">v2.3</span><span id="connPill" class="pill">Conectando…</span>
+    <span id="appVersion" class="pill">v2.4</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
 <div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
@@ -263,7 +263,7 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
     <div id="histPlantasLista" class="multiselect-box"></div>
 
     <div class="rep-header"><span class="rep-titulo">Adherencia general por semana</span><span class="rep-meta">Desde semana 25</span></div>
-    <div class="chart-wrap"><canvas id="histChart"></canvas></div>
+    <div class="chart-wrap"><canvas id="histChart"></canvas><div id="histChartEmpty" class="history-empty" style="display:none;padding:24px;text-align:center">Sin información disponible para el período seleccionado</div></div>
 
     <div class="rep-header"><span class="rep-titulo">Acumulados a la fecha</span></div>
     <div id="histKpis" class="history-kpis"></div>
@@ -657,7 +657,7 @@ Object.keys(TIPOS_ARCHIVO).forEach(inputId=>{
 });
 
 
-// v2.3 — Carga masiva desde carpeta (Chrome / Edge). Cada carpeta debe contener
+// v2.4 — Carga masiva desde carpeta (Chrome / Edge). Cada carpeta debe contener
 // archivos de la misma fuente: Turnos, Citaciones o StatusBreakdown/Logeo.
 const CARPETAS_ARCHIVO = {
   folderTurnos:{tipo:'turnos', boton:'btnFolderTurnos'},
@@ -1144,6 +1144,14 @@ function renderReporte(rep){
   const citAplicadas = rep.resumen.operadoresConCitacion ?? 0;
   const porTurno = rep.resumen.operadoresPorTurno ?? Math.max(0,total-citAplicadas);
   alertasHtml += `<div class="alert-card info"><span class="alert-icon">🎯</span><div class="alert-text"><b>Referencia operacional:</b> ${citAplicadas} operador(es) evaluados contra <b>citación</b> por requerir adelanto y ${porTurno} contra <b>turno</b>. Cumplimiento general: <b>${rep.resumen.cumplimientoReferenciaPct ?? '—'}%</b>${rep.resumen.cumplimientoCitacionPct!==null && rep.resumen.cumplimientoCitacionPct!==undefined ? ` · Citación ${rep.resumen.cumplimientoCitacionPct}%` : ''}${rep.resumen.cumplimientoTurnoPct!==null && rep.resumen.cumplimientoTurnoPct!==undefined ? ` · Turno ${rep.resumen.cumplimientoTurnoPct}%` : ''}.</div></div>`;
+  const fuentes = rep.resumen.fuentes || {};
+  if((fuentes.turnosFilas||0)>0 && (fuentes.logeoFilas||0)===0){
+    alertasHtml += `<div class="alert-card critico"><span class="alert-icon">📅</span><div class="alert-text"><b>StatusBreakdown no contiene datos para ${escapeHtml(fuentes.fecha||rep.fecha||'la fecha seleccionada')}.</b> Turnos detectados: ${fuentes.turnosFilas||0}. No se calcularán logeos como cero porque la fuente está ausente para ese día.</div></div>`;
+  } else if((fuentes.logeoFilas||0)>0 && logeados===0){
+    alertasHtml += `<div class="alert-card critico"><span class="alert-icon">🔗</span><div class="alert-text"><b>Hay ${fuentes.logeoFilas} filas de StatusBreakdown para la fecha, pero ningún operador programado pudo cruzarse.</b> IDs únicos detectados en Status: ${fuentes.operadoresLogeoUnicos||0}. Revise homologación de ID de operador.</div></div>`;
+  } else if((fuentes.logeoFilas||0)>0){
+    alertasHtml += `<div class="alert-card ok"><span class="alert-icon">✅</span><div class="alert-text"><b>Fuentes conciliadas para ${escapeHtml(fuentes.fecha||rep.fecha||'la fecha')}.</b> ${fuentes.turnosFilas||0} filas de Turnos · ${fuentes.logeoFilas||0} eventos StatusBreakdown · ${fuentes.operadoresLogeoUnicos||0} operadores únicos en Status.</div></div>`;
+  }
   if((rep.resumen.pendientesIngreso||0)>0){
     alertasHtml += `<div class="alert-card medio"><span class="alert-icon">⏳</span><div class="alert-text"><b>${rep.resumen.pendientesIngreso} operador(es) pendientes de ingreso.</b> Están programados para la fecha seleccionada y no tienen evento LOGIN/PRE-VIAJE.</div></div>`;
   }
@@ -1985,7 +1993,8 @@ async function cargarHistorico(){
     const data=await r.json();
     if(!r.ok) throw new Error(data.detalle||data.error||('HTTP '+r.status));
     historicoUltimo=data;
-    document.getElementById('histAlcance').textContent=`${data.diasConDatos} día(s) con datos · ${data.from} → ${data.to}`;
+    const incompletos=Array.isArray(data.diasIncompletos)?data.diasIncompletos.length:0;
+    document.getElementById('histAlcance').textContent=`${data.diasConDatos} día(s) completos · ${incompletos} día(s) sin StatusBreakdown · ${data.from} → ${data.to}`;
     renderHistoricoDashboard(data);
   }catch(err){
     body.innerHTML=`<tr><td colspan="8" class="history-empty" style="color:var(--red)">Error al consultar histórico: ${escapeHtml(err.message||String(err))}</td></tr>`;
@@ -1994,6 +2003,12 @@ async function cargarHistorico(){
 
 function renderHistoricoDashboard(data){
   const a=data.acumulado||{};
+  const incompletos=Array.isArray(data.diasIncompletos)?data.diasIncompletos:[];
+  const histWarn=document.getElementById('histAlcance');
+  if(histWarn && incompletos.length){
+    const fechas=incompletos.slice(0,6).map(x=>x.fecha).join(', ')+(incompletos.length>6?'…':'');
+    histWarn.title=`Fechas omitidas por falta de StatusBreakdown: ${fechas}`;
+  }
   const cards=[
     ['Adherencia acumulada',fmtHist(a.adherenciaPct,'%'),'Referencia operacional'],
     ['Programados acumulados',fmtHist(a.programados),'Semana 25 → fecha'],
@@ -2019,8 +2034,16 @@ function renderHistoricoDashboard(data){
 
 function renderHistChart(weekly){
   const ctx=document.getElementById('histChart'); if(!ctx) return;
+  const empty=document.getElementById('histChartEmpty');
   if(histChart){ histChart.destroy(); histChart=null; }
-  histChart=new Chart(ctx,{type:'line',data:{labels:weekly.map(x=>x.semana),datasets:[{label:'Adherencia general %',data:weekly.map(x=>x.adherenciaPct),borderWidth:2,tension:.25,pointRadius:3,fill:false}]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%'}}},plugins:{legend:{display:true},tooltip:{callbacks:{label:c=>`Adherencia: ${c.parsed.y ?? '—'}%`}}}}});
+  const safeWeekly=Array.isArray(weekly)?weekly.filter(x=>x && x.semana):[];
+  if(!safeWeekly.length){
+    ctx.style.display='none';
+    if(empty) empty.style.display='block';
+    return;
+  }
+  ctx.style.display='block'; if(empty) empty.style.display='none';
+  histChart=new Chart(ctx,{type:'line',data:{labels:safeWeekly.map(x=>x.semana),datasets:[{label:'Adherencia general %',data:safeWeekly.map(x=>x.adherenciaPct),borderWidth:2,tension:.25,pointRadius:3,fill:false}]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%'}}},plugins:{legend:{display:true},tooltip:{callbacks:{label:c=>`Adherencia: ${c.parsed.y ?? '—'}%`}}}}});
 }
 
 function exportarHistoricoCSV(){
