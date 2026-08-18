@@ -46,6 +46,7 @@ const DEFAULT_STATE = {
   plantas: {},
   bitacora: [],
   audit: [],
+  historico: [],
 };
 
 let state = loadState();
@@ -61,6 +62,7 @@ function loadState() {
       plantas: parsed.plantas || {},
       bitacora: Array.isArray(parsed.bitacora) ? parsed.bitacora : [],
       audit: Array.isArray(parsed.audit) ? parsed.audit : [],
+      historico: Array.isArray(parsed.historico) ? parsed.historico : [],
     };
   } catch (err) {
     console.error('No se pudo leer persistencia; se inicia estado limpio:', err.message);
@@ -931,73 +933,308 @@ app.get('/api/analisis-operadores', requireAuth, (req, res) => {
   });
 });
 
-app.get('/api/reporte', requireAuth, (req, res) => {
-  const fecha = safeText(req.query.fecha || req.user.fecha || '');
-  let records = filterScope(buildOperatorRecords(fecha), req.query);
-  if (req.user.zona) records = records.filter(r=>r.zona===req.user.zona);
-  if (req.user.region) records = records.filter(r=>r.region===req.user.region);
-  if (req.user.planta) records = records.filter(r=>r.planta===req.user.planta);
-  const plantNames = [...new Set(records.map(r=>r.planta))];
-  if (!plantNames.length) return res.status(400).json({ error:'No hay turnos cargados para el alcance seleccionado' });
-  const byPlant = plantNames.map(planta=>{
-    const rs=records.filter(r=>r.planta===planta);
-    const logged=rs.filter(r=>r.logeoMin!==null);
-    const tm=rs.filter(r=>r.tiempoMuertoMin!==null);
+
+function historyScopeKey({ zona=null, region=null, planta=null, plantasFiltro=null } = {}) {
+  if (planta) return `PLANTA:${planta}`;
+  if (Array.isArray(plantasFiltro) && plantasFiltro.length) return `PLANTAS:${[...plantasFiltro].sort().join('|')}`;
+  if (region) return `REGION:${region}`;
+  if (zona) return `ZONA:${zona}`;
+  return 'NACIONAL';
+}
+
+function saveHistorySnapshot(payload, req) {
+  if (!payload || !payload.fecha || !payload.resumen) return;
+  const scope = {
+    zona: payload.zona || null,
+    region: payload.region || null,
+    planta: req.user?.planta || null,
+    plantasFiltro: payload.plantasFiltro || null,
+  };
+  const scopeKey = historyScopeKey(scope);
+  const snapshot = {
+    id: crypto.randomUUID(),
+    fecha: payload.fecha,
+    scopeKey,
+    scope,
+    generado_en: payload.generado_en || nowIso(),
+    generado_por: payload.generado_por || req.user?.nombre || 'Sistema',
+    resumen: payload.resumen,
+    porPlanta: payload.porPlanta || [],
+  };
+  const idx = state.historico.findIndex(h => h.fecha === snapshot.fecha && h.scopeKey === scopeKey);
+  if (idx >= 0) {
+    snapshot.id = state.historico[idx].id;
+    state.historico[idx] = snapshot;
+  } else {
+    state.historico.unshift(snapshot);
+  }
+  state.historico = state.historico.slice(0, 5000);
+  persistState();
+}
+
+function isoWeekKey(dateStr) {
+  const d = new Date(`${dateStr}T12:00:00Z`);
+  if (Number.isNaN(d.getTime())) return dateStr;
+  const day = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const week = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  return `${d.getUTCFullYear()}-S${String(week).padStart(2,'0')}`;
+}
+
+function historyPeriodKey(dateStr, granularity) {
+  if (granularity === 'month') return String(dateStr).slice(0,7);
+  if (granularity === 'week') return isoWeekKey(dateStr);
+  return dateStr;
+}
+
+function aggregateHistory(rows, granularity) {
+  const groups = new Map();
+  for (const row of rows) {
+    const key = historyPeriodKey(row.fecha, granularity);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  return [...groups.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([periodo, items]) => {
+    const sum = (fn) => items.reduce((acc,x)=>acc+(Number(fn(x))||0),0);
+    const avg = (fn) => items.length ? round1(sum(fn)/items.length) : 0;
+    const totalProg = sum(x=>x.resumen?.programadosExigibles ?? x.resumen?.totalTurnos ?? 0);
+    const weighted = (field) => totalProg ? round1(items.reduce((acc,x)=>{
+      const n=Number(x.resumen?.[field]);
+      const w=Number(x.resumen?.programadosExigibles ?? x.resumen?.totalTurnos ?? 0);
+      return acc + (Number.isFinite(n) ? n*w : 0);
+    },0)/totalProg) : null;
+    const tmVals = items.map(x=>Number(x.resumen?.tiempoMuertoPromedioMin)).filter(Number.isFinite);
     return {
-      planta,
-      zona:ensurePlant(planta).zona,
-      region:ensurePlant(planta).region,
-      turnos:rs.length,
-      citaciones:rs.filter(r=>r.citacionAplicada).length,
-      logeo:logged.length,
-      asignados:rs.filter(r=>r.asignacionMin!==null).length,
-      primeraCarga:rs.filter(r=>r.primeraCargaMin!==null).length,
-      pendientesIngreso:rs.filter(r=>r.logeoMin===null).length,
-      adherenciaLogeo:rs.length?round1(logged.length/rs.length*100):null,
-      cumplimientoReferencia:rs.length?round1(rs.filter(r=>r.categoria==='a_tiempo').length/rs.length*100):null,
-      tiempoMuertoPromedioMin:tm.length?round1(tm.reduce((s,r)=>s+r.tiempoMuertoMin,0)/tm.length):null,
+      periodo,
+      dias: items.length,
+      desde: items.map(x=>x.fecha).sort()[0],
+      hasta: items.map(x=>x.fecha).sort().slice(-1)[0],
+      programadosPromedio: avg(x=>x.resumen?.programadosExigibles ?? x.resumen?.totalTurnos ?? 0),
+      logeadosPromedio: avg(x=>x.resumen?.logeadosAlCorte ?? x.resumen?.totalLogeo ?? 0),
+      asignadosPromedio: avg(x=>x.resumen?.asignados ?? 0),
+      primeraCargaPromedio: avg(x=>x.resumen?.primeraCarga ?? 0),
+      pendientesPromedio: avg(x=>x.resumen?.pendientesIngreso ?? 0),
+      criticosPromedio: avg(x=>x.resumen?.operadoresCriticos ?? 0),
+      cumplimientoReferenciaPct: weighted('cumplimientoReferenciaPct'),
+      cumplimientoCitacionPct: weighted('cumplimientoCitacionPct'),
+      cumplimientoTurnoPct: weighted('cumplimientoTurnoPct'),
+      tiempoMuertoPromedioMin: tmVals.length ? round1(tmVals.reduce((a,b)=>a+b,0)/tmVals.length) : null,
     };
   });
-  const tmAll=records.filter(r=>r.tiempoMuertoMin!==null);
-  const adelantados=records.filter(r=>r.categoria==='adelantado');
-  const citationRows = getCitaciones();
-  const logRows = getLogeo();
-  const unknown = [...citationRows,...logRows].filter(r=>{
-    const p=safeText(pick(r,FIELDS.planta)); return p && !state.plantas[p];
-  }).length;
+}
+
+app.get('/api/reporte', requireAuth, (req, res) => {
+  try {
+      const fecha = safeText(req.query.fecha || req.user.fecha || '');
+      let records = filterScope(buildOperatorRecords(fecha), req.query);
+      if (req.user.zona) records = records.filter(r=>r.zona===req.user.zona);
+      if (req.user.region) records = records.filter(r=>r.region===req.user.region);
+      if (req.user.planta) records = records.filter(r=>r.planta===req.user.planta);
+      const plantNames = [...new Set(records.map(r=>r.planta))];
+      if (!plantNames.length) return res.status(400).json({ error:'No hay turnos cargados para el alcance seleccionado' });
+      const byPlant = plantNames.map(planta=>{
+        const rs=records.filter(r=>r.planta===planta);
+        const logged=rs.filter(r=>r.logeoMin!==null);
+        const tm=rs.filter(r=>r.tiempoMuertoMin!==null);
+        return {
+          planta,
+          zona:ensurePlant(planta).zona,
+          region:ensurePlant(planta).region,
+          turnos:rs.length,
+          citaciones:rs.filter(r=>r.citacionAplicada).length,
+          logeo:logged.length,
+          asignados:rs.filter(r=>r.asignacionMin!==null).length,
+          primeraCarga:rs.filter(r=>r.primeraCargaMin!==null).length,
+          pendientesIngreso:rs.filter(r=>r.logeoMin===null).length,
+          adherenciaLogeo:rs.length?round1(logged.length/rs.length*100):null,
+          cumplimientoReferencia:rs.length?round1(rs.filter(r=>r.categoria==='a_tiempo').length/rs.length*100):null,
+          tiempoMuertoPromedioMin:tm.length?round1(tm.reduce((s,r)=>s+r.tiempoMuertoMin,0)/tm.length):null,
+        };
+      });
+      const tmAll=records.filter(r=>r.tiempoMuertoMin!==null);
+      const adelantados=records.filter(r=>r.categoria==='adelantado');
+      const citationRows = getCitaciones();
+      const logRows = getLogeo();
+      const unknown = [...citationRows,...logRows].filter(r=>{
+        const p=safeText(pick(r,FIELDS.planta)); if(!p) return false; const canon=canonicalPlantName(p); return !state.plantas[canon];
+      }).length;
+      const payload = {
+        generado_por:req.user.nombre,
+        fecha,
+        diagnosticoFecha:{ turnosTotal:getTurnos().length, turnosConFecha:countRowsWithDate(getTurnos(),'turnos'), turnosDia:records.length },
+        generado_en:nowIso(),
+        zona:req.query.zona || req.user.zona || null,
+        region:req.query.region || req.user.region || null,
+        plantasFiltro:req.query.plantas?String(req.query.plantas).split(',').filter(Boolean):null,
+        resumen:{
+          totalTurnos:records.length,
+          programadosExigibles:records.length,
+          totalCitaciones:records.filter(r=>r.citacionAplicada).length,
+          operadoresConCitacion:records.filter(r=>r.citacionAplicada).length,
+          operadoresPorTurno:records.filter(r=>!r.citacionAplicada).length,
+          cumplimientoReferenciaPct:records.length?round1(records.filter(r=>r.categoria==='a_tiempo').length/records.length*100):null,
+          cumplimientoCitacionPct:records.filter(r=>r.citacionAplicada).length?round1(records.filter(r=>r.citacionAplicada && r.categoria==='a_tiempo').length/records.filter(r=>r.citacionAplicada).length*100):null,
+          cumplimientoTurnoPct:records.filter(r=>!r.citacionAplicada).length?round1(records.filter(r=>!r.citacionAplicada && r.categoria==='a_tiempo').length/records.filter(r=>!r.citacionAplicada).length*100):null,
+          totalLogeo:records.filter(r=>r.logeoMin!==null).length,
+          logeadosAlCorte:records.filter(r=>r.logeoMin!==null).length,
+          pendientesIngreso:records.filter(r=>r.logeoMin===null).length,
+          asignados:records.filter(r=>r.asignacionMin!==null).length,
+          primeraCarga:records.filter(r=>r.primeraCargaMin!==null).length,
+          operadoresCriticos:records.filter(r=>r.categoria==='atraso_critico' || (r.logeoMin!==null && r.asignacionMin===null)).length,
+          tiempoMuertoPromedioMin:tmAll.length?round1(tmAll.reduce((s,r)=>s+r.tiempoMuertoMin,0)/tmAll.length):null,
+          adelantadosPct:records.length?round1(adelantados.length/records.length*100):null,
+          adelantadosCantidad:adelantados.length,
+          filasSinReconocer:unknown,
+          filasSinReconocerDetalle:{ plantaVacia:0, codigoDesconocido:unknown },
+        },
+        porPlanta:byPlant,
+        rankingAdelantados:[...adelantados].sort((a,b)=>b.adelantoMin-a.adelantoMin).slice(0,10),
+        rankingTiempoMuertoNacional:[...tmAll].sort((a,b)=>b.tiempoMuertoMin-a.tiempoMuertoMin).slice(0,10),
+      };
+      saveHistorySnapshot(payload, req);
+      return res.json(payload);
+  } catch (err) {
+    console.error('ERROR /api/reporte:', err && err.stack ? err.stack : err);
+    return res.status(500).json({
+      error: 'Error interno al construir el reporte',
+      detalle: err?.message || String(err),
+      version: '1.9.0'
+    });
+  }
+});
+
+
+app.get('/api/historico', requireAuth, (req,res) => {
+  const granularity = ['day','week','month'].includes(String(req.query.granularity)) ? String(req.query.granularity) : 'day';
+  const from = safeText(req.query.from || '');
+  const to = safeText(req.query.to || '');
+  const zona = safeText(req.query.zona || req.user.zona || '');
+  const region = safeText(req.query.region || req.user.region || '');
+  const planta = safeText(req.query.planta || req.user.planta || '');
+  const plantasFiltro = req.query.plantas ? String(req.query.plantas).split(',').map(safeText).filter(Boolean) : null;
+  const scopeKey = historyScopeKey({ zona: zona||null, region: region||null, planta: planta||null, plantasFiltro });
+  let rows = state.historico.filter(h => h.scopeKey === scopeKey);
+  if (from) rows = rows.filter(h => h.fecha >= from);
+  if (to) rows = rows.filter(h => h.fecha <= to);
+  rows.sort((a,b)=>a.fecha.localeCompare(b.fecha));
+  const series = aggregateHistory(rows, granularity);
   res.json({
-    generado_por:req.user.nombre,
-    fecha,
-    diagnosticoFecha:{ turnosTotal:getTurnos().length, turnosConFecha:countRowsWithDate(getTurnos(),'turnos'), turnosDia:records.length },
-    generado_en:nowIso(),
-    zona:req.query.zona || req.user.zona || null,
-    region:req.query.region || req.user.region || null,
-    plantasFiltro:req.query.plantas?String(req.query.plantas).split(',').filter(Boolean):null,
-    resumen:{
-      totalTurnos:records.length,
-      programadosExigibles:records.length,
-      totalCitaciones:records.filter(r=>r.citacionAplicada).length,
-      operadoresConCitacion:records.filter(r=>r.citacionAplicada).length,
-      operadoresPorTurno:records.filter(r=>!r.citacionAplicada).length,
-      cumplimientoReferenciaPct:records.length?round1(records.filter(r=>r.categoria==='a_tiempo').length/records.length*100):null,
-      cumplimientoCitacionPct:records.filter(r=>r.citacionAplicada).length?round1(records.filter(r=>r.citacionAplicada && r.categoria==='a_tiempo').length/records.filter(r=>r.citacionAplicada).length*100):null,
-      cumplimientoTurnoPct:records.filter(r=>!r.citacionAplicada).length?round1(records.filter(r=>!r.citacionAplicada && r.categoria==='a_tiempo').length/records.filter(r=>!r.citacionAplicada).length*100):null,
-      totalLogeo:records.filter(r=>r.logeoMin!==null).length,
-      logeadosAlCorte:records.filter(r=>r.logeoMin!==null).length,
-      pendientesIngreso:records.filter(r=>r.logeoMin===null).length,
-      asignados:records.filter(r=>r.asignacionMin!==null).length,
-      primeraCarga:records.filter(r=>r.primeraCargaMin!==null).length,
-      operadoresCriticos:records.filter(r=>r.categoria==='atraso_critico' || (r.logeoMin!==null && r.asignacionMin===null)).length,
-      tiempoMuertoPromedioMin:tmAll.length?round1(tmAll.reduce((s,r)=>s+r.tiempoMuertoMin,0)/tmAll.length):null,
-      adelantadosPct:records.length?round1(adelantados.length/records.length*100):null,
-      adelantadosCantidad:adelantados.length,
-      filasSinReconocer:unknown,
-      filasSinReconocerDetalle:{ plantaVacia:0, codigoDesconocido:unknown },
-    },
-    porPlanta:byPlant,
-    rankingAdelantados:[...adelantados].sort((a,b)=>b.adelantoMin-a.adelantoMin).slice(0,10),
-    rankingTiempoMuertoNacional:[...tmAll].sort((a,b)=>b.tiempoMuertoMin-a.tiempoMuertoMin).slice(0,10),
+    scopeKey,
+    scope:{ zona:zona||null, region:region||null, planta:planta||null, plantasFiltro },
+    granularity,
+    snapshots:rows.length,
+    desde: rows[0]?.fecha || null,
+    hasta: rows.at(-1)?.fecha || null,
+    series,
   });
+});
+
+
+function chooseHistoricalBaseRows(from, to) {
+  let rows = state.historico.filter(h => (!from || h.fecha >= from) && (!to || h.fecha <= to));
+  const national = rows.filter(h => h.scopeKey === 'NACIONAL');
+  if (national.length) return national.sort((a,b)=>a.fecha.localeCompare(b.fecha));
+
+  // Fallback: one snapshot per date, preferring the widest available scope.
+  const priority = (h) => h.scopeKey === 'NACIONAL' ? 0 : h.scopeKey?.startsWith('ZONA:') ? 1 : h.scopeKey?.startsWith('REGION:') ? 2 : h.scopeKey?.startsWith('PLANTAS:') ? 3 : 4;
+  const byDate = new Map();
+  for (const h of rows.sort((a,b)=>priority(a)-priority(b))) {
+    if (!byDate.has(h.fecha)) byDate.set(h.fecha, h);
+  }
+  return [...byDate.values()].sort((a,b)=>a.fecha.localeCompare(b.fecha));
+}
+
+function historicalPlantRows(snapshot) {
+  return Array.isArray(snapshot?.porPlanta) ? snapshot.porPlanta : [];
+}
+
+function aggregatePlantHistoricalRows(items) {
+  const total = (key) => items.reduce((s,x)=>s+(Number(x[key])||0),0);
+  const programados = total('turnos');
+  const weightedPct = (key) => {
+    if (!programados) return null;
+    const acc = items.reduce((s,x)=>{
+      const pct = Number(x[key]);
+      const w = Number(x.turnos)||0;
+      return s + (Number.isFinite(pct) ? pct*w : 0);
+    },0);
+    return round1(acc/programados);
+  };
+  return {
+    programados,
+    logeados: total('logeo'),
+    asignados: total('asignados'),
+    primeraCarga: total('primeraCarga'),
+    pendientes: total('pendientesIngreso'),
+    citaciones: total('citaciones'),
+    adherenciaPct: weightedPct('cumplimientoReferencia'),
+  };
+}
+
+app.get('/api/historico/dashboard', requireAuth, (req,res) => {
+  try {
+    const currentYear = new Date().getFullYear();
+    const from = safeText(req.query.from || `${currentYear}-06-16`);
+    const to = safeText(req.query.to || new Date().toISOString().slice(0,10));
+    const zona = safeText(req.query.zona || '');
+    const plantasFiltro = req.query.plantas ? String(req.query.plantas).split(',').map(safeText).filter(Boolean) : [];
+
+    const snapshots = chooseHistoricalBaseRows(from,to);
+    const daily = [];
+    for (const snap of snapshots) {
+      let plants = historicalPlantRows(snap);
+      if (zona) plants = plants.filter(p=>p.zona===zona);
+      if (plantasFiltro.length) plants = plants.filter(p=>plantasFiltro.includes(p.planta));
+      if (!plants.length) continue;
+      daily.push({ fecha:snap.fecha, plants });
+    }
+
+    const weeklyMap = new Map();
+    for (const day of daily) {
+      const wk = isoWeekKey(day.fecha);
+      if (!weeklyMap.has(wk)) weeklyMap.set(wk, []);
+      weeklyMap.get(wk).push(...day.plants);
+    }
+    const weekly = [...weeklyMap.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([semana,items])=>({
+      semana,
+      ...aggregatePlantHistoricalRows(items),
+    }));
+
+    const allPlants = daily.flatMap(d=>d.plants);
+    const acumulado = aggregatePlantHistoricalRows(allPlants);
+
+    const zoneNames = ['Norte','Centro','Sur'];
+    const zonas = zoneNames.map(z=>{
+      const items = daily.flatMap(d=>d.plants.filter(p=>p.zona===z));
+      return { zona:z, ...aggregatePlantHistoricalRows(items) };
+    });
+
+    const plantMap = new Map();
+    for (const day of daily) {
+      for (const p of day.plants) {
+        if (!plantMap.has(p.planta)) plantMap.set(p.planta, []);
+        plantMap.get(p.planta).push(p);
+      }
+    }
+    const plantas = [...plantMap.entries()].map(([planta,items])=>({
+      planta,
+      zona: items[0]?.zona || ensurePlant(planta).zona,
+      ...aggregatePlantHistoricalRows(items),
+    })).sort((a,b)=>a.zona.localeCompare(b.zona)||a.planta.localeCompare(b.planta));
+
+    res.json({
+      from,to,zona:zona||null,plantasFiltro,
+      snapshots:snapshots.length,
+      diasConDatos:daily.length,
+      weekly,
+      acumulado,
+      zonas,
+      plantas,
+    });
+  } catch (err) {
+    res.status(500).json({ error:'No se pudo construir la trazabilidad histórica', detalle:err?.message||String(err) });
+  }
 });
 
 app.get('/api/audit', requireAuth, (req,res)=>res.json(state.audit.slice(0,500)));
@@ -1009,7 +1246,7 @@ io.on('connection', (socket) => {
 app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 server.listen(PORT, () => {
-  console.log(`CCO Intelligence v1.8.0 activo en puerto ${PORT}`);
+  console.log(`CCO Intelligence v2.0.0 activo en puerto ${PORT}`);
   if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') {
     console.warn('ADVERTENCIA: configure AUTH_SECRET en producción.');
   }
