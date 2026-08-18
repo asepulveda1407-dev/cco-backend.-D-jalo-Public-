@@ -124,6 +124,11 @@ function pick(row, aliases) {
   }
   return null;
 }
+function isAffirmative(value) {
+  if (value === true || value === 1) return true;
+  const s = normalizeName(value);
+  return ['si','sí','s','yes','y','true','1','x','requiere adelantar citacion','adelantar citacion'].includes(s) || s.includes('requiere adelantar');
+}
 
 const FIELDS = {
   id: ['id_operador','id operador','numero_funcionario','número funcionario','numero funcionario','id','rut','codigo_operador','cod_operador'],
@@ -134,6 +139,7 @@ const FIELDS = {
   zona: ['zona','region','región'],
   turno: ['turno_inicio','hora_inicio','hora_ingreso','hora ingreso','horaingreso','turno','inicio_turno'],
   citacion: ['citacion','citación','cita','hora_citacion','hora citacion','citacion_sugerida','citación sugerida'],
+  requiereAdelantarCitacion: ['requiere_adelantar_citacion','requiere adelantar citacion','requiere adelantar citación','adelantar_citacion','adelantar citacion','adelantar citación','requiere_citacion','requiere citacion','requiere citación'],
   logeo: ['logeo','marcacion','marcación','hora_logeo','hora logeo','entrada','login','fecha_hora','fecha hora'],
   estado: ['descripcion_estado','descripción estado','estado','status','status_description','descripcion status','descripción status'],
   fecha: ['fecha','fecha_turno','fecha turno','dia_fecha','día_fecha','date','fecha_programada','fecha programada'],
@@ -533,7 +539,7 @@ function buildOperatorRecords(fecha = '') {
   });
   const shifts = [...shiftMap.values()];
   const citations = filterRowsForDate(getCitaciones(), fecha, 'citaciones');
-  const logs = filterRowsForDate(getLogeo(), fecha, 'logeo');
+  const logs = getLogeo(); // v1.7: se indexa todo el StatusBreakdown para soportar turnos nocturnos que cruzan medianoche
   const cByKey = new Map();
   const logsByKey = new Map();
 
@@ -549,48 +555,111 @@ function buildOperatorRecords(fecha = '') {
     const turnoMin = parseTimeMinutes(pick(t, FIELDS.turno));
 
     const cs = rowsFromMultiIndex(cByKey, t);
+    // v1.8 — La citación solo se aplica cuando el archivo indica explícitamente
+    // "Requiere adelantar citación". Si no, la referencia sigue siendo el turno.
+    const csAplicables = cs.filter(c => isAffirmative(pick(c, FIELDS.requiereAdelantarCitacion)));
     let citacionMin = null;
-    for (const c of cs) {
+    for (const c of csAplicables) {
       const m = parseTimeMinutes(pick(c, FIELDS.citacion));
       if (m !== null && (citacionMin === null || Math.abs(diffMinutes(m, turnoMin)) < Math.abs(diffMinutes(citacionMin, turnoMin)))) citacionMin = m;
     }
+    const citacionAplicada = citacionMin !== null && csAplicables.length > 0;
+    const referenciaMin = citacionAplicada ? citacionMin : turnoMin;
+    const referenciaTipo = citacionAplicada ? 'Citación' : 'Turno';
 
     const ls = rowsFromMultiIndex(logsByKey, t);
-    const events = ls.map(l => ({
-      row: l,
-      min: parseTimeMinutes(getEventTimeValue(l)),
-      estadoRaw: safeText(pick(l, FIELDS.estado)) || '',
-      estado: normalizeName(pick(l, FIELDS.estado)),
-      tipo: classifyOperationalEvent(pick(l, FIELDS.estado)),
-    })).filter(x => x.min !== null).sort((a,b)=>a.min-b.min);
 
-    // LOGIN/PRE-VIAJE es el evento oficial de ingreso del StatusBreakdown.
-    // No usamos cualquier evento como logeo, porque eso infla falsamente la cobertura.
-    let loginEvent = events.find(e => e.tipo === 'login');
-    // Respaldo solo para exportaciones sin columna Estado: si todos los estados vienen vacíos,
-    // usamos el primer timestamp del operador como marcación observada.
-    if (!loginEvent && events.length && events.every(e => !e.estado)) loginEvent = events[0];
+    // v1.7 — Ventana operacional por turno.
+    // Diurno: 05:00–17:59. Se ignoran eventos de madrugada del turno nocturno anterior.
+    // Nocturno: 18:00–04:59 y se permite cruzar medianoche hacia el día siguiente.
+    const isNightShift = turnoMin !== null && (turnoMin >= 18*60 || turnoMin < 5*60);
+    const targetDate = fecha || rowDateKey(t, 'turnos');
+    const dateDiffDays = (a,b) => {
+      if(!a || !b) return 0;
+      const da = new Date(a+'T12:00:00Z'), db = new Date(b+'T12:00:00Z');
+      return Math.round((da-db)/86400000);
+    };
+
+    const events = ls.map(l => {
+      const min = parseTimeMinutes(getEventTimeValue(l));
+      const eventDate = rowDateKey(l, 'logeo');
+      const dayOffset = targetDate && eventDate ? dateDiffDays(eventDate, targetDate) : 0;
+      return {
+        row:l, min, dayOffset, absMin: min===null ? null : min + dayOffset*1440,
+        estadoRaw:safeText(pick(l, FIELDS.estado)) || '',
+        estado:normalizeName(pick(l, FIELDS.estado)),
+        tipo:classifyOperationalEvent(pick(l, FIELDS.estado)),
+      };
+    }).filter(x => x.min !== null);
+
+    const shiftAbs = turnoMin;
+    // La puntualidad y selección del LOGIN se miden contra la referencia operacional.
+    // Para citaciones cercanas a medianoche, se ajusta al día relativo más coherente con el turno.
+    let referenceAbs = referenciaMin;
+    if (referenciaMin !== null && turnoMin !== null) {
+      let d = referenciaMin - turnoMin;
+      if (d > 720) d -= 1440;
+      if (d < -720) d += 1440;
+      referenceAbs = turnoMin + d;
+    }
+    const operationalEvents = events.filter(e => {
+      if (turnoMin === null) return true;
+      if (isNightShift) {
+        // Permite desde 3 h antes del turno hasta 12 h después, incluyendo madrugada siguiente.
+        return e.absMin >= shiftAbs - 180 && e.absMin <= shiftAbs + 720;
+      }
+      // Turno diurno: solo eventos del mismo día entre 05:00 y 17:59.
+      if (e.dayOffset !== 0) return false;
+      return e.min >= 5*60 && e.min < 18*60;
+    }).sort((a,b)=>a.absMin-b.absMin);
+
+    // Escoger LOGIN válido más cercano al turno dentro de una ventana razonable.
+    // Se aceptan hasta 180 min de adelanto y 240 min de atraso para turno diurno;
+    // el nocturno usa la ventana operacional completa para no romper el cruce de medianoche.
+    let loginCandidates = operationalEvents.filter(e => e.tipo === 'login');
+    if (!isNightShift && turnoMin !== null) {
+      loginCandidates = loginCandidates.filter(e => {
+        const d = e.absMin - referenceAbs;
+        return d >= -180 && d <= 240;
+      });
+    }
+    loginCandidates.sort((a,b)=>Math.abs(a.absMin-referenceAbs)-Math.abs(b.absMin-referenceAbs));
+    let loginEvent = loginCandidates[0] || null;
+
+    // Respaldo solo para archivos sin columna Estado.
+    if (!loginEvent && operationalEvents.length && operationalEvents.every(e => !e.estado)) {
+      loginEvent = [...operationalEvents].sort((a,b)=>Math.abs(a.absMin-referenceAbs)-Math.abs(b.absMin-referenceAbs))[0];
+    }
+    const logeoAbs = loginEvent?.absMin ?? null;
     const logeoMin = loginEvent?.min ?? null;
 
-    const assignmentCandidates = events.filter(e => e.tipo === 'asignado');
-    let asignacionMin = null;
+    // La asignación debe pertenecer a la misma secuencia operacional y ocurrir después del logeo.
+    const assignmentCandidates = operationalEvents.filter(e => e.tipo === 'asignado');
+    let assignmentEvent = null;
     if (assignmentCandidates.length) {
-      const base = logeoMin ?? turnoMin;
-      const after = assignmentCandidates.map(e => ({...e, d: base===null?0:diffMinutes(e.min, base)})).filter(e => base===null || e.d >= 0).sort((a,b)=>a.d-b.d);
-      asignacionMin = after[0]?.min ?? assignmentCandidates[0]?.min ?? null;
+      const base = logeoAbs ?? referenceAbs;
+      assignmentEvent = assignmentCandidates
+        .filter(e => base===null || e.absMin >= base)
+        .sort((a,b)=>(a.absMin-base)-(b.absMin-base))[0] || null;
     }
+    const asignacionAbs = assignmentEvent?.absMin ?? null;
+    const asignacionMin = assignmentEvent?.min ?? null;
 
-    // Primera carga: primer estado CARGANDO/CARGADO posterior al logeo o asignación.
-    // EN PLANTA no se utiliza como primera carga porque puede corresponder al retorno de un ciclo previo.
-    const loadCandidates = events.filter(e => e.tipo === 'primera_carga');
-    let primeraCargaMin = null;
+    // Primera carga: primer CARGANDO/CARGADO de la misma secuencia, posterior a asignación/logeo.
+    const loadCandidates = operationalEvents.filter(e => e.tipo === 'primera_carga');
+    let loadEvent = null;
     if (loadCandidates.length) {
-      const base = asignacionMin ?? logeoMin ?? turnoMin;
-      const after = loadCandidates.map(e => ({...e, d: base===null?0:diffMinutes(e.min, base)})).filter(e => base===null || e.d >= 0).sort((a,b)=>a.d-b.d);
-      primeraCargaMin = after[0]?.min ?? loadCandidates[0]?.min ?? null;
+      const base = asignacionAbs ?? logeoAbs ?? referenceAbs;
+      loadEvent = loadCandidates
+        .filter(e => base===null || e.absMin >= base)
+        .sort((a,b)=>(a.absMin-base)-(b.absMin-base))[0] || null;
     }
+    const primeraCargaAbs = loadEvent?.absMin ?? null;
+    const primeraCargaMin = loadEvent?.min ?? null;
 
-    const atraso = logeoMin === null ? null : diffMinutes(logeoMin, turnoMin);
+    // Diferencia real respecto de la REFERENCIA OPERACIONAL:
+    // Citación cuando "Requiere adelantar citación" = Sí; turno en los demás casos.
+    const atraso = logeoAbs === null || referenceAbs === null ? null : (logeoAbs - referenceAbs);
     let categoria = 'sin_logeo';
     if (atraso !== null) {
       if (atraso < -pCfg.tol_v) categoria = 'adelantado';
@@ -598,7 +667,7 @@ function buildOperatorRecords(fecha = '') {
       else if (atraso <= pCfg.tol_a) categoria = 'atraso_leve';
       else categoria = 'atraso_critico';
     }
-    const tiempoMuertoMin = (logeoMin !== null && asignacionMin !== null) ? Math.max(0, diffMinutes(asignacionMin, logeoMin)) : null;
+    const tiempoMuertoMin = (logeoAbs !== null && asignacionAbs !== null) ? Math.max(0, asignacionAbs - logeoAbs) : null;
     const estado = {
       a_tiempo:'A tiempo', adelantado:'Adelantado', atraso_leve:'Atraso leve', atraso_critico:'Atraso crítico', sin_logeo:'Sin logeo'
     }[categoria];
@@ -609,11 +678,12 @@ function buildOperatorRecords(fecha = '') {
 
     return {
       key, id, nombre, planta, zona: pCfg.zona, region: pCfg.region,
-      turnoMin, citacionMin, logeoMin, asignacionMin, primeraCargaMin,
-      horaTurno: fmtMinutes(turnoMin), horaCitacion: fmtMinutes(citacionMin), horaLogeo: fmtMinutes(logeoMin), horaAsignacion: fmtMinutes(asignacionMin), horaPrimeraCarga: fmtMinutes(primeraCargaMin),
-      turno: fmtMinutes(turnoMin), citacionHora: fmtMinutes(citacionMin), logeo: fmtMinutes(logeoMin), asignacion: fmtMinutes(asignacionMin), primeraCarga: fmtMinutes(primeraCargaMin),
+      turnoMin, citacionMin, citacionAplicada, referenciaMin, referenciaTipo, referenciaAbs, logeoMin, asignacionMin, primeraCargaMin,
+      horaTurno: fmtMinutes(turnoMin), horaCitacion: fmtMinutes(citacionMin), horaReferencia: fmtMinutes(referenciaMin), horaLogeo: fmtMinutes(logeoMin), horaAsignacion: fmtMinutes(asignacionMin), horaPrimeraCarga: fmtMinutes(primeraCargaMin),
+      turno: fmtMinutes(turnoMin), citacionHora: fmtMinutes(citacionMin), referenciaHora: fmtMinutes(referenciaMin), logeo: fmtMinutes(logeoMin), asignacion: fmtMinutes(asignacionMin), primeraCarga: fmtMinutes(primeraCargaMin),
       conLogeo: logeoMin !== null, asignado: asignacionMin !== null, conPrimeraCarga: primeraCargaMin !== null,
-      atrasoTurnoMin: atraso,
+      atrasoTurnoMin: atraso, // compatibilidad: ahora representa desviación vs referencia operacional
+      desviacionReferenciaMin: atraso,
       adelantoMin: atraso !== null && atraso < 0 ? Math.abs(atraso) : 0,
       tiempoMuertoMin,
       esperaMin: tiempoMuertoMin,
@@ -640,7 +710,7 @@ function datasetPlantCount(type, planta) {
 app.get('/health', (req, res) => res.json({
   ok: true,
   service: 'CCO Intelligence',
-  version: '1.6.0',
+  version: '1.8.0',
   env: NODE_ENV,
   timestamp: nowIso(),
   uptime_s: Math.round(process.uptime()),
@@ -878,12 +948,13 @@ app.get('/api/reporte', requireAuth, (req, res) => {
       zona:ensurePlant(planta).zona,
       region:ensurePlant(planta).region,
       turnos:rs.length,
-      citaciones:rs.filter(r=>r.citacionMin!==null).length,
+      citaciones:rs.filter(r=>r.citacionAplicada).length,
       logeo:logged.length,
       asignados:rs.filter(r=>r.asignacionMin!==null).length,
       primeraCarga:rs.filter(r=>r.primeraCargaMin!==null).length,
       pendientesIngreso:rs.filter(r=>r.logeoMin===null).length,
       adherenciaLogeo:rs.length?round1(logged.length/rs.length*100):null,
+      cumplimientoReferencia:rs.length?round1(rs.filter(r=>r.categoria==='a_tiempo').length/rs.length*100):null,
       tiempoMuertoPromedioMin:tm.length?round1(tm.reduce((s,r)=>s+r.tiempoMuertoMin,0)/tm.length):null,
     };
   });
@@ -905,7 +976,12 @@ app.get('/api/reporte', requireAuth, (req, res) => {
     resumen:{
       totalTurnos:records.length,
       programadosExigibles:records.length,
-      totalCitaciones:records.filter(r=>r.citacionMin!==null).length,
+      totalCitaciones:records.filter(r=>r.citacionAplicada).length,
+      operadoresConCitacion:records.filter(r=>r.citacionAplicada).length,
+      operadoresPorTurno:records.filter(r=>!r.citacionAplicada).length,
+      cumplimientoReferenciaPct:records.length?round1(records.filter(r=>r.categoria==='a_tiempo').length/records.length*100):null,
+      cumplimientoCitacionPct:records.filter(r=>r.citacionAplicada).length?round1(records.filter(r=>r.citacionAplicada && r.categoria==='a_tiempo').length/records.filter(r=>r.citacionAplicada).length*100):null,
+      cumplimientoTurnoPct:records.filter(r=>!r.citacionAplicada).length?round1(records.filter(r=>!r.citacionAplicada && r.categoria==='a_tiempo').length/records.filter(r=>!r.citacionAplicada).length*100):null,
       totalLogeo:records.filter(r=>r.logeoMin!==null).length,
       logeadosAlCorte:records.filter(r=>r.logeoMin!==null).length,
       pendientesIngreso:records.filter(r=>r.logeoMin===null).length,
@@ -933,7 +1009,7 @@ io.on('connection', (socket) => {
 app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 server.listen(PORT, () => {
-  console.log(`CCO Intelligence v1.6.0 activo en puerto ${PORT}`);
+  console.log(`CCO Intelligence v1.8.0 activo en puerto ${PORT}`);
   if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') {
     console.warn('ADVERTENCIA: configure AUTH_SECRET en producción.');
   }
