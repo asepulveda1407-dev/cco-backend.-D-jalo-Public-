@@ -34,7 +34,8 @@ app.use(helmet({
 app.use(rateLimit({ windowMs: 60_000, max: 240, standardHeaders: true, legacyHeaders: false }));
 app.use(cors({ origin: APP_ORIGIN ? APP_ORIGIN : true }));
 app.use(express.json({ limit: '50mb' }));
-app.use(express.static(PUBLIC_DIR, { maxAge: NODE_ENV === 'production' ? '1h' : 0 }));
+app.use((req,res,next)=>{ if(req.path==='/' || req.path.endsWith('.html')) res.setHeader('Cache-Control','no-store, no-cache, must-revalidate'); next(); });
+app.use(express.static(PUBLIC_DIR, { maxAge: 0, etag: false }));
 
 const DEFAULT_STATE = {
   version: 1,
@@ -548,7 +549,9 @@ function buildOperatorRecords(fecha = '') {
   for (const c of citations) addToMultiIndex(cByKey, c);
   for (const l of logs) addToMultiIndex(logsByKey, l);
 
-  return shifts.map((t, idx) => {
+  const buildErrors = [];
+  const built = shifts.map((t, idx) => {
+    try {
     const key = operatorKey(t) || `row:${idx}`;
     const { id, nombre } = rowOperator(t);
     const plantaOriginal = safeText(pick(t, FIELDS.planta)) || 'Sin planta';
@@ -683,10 +686,10 @@ function buildOperatorRecords(fecha = '') {
       turnoMin, citacionMin, citacionAplicada, referenciaMin, referenciaTipo, referenciaAbs, logeoMin, asignacionMin, primeraCargaMin,
       horaTurno: fmtMinutes(turnoMin), horaCitacion: fmtMinutes(citacionMin), horaReferencia: fmtMinutes(referenciaMin), horaLogeo: fmtMinutes(logeoMin), horaAsignacion: fmtMinutes(asignacionMin), horaPrimeraCarga: fmtMinutes(primeraCargaMin),
       turno: fmtMinutes(turnoMin), citacionHora: fmtMinutes(citacionMin), referenciaHora: fmtMinutes(referenciaMin), logeo: fmtMinutes(logeoMin), asignacion: fmtMinutes(asignacionMin), primeraCarga: fmtMinutes(primeraCargaMin),
-      conLogeo: logeoMin !== null, asignado: asignacionMin !== null, conPrimeraCarga: primeraCargaMin !== null,
+      conLogeo: Number.isFinite(logeoMin), asignado: Number.isFinite(asignacionMin), conPrimeraCarga: Number.isFinite(primeraCargaMin),
       atrasoTurnoMin: atraso, // compatibilidad: ahora representa desviación vs referencia operacional
       desviacionReferenciaMin: atraso,
-      adelantoMin: atraso !== null && atraso < 0 ? Math.abs(atraso) : 0,
+      adelantoMin: Number.isFinite(atraso) && atraso < 0 ? Math.abs(atraso) : 0,
       tiempoMuertoMin,
       esperaMin: tiempoMuertoMin,
       esperaAsignacionMin: tiempoMuertoMin,
@@ -694,7 +697,27 @@ function buildOperatorRecords(fecha = '') {
       etiqueta: estado,
       horaTurnoSospechosa: turnoMin !== null && (turnoMin < 5*60 || turnoMin > 23*60+59),
     };
+    } catch (err) {
+      const op = (()=>{ try { return rowOperator(t); } catch { return {id:`fila-${idx+1}`, nombre:'Operador no identificable'}; } })();
+      buildErrors.push({ fila:idx+1, id:op.id, nombre:op.nombre, error:err?.message || String(err) });
+      console.error(`WARN buildOperatorRecords fila ${idx+1}:`, err && err.stack ? err.stack : err);
+      return null;
+    }
   });
+  buildOperatorRecords.lastErrors = buildErrors;
+  return built.filter(Boolean);
+}
+buildOperatorRecords.lastErrors = [];
+
+function hasMinute(v) { return Number.isFinite(v); }
+function buildRecordsWithDiagnostics(fecha='') {
+  try {
+    const records = buildOperatorRecords(fecha);
+    return { records, errors: Array.isArray(buildOperatorRecords.lastErrors) ? buildOperatorRecords.lastErrors : [] };
+  } catch (err) {
+    console.error('ERROR global buildOperatorRecords:', err && err.stack ? err.stack : err);
+    return { records: [], errors:[{ fila:null, id:null, nombre:null, error:err?.message || String(err), global:true }] };
+  }
 }
 
 function filterScope(records, query) {
@@ -712,7 +735,7 @@ function datasetPlantCount(type, planta) {
 app.get('/health', (req, res) => res.json({
   ok: true,
   service: 'CCO Intelligence',
-  version: '1.8.0',
+  version: '2.1.0',
   env: NODE_ENV,
   timestamp: nowIso(),
   uptime_s: Math.round(process.uptime()),
@@ -889,19 +912,20 @@ app.get('/api/analisis-operadores', requireAuth, (req, res) => {
     const planta = safeText(req.query.planta || '');
     if (!planta) return res.status(400).json({ error:'Planta requerida' });
     const fecha = safeText(req.query.fecha || req.user.fecha || '');
-    const records = buildOperatorRecords(fecha).filter(r=>r.planta===planta);
+    const built = buildRecordsWithDiagnostics(fecha);
+    const records = built.records.filter(r=>r.planta===planta);
     if (!records.length) return res.json({
       diagnostico:'ATENCIÓN', diagnosticoLineas:['No hay turnos válidos para esta planta.'],
       resumen:{ totalOperadores:0, conLogeo:0, sinLogeo:0, adherenciaTurnoPct:null, atrasadosPct:null, atrasadosCriticos:0, adelantadosPct:null, logeadosSinAsignacion:0, esperaAsignacionPromedioMin:null },
       ranking:[], rankingTiempoMuerto:[], logeadosEsperandoAhora:0, operadores:[]
     });
-    const conLogeo = records.filter(r=>r.logeoMin!==null);
+    const conLogeo = records.filter(r=>hasMinute(r.logeoMin));
     const sinLogeo = records.length-conLogeo.length;
     const atrasados = records.filter(r=>['atraso_leve','atraso_critico'].includes(r.categoria));
     const criticos = records.filter(r=>r.categoria==='atraso_critico');
     const adelantados = records.filter(r=>r.categoria==='adelantado');
-    const tm = records.filter(r=>r.tiempoMuertoMin!==null);
-    const esperando = records.filter(r=>r.logeoMin!==null && r.asignacionMin===null).length;
+    const tm = records.filter(r=>hasMinute(r.tiempoMuertoMin));
+    const esperando = records.filter(r=>hasMinute(r.logeoMin) && !hasMinute(r.asignacionMin)).length;
     const adherence = round1(conLogeo.length / records.length * 100);
     const cfg = ensurePlant(planta);
     let diagnostico = 'ESTABLE';
@@ -931,6 +955,7 @@ app.get('/api/analisis-operadores', requireAuth, (req, res) => {
       rankingTiempoMuerto:[...tm].sort((a,b)=>b.tiempoMuertoMin-a.tiempoMuertoMin).slice(0,10).map(r=>({...r, tiempoMuertoCategoria:r.tiempoMuertoMin<=30?'ok':r.tiempoMuertoMin<=60?'atencion':'critico'})),
       logeadosEsperandoAhora:esperando,
       operadores:records,
+      erroresConstruccion: built.errors.slice(0,20),
     });
   } catch (err) {
     console.error('ERROR /api/analisis-operadores:', err && err.stack ? err.stack : err);
@@ -1033,7 +1058,8 @@ function aggregateHistory(rows, granularity) {
 app.get('/api/reporte', requireAuth, (req, res) => {
   try {
       const fecha = safeText(req.query.fecha || req.user.fecha || '');
-      let records = filterScope(buildOperatorRecords(fecha), req.query);
+      const built = buildRecordsWithDiagnostics(fecha);
+      let records = filterScope(built.records, req.query);
       if (req.user.zona) records = records.filter(r=>r.zona===req.user.zona);
       if (req.user.region) records = records.filter(r=>r.region===req.user.region);
       if (req.user.planta) records = records.filter(r=>r.planta===req.user.planta);
@@ -1041,8 +1067,8 @@ app.get('/api/reporte', requireAuth, (req, res) => {
       if (!plantNames.length) return res.status(400).json({ error:'No hay turnos cargados para el alcance seleccionado' });
       const byPlant = plantNames.map(planta=>{
         const rs=records.filter(r=>r.planta===planta);
-        const logged=rs.filter(r=>r.logeoMin!==null);
-        const tm=rs.filter(r=>r.tiempoMuertoMin!==null);
+        const logged=rs.filter(r=>hasMinute(r.logeoMin));
+        const tm=rs.filter(r=>hasMinute(r.tiempoMuertoMin));
         return {
           planta,
           zona:ensurePlant(planta).zona,
@@ -1050,21 +1076,30 @@ app.get('/api/reporte', requireAuth, (req, res) => {
           turnos:rs.length,
           citaciones:rs.filter(r=>r.citacionAplicada).length,
           logeo:logged.length,
-          asignados:rs.filter(r=>r.asignacionMin!==null).length,
-          primeraCarga:rs.filter(r=>r.primeraCargaMin!==null).length,
-          pendientesIngreso:rs.filter(r=>r.logeoMin===null).length,
+          asignados:rs.filter(r=>hasMinute(r.asignacionMin)).length,
+          primeraCarga:rs.filter(r=>hasMinute(r.primeraCargaMin)).length,
+          pendientesIngreso:rs.filter(r=>!hasMinute(r.logeoMin)).length,
           adherenciaLogeo:rs.length?round1(logged.length/rs.length*100):null,
           cumplimientoReferencia:rs.length?round1(rs.filter(r=>r.categoria==='a_tiempo').length/rs.length*100):null,
           tiempoMuertoPromedioMin:tm.length?round1(tm.reduce((s,r)=>s+r.tiempoMuertoMin,0)/tm.length):null,
         };
       });
-      const tmAll=records.filter(r=>r.tiempoMuertoMin!==null);
+      const tmAll=records.filter(r=>hasMinute(r.tiempoMuertoMin));
       const adelantados=records.filter(r=>r.categoria==='adelantado');
-      const citationRows = getCitaciones();
-      const logRows = getLogeo();
-      const unknown = [...citationRows,...logRows].filter(r=>{
-        const p=safeText(pick(r,FIELDS.planta)); if(!p) return false; const canon=canonicalPlantName(p); return !state.plantas[canon];
-      }).length;
+      let unknown = 0;
+      try {
+        const citationRows = Array.isArray(getCitaciones()) ? getCitaciones() : [];
+        const logRows = Array.isArray(getLogeo()) ? getLogeo() : [];
+        unknown = [...citationRows,...logRows].filter(r=>{
+          const p=safeText(pick(r,FIELDS.planta));
+          if(!p) return false;
+          const canon=canonicalPlantName(p);
+          return !state.plantas?.[canon];
+        }).length;
+      } catch (qualityErr) {
+        console.error('WARN calidad de datos en reporte:', qualityErr?.message || qualityErr);
+        unknown = 0;
+      }
       const payload = {
         generado_por:req.user.nombre,
         fecha,
@@ -1082,12 +1117,12 @@ app.get('/api/reporte', requireAuth, (req, res) => {
           cumplimientoReferenciaPct:records.length?round1(records.filter(r=>r.categoria==='a_tiempo').length/records.length*100):null,
           cumplimientoCitacionPct:records.filter(r=>r.citacionAplicada).length?round1(records.filter(r=>r.citacionAplicada && r.categoria==='a_tiempo').length/records.filter(r=>r.citacionAplicada).length*100):null,
           cumplimientoTurnoPct:records.filter(r=>!r.citacionAplicada).length?round1(records.filter(r=>!r.citacionAplicada && r.categoria==='a_tiempo').length/records.filter(r=>!r.citacionAplicada).length*100):null,
-          totalLogeo:records.filter(r=>r.logeoMin!==null).length,
-          logeadosAlCorte:records.filter(r=>r.logeoMin!==null).length,
-          pendientesIngreso:records.filter(r=>r.logeoMin===null).length,
-          asignados:records.filter(r=>r.asignacionMin!==null).length,
-          primeraCarga:records.filter(r=>r.primeraCargaMin!==null).length,
-          operadoresCriticos:records.filter(r=>r.categoria==='atraso_critico' || (r.logeoMin!==null && r.asignacionMin===null)).length,
+          totalLogeo:records.filter(r=>hasMinute(r.logeoMin)).length,
+          logeadosAlCorte:records.filter(r=>hasMinute(r.logeoMin)).length,
+          pendientesIngreso:records.filter(r=>!hasMinute(r.logeoMin)).length,
+          asignados:records.filter(r=>hasMinute(r.asignacionMin)).length,
+          primeraCarga:records.filter(r=>hasMinute(r.primeraCargaMin)).length,
+          operadoresCriticos:records.filter(r=>r.categoria==='atraso_critico' || (hasMinute(r.logeoMin) && !hasMinute(r.asignacionMin))).length,
           tiempoMuertoPromedioMin:tmAll.length?round1(tmAll.reduce((s,r)=>s+r.tiempoMuertoMin,0)/tmAll.length):null,
           adelantadosPct:records.length?round1(adelantados.length/records.length*100):null,
           adelantadosCantidad:adelantados.length,
@@ -1095,9 +1130,13 @@ app.get('/api/reporte', requireAuth, (req, res) => {
           filasSinReconocerDetalle:{ plantaVacia:0, codigoDesconocido:unknown },
         },
         porPlanta:byPlant,
-        rankingAdelantados:[...adelantados].sort((a,b)=>b.adelantoMin-a.adelantoMin).slice(0,10),
-        rankingTiempoMuertoNacional:[...tmAll].sort((a,b)=>b.tiempoMuertoMin-a.tiempoMuertoMin).slice(0,10),
+        rankingAdelantados:[...adelantados].sort((a,b)=>(Number(b.adelantoMin)||0)-(Number(a.adelantoMin)||0)).slice(0,10),
+        rankingTiempoMuertoNacional:[...tmAll].sort((a,b)=>(Number(b.tiempoMuertoMin)||0)-(Number(a.tiempoMuertoMin)||0)).slice(0,10),
+        erroresConstruccion: built.errors.slice(0,50),
       };
+      if (built.errors.length) {
+        payload.advertencias = [...(payload.advertencias || []), {codigo:'FILAS_OMITIDAS', mensaje:`${built.errors.length} operador(es) no pudieron procesarse y fueron aislados sin bloquear el reporte.`}];
+      }
       try {
         saveHistorySnapshot(payload, req);
       } catch (historyErr) {
@@ -1110,7 +1149,7 @@ app.get('/api/reporte', requireAuth, (req, res) => {
     return res.status(500).json({
       error: 'Error interno al construir el reporte',
       detalle: err?.message || String(err),
-      version: '2.0.1'
+      version: '2.1.0'
     });
   }
 });
@@ -1257,7 +1296,7 @@ io.on('connection', (socket) => {
 app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 server.listen(PORT, () => {
-  console.log(`CCO Intelligence v2.0.1 activo en puerto ${PORT}`);
+  console.log(`CCO Intelligence v2.1.0 activo en puerto ${PORT}`);
   if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') {
     console.warn('ADVERTENCIA: configure AUTH_SECRET en producción.');
   }
