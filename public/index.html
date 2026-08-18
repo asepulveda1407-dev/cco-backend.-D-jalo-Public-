@@ -177,7 +177,7 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 @media(max-width:760px){.module-switcher{right:10px;bottom:10px;left:10px;justify-content:center}.module-switcher button{flex:1}.module-tabs{top:4px}}
 
 
-/* v2.6 navegación principal: selector fijo siempre visible */
+/* v2.7 navegación principal: selector fijo siempre visible */
 .module-switcher{position:fixed!important;top:12px!important;right:16px!important;bottom:auto!important;left:auto!important;z-index:99999!important;display:flex!important;align-items:center!important;justify-content:center!important;gap:6px!important;width:auto!important;padding:6px!important;margin:0!important;background:rgba(255,255,255,.98)!important;border:1px solid var(--line)!important;border-radius:12px!important;box-shadow:0 8px 24px rgba(16,42,67,.16)!important;backdrop-filter:blur(8px)!important}
 .module-switcher-label{font-size:9px;font-weight:800;letter-spacing:.5px;color:#607a91;margin:0 3px}
 .module-switcher button{margin:0!important;padding:8px 11px!important;font-size:11px!important;font-weight:800!important;border-radius:8px!important;min-width:0!important;white-space:nowrap!important}
@@ -224,11 +224,11 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v2.6</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v2.7</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
     <label id="opDateControl" style="margin:0;font-size:10px">Fecha Operación Nacional <input id="scopeFecha" type="date" onchange="cambiarFechaOperacional()" style="width:145px;margin-left:5px"></label>
-    <span id="appVersion" class="pill">v2.6</span><span id="connPill" class="pill">Conectando…</span>
+    <span id="appVersion" class="pill">v2.7</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
 <div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
@@ -667,7 +667,7 @@ Object.keys(TIPOS_ARCHIVO).forEach(inputId=>{
 });
 
 
-// v2.6 — Carga masiva optimizada desde carpeta (Chrome / Edge). Cada carpeta debe contener
+// v2.7 — Carga masiva optimizada desde carpeta (Chrome / Edge). Cada carpeta debe contener
 // archivos de la misma fuente: Turnos, Citaciones o StatusBreakdown/Logeo.
 const CARPETAS_ARCHIVO = {
   folderTurnos:{tipo:'turnos', boton:'btnFolderTurnos'},
