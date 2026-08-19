@@ -1234,10 +1234,11 @@ function fleetStatusFromSource(sourceStatus, activeFlag){
   return 'stale';
 }
 function normalizeFleetRow(row, index){
-  const id=fleetPick(row,['ID','ID Equipo','Equipo','Código Equipo','Codigo Equipo','Código','Codigo','Unit ID','Unidad']);
+  const id=fleetPick(row,['Mixer','ID','ID Equipo','Equipo','Código Equipo','Codigo Equipo','Código','Codigo','Unit ID','Unidad']);
   const number=fleetPick(row,['Número','Numero','N°','Nro','Camión','Camion','Mixer','N° Camión','Numero Camion']);
   const plate=fleetPick(row,['Patente','Placa','PPU']);
   const brand=fleetPick(row,['Marca','Brand']);
+  const model=fleetPick(row,['Modelo','Model']);
   const year=fleetPick(row,['Año','Ano','Year']);
   const sourceStatus=fleetPick(row,['Estado','Estado Flota','Estado Registro','Status']) || 'Sin estado';
   const activeFlag=fleetPick(row,['Activo / Inactivo','Activo/Inactivo','Activo','Condición','Condicion']) || 'Sin dato';
@@ -1246,12 +1247,16 @@ function normalizeFleetRow(row, index){
   let plant='';
   try{ plant=resolvePlantFromRow(row) || canonicalPlantName(rawPlant||plantCode||''); }catch{ plant=canonicalPlantName(rawPlant||''); }
   if(!plant) plant=rawPlant || 'Sin planta asignada';
-  let zone=fleetPick(row,['Zona','Zone']);
-  try{ if(plant && plant!=='Sin planta asignada') zone=ensurePlant(plant)?.zona || zone; }catch{}
+  let zone=canonicalZone(fleetPick(row,['Zona','Zone'])) || fleetPick(row,['Zona','Zone']);
+  try{ const dz=dictionaryOperationalZone(rawPlant)||dictionaryOperationalZone(plantCode); if(dz) zone=dz; }catch{}
+  if(!zone && plant && plant!=='Sin planta asignada'){ try{zone=inferZona(plant,'');}catch{} }
   if(!zone) zone='Sin zona';
   const observation=fleetPick(row,['Observación','Observacion','Comentario','Comentarios']);
+  const company=fleetPick(row,['Compañía','Compania','Empresa','Proveedor']);
+  const plantType=fleetPick(row,['Tipo planta','Tipo Planta','Tipo']);
+  const sourceSheet=fleetPick(row,['__source_sheet']) || '';
   const key=(id||number||plate||`ROW${index+1}`)+'-'+(plate||number||index+1);
-  return {key,id:id||number||plate||`Equipo ${index+1}`,number,brand,plate,year,zone,plantCode,plant,sourceStatus,activeFlag,observation,status:fleetStatusFromSource(sourceStatus,activeFlag),workshop:'',responsible:'',eta:'',progress:0,cause:'',history:[]};
+  return {key,id:id||number||plate||`Equipo ${index+1}`,number,brand,model,plate,year,zone,plantCode,plantType,plant,company,sourceSheet,sourceStatus,activeFlag,observation,status:fleetStatusFromSource(sourceStatus,activeFlag),workshop:'',responsible:'',eta:'',progress:0,cause:'',history:[]};
 }
 function sanitizeFleetItem(item){
   const x={...item};
@@ -1269,7 +1274,8 @@ app.post('/api/flota/ingesta', requireAuth, (req,res)=>{
     const rows=Array.isArray(req.body?.datos)?req.body.datos:null;
     if(!rows) return res.status(400).json({error:'datos debe ser un arreglo'});
     if(!rows.length) return res.status(422).json({error:'Archivo de flota sin registros'});
-    const normalized=rows.map((r,i)=>normalizeFleetRow(r,i)).filter(x=>x.id||x.plate||x.number);
+    const normalizedRaw=rows.map((r,i)=>normalizeFleetRow(r,i)).filter(x=>x.id||x.plate||x.number);
+    const normalized=[...new Map(normalizedRaw.map(x=>[x.key,x])).values()];
     if(!normalized.length) return res.status(422).json({error:'No se detectaron equipos válidos en el archivo de flota'});
     const oldByKey=new Map((state.fleet?.datos||[]).map(x=>[x.key,x]));
     const merged=normalized.map(n=>{
@@ -1430,14 +1436,9 @@ app.get('/api/analisis-operadores', requireAuth, (req, res) => {
 // Nunca consulta datasets activos de Operación Nacional.
 // ============================================================================
 const HISTORICAL_SOURCES = {
-  status: { label:'Status Black / Breakdown' },
-  disponibilidad: { label:'Disponibilidad' },
-  mantenimiento: { label:'Mantención' },
-  puntualidad: { label:'Puntualidad' },
-  sobreestadia: { label:'Sobreestadía' },
-  operadores: { label:'Operadores' },
-  flota: { label:'Flota' },
-  otros: { label:'Otros históricos' },
+  turnos: { label:'Turnos' },
+  citaciones: { label:'Citaciones' },
+  status: { label:'Status Black / StatusBreakdown' },
 };
 
 const HIST_ALIASES = {
@@ -1447,7 +1448,7 @@ const HIST_ALIASES = {
   cliente: ['cliente','customer','nombre cliente','nombre_cliente'],
   patente: ['patente','placa','matricula','license plate','license_plate'],
   camion: ['camion','camión','equipo','equipment','numero equipo','número equipo','numero_equipo','id equipo','id_equipo','mixer','vehiculo','vehículo'],
-  operador: ['operador','nombre operador','nombre_operador','numero funcionario','número funcionario','numero_funcionario','employee','conductor','chofer'],
+  operador: ['operador','nombre operador','nombre_operador','id operador','id_operador','cod_conductor','codigo conductor','código conductor','numero funcionario','número funcionario','numero_funcionario','employee','conductor','chofer'],
   estado: ['estado','status','descripcion estado','descripción estado','descripcion_estado','meaning','estado equipo','estado_equipo'],
   evento: ['evento','event','tipo evento','tipo_evento','status change type','status_change_type'],
   tipoMantenimiento: ['tipo mantencion','tipo mantención','tipo mantenimiento','tipo_mantenimiento','maintenance type','maintenance_type'],
@@ -1478,7 +1479,13 @@ function historicalNumber(v, percent=false) {
   if (percent && n >= 0 && n <= 1 && !String(v).includes('%')) return round1(n*100);
   return round1(n);
 }
-function historicalDate(row) {
+function historicalDate(row, source='') {
+  // Primero reutiliza el motor operacional, que también entiende Semana + Día para Turnos.
+  try {
+    const mappedType = source==='status' ? 'logeo' : source;
+    const inferred = rowDateKey(row, mappedType);
+    if (inferred) return inferred;
+  } catch {}
   const direct=parseDateKey(historicalPick(row,HIST_ALIASES.fecha));
   if (direct) return direct;
   for (const v of Object.values(row||{})) {
@@ -1488,7 +1495,7 @@ function historicalDate(row) {
 }
 function historicalNormalizeRecord(source,row,archivo='') {
   if (!HISTORICAL_SOURCES[source]) throw new Error(`Fuente histórica desconocida: ${source}`);
-  const fecha=historicalDate(row);
+  const fecha=historicalDate(row,source);
   const plantaRaw=historicalPick(row,HIST_ALIASES.planta);
   let planta='Sin planta';
   if (plantaRaw !== null) {
@@ -1524,10 +1531,8 @@ function validateHistoricalRecord(source,rec) {
   if (!rec?.fecha) errors.push('Falta fecha válida');
   if (rec?.planta==='Sin planta' && !rec?.camion && !rec?.patente && !rec?.operador) errors.push('Falta identificador operacional (planta/camión/patente/operador)');
   if (source==='status' && !rec?.estado && !rec?.evento) errors.push('Falta estado/evento');
-  if (source==='disponibilidad' && rec?.disponibilidad===null) errors.push('Falta disponibilidad');
-  if (source==='puntualidad' && rec?.puntualidad===null) errors.push('Falta puntualidad');
-  if (source==='sobreestadia' && rec?.sobreestadia===null) errors.push('Falta sobreestadía');
-  if (source==='mantenimiento' && !rec?.tipoMantenimiento && !rec?.estado && !rec?.evento && rec?.horasMantenimiento===null) errors.push('Falta información de mantención');
+  if (source==='turnos' && !rec?.operador && rec?.planta==='Sin planta') errors.push('Turno sin operador ni planta identificable');
+  if (source==='citaciones' && !rec?.operador && rec?.planta==='Sin planta') errors.push('Citación sin operador ni planta identificable');
   return errors;
 }
 function historicalSourceMeta(source) {
@@ -1548,7 +1553,7 @@ function getHistoricalRuntimeIndex() {
   const revision=Number(historicalWarehouse?.revision||0);
   if(historicalRuntimeIndex.revision===revision) return historicalRuntimeIndex;
   const byDate=new Map(), plantMap=new Map();
-  for(const r of (Array.isArray(historicalWarehouse?.records)?historicalWarehouse.records:[])){
+  for(const r of (Array.isArray(historicalWarehouse?.records)?historicalWarehouse.records:[]).filter(r=>HISTORICAL_SOURCES[r?.fuente])){
     if(r?.fecha){if(!byDate.has(r.fecha))byDate.set(r.fecha,[]);byDate.get(r.fecha).push(r);}
     const p=safeText(r?.planta),z=safeText(r?.zona);
     if(p&&p!=='Sin planta'&&!plantMap.has(p))plantMap.set(p,{planta:p,zona:z||'Sin zona'});
@@ -1580,24 +1585,21 @@ function historicalDistinct(rows, keys) {
   }
   return s.size;
 }
-function historicalMaintenanceEntries(rows) {
-  return rows.filter(r=>r.fuente==='mantenimiento' || /mant|taller|falla|averia/.test(normalizeName(`${r.estado} ${r.evento} ${r.tipoMantenimiento}`)));
+function historicalStatusKind(r) {
+  const s=normalizeName(`${r?.estado||''} ${r?.evento||''}`);
+  if (/login|pre viaje/.test(s)) return 'login';
+  if (/asignado/.test(s)) return 'asignado';
+  if (/cargando|cargado/.test(s)) return 'primeraCarga';
+  return 'otro';
 }
-function historicalMtbfHours(rows) {
-  const maint=historicalMaintenanceEntries(rows), byTruck=new Map(), diffs=[];
-  for (const r of maint) {
-    const key=safeText(r.camion||r.patente); if(!key||!r.fecha) continue;
-    if(!byTruck.has(key)) byTruck.set(key,[]);
-    byTruck.get(key).push(r.fecha);
+function historicalUniqueOperatorDay(rows, source='') {
+  const set=new Set();
+  for(const r of rows){
+    if(source && r?.fuente!==source) continue;
+    const op=safeText(r?.operador), d=safeText(r?.fecha);
+    if(op&&d)set.add(`${d}|${normalizeId(op)}`);
   }
-  for (const ds of byTruck.values()) {
-    const unique=[...new Set(ds)].sort();
-    for(let i=1;i<unique.length;i++){
-      const a=new Date(unique[i-1]+'T12:00:00Z'),b=new Date(unique[i]+'T12:00:00Z'),h=(b-a)/3600000;
-      if(Number.isFinite(h)&&h>0) diffs.push(h);
-    }
-  }
-  return diffs.length?round1(diffs.reduce((a,b)=>a+b,0)/diffs.length):null;
+  return set.size;
 }
 function aggregateHistoricalEnterprise(rows, granularity='week') {
   const groups=new Map();
@@ -1607,32 +1609,33 @@ function aggregateHistoricalEnterprise(rows, granularity='week') {
     groups.get(key).push(r);
   }
   return [...groups.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([periodo,items])=>{
-    const maint=historicalMaintenanceEntries(items), available=new Set(), out=new Set();
-    for(const r of items){
-      const truck=safeText(r.camion||r.patente); if(!truck) continue;
-      const st=normalizeName(`${r.estado} ${r.evento}`);
-      if(/disponible|operativo|en servicio/.test(st)) available.add(truck);
-      if(/fuera|mant|taller|detenido|no disponible|falla/.test(st)) out.add(truck);
-    }
+    const status=items.filter(r=>r.fuente==='status');
     return {
-      periodo,registros:items.length,
-      disponibilidad:historicalAvg(items,'disponibilidad'),
-      puntualidad:historicalAvg(items,'puntualidad'),
-      sobreestadia:historicalAvg(items,'sobreestadia'),
-      ingresosMantenimiento:maint.length,
-      salidasMantenimiento:maint.filter(r=>/salida|liberado|disponible|fin/.test(normalizeName(`${r.estado} ${r.evento}`))).length,
-      flotaDisponible:available.size,flotaFueraServicio:out.size,
+      periodo,
+      registros:items.length,
+      turnos:items.filter(r=>r.fuente==='turnos').length,
+      citaciones:items.filter(r=>r.fuente==='citaciones').length,
+      statusEventos:status.length,
+      logins:status.filter(r=>historicalStatusKind(r)==='login').length,
+      asignados:status.filter(r=>historicalStatusKind(r)==='asignado').length,
+      primeraCarga:status.filter(r=>historicalStatusKind(r)==='primeraCarga').length,
     };
   });
 }
 function rankHistorical(rows,key='planta') {
   const map=new Map();
   for(const r of rows){const k=safeText(r?.[key])||`Sin ${key}`;if(!map.has(k))map.set(k,[]);map.get(k).push(r);}
-  return [...map.entries()].map(([nombre,items])=>({nombre,registros:items.length,disponibilidad:historicalAvg(items,'disponibilidad'),puntualidad:historicalAvg(items,'puntualidad'),sobreestadia:historicalAvg(items,'sobreestadia')})).sort((a,b)=>(Number(b.disponibilidad)||-1)-(Number(a.disponibilidad)||-1)||b.registros-a.registros);
+  return [...map.entries()].map(([nombre,items])=>({
+    nombre,
+    registros:items.length,
+    turnos:items.filter(r=>r.fuente==='turnos').length,
+    citaciones:items.filter(r=>r.fuente==='citaciones').length,
+    status:items.filter(r=>r.fuente==='status').length,
+  })).sort((a,b)=>b.registros-a.registros||a.nombre.localeCompare(b.nombre,'es'));
 }
 function paretoHistorical(rows) {
   const m=new Map();
-  for(const r of rows){const cause=safeText(r.causa||r.tipoMantenimiento||r.evento||r.estado);if(cause)m.set(cause,(m.get(cause)||0)+1);}
+  for(const r of rows.filter(x=>x.fuente==='status')){const cause=safeText(r.estado||r.evento);if(cause)m.set(cause,(m.get(cause)||0)+1);}
   return [...m.entries()].map(([causa,cantidad])=>({causa,cantidad})).sort((a,b)=>b.cantidad-a.cantidad).slice(0,20);
 }
 function heatmapHistorical(rows) {
@@ -1663,7 +1666,7 @@ app.post('/api/historico/ingesta', requireAuth, (req,res)=>{
 });
 
 app.get('/api/historico/fuentes', requireAuth, (req,res)=>{
-  const records=Array.isArray(historicalWarehouse?.records)?historicalWarehouse.records:[];
+  const records=(Array.isArray(historicalWarehouse?.records)?historicalWarehouse.records:[]).filter(r=>HISTORICAL_SOURCES[r?.fuente]);
   const idx=getHistoricalRuntimeIndex();
   const plants=idx.plantCatalog.map(x=>x.planta);
   const zones=[...new Set(idx.plantCatalog.map(x=>x.zona).filter(z=>z&&z!=='Sin zona'))].sort((a,b)=>a.localeCompare(b,'es'));
@@ -1672,14 +1675,31 @@ app.get('/api/historico/fuentes', requireAuth, (req,res)=>{
 
 app.get('/api/historico/dashboard-enterprise', requireAuth, (req,res)=>{
   try{
-    const granularity=['day','week','month','quarter','year'].includes(String(req.query.granularity))?String(req.query.granularity):'week', rows=historicalFilterRecords(req.query), all=Array.isArray(historicalWarehouse?.records)?historicalWarehouse.records:[];
-    const dates=rows.map(r=>r.fecha).filter(Boolean).sort(), maintenance=historicalMaintenanceEntries(rows), totalMaintenanceHours=rows.map(r=>Number(r.horasMantenimiento)).filter(Number.isFinite), avgWorkshop=maintenance.map(r=>Number(r.horasMantenimiento)).filter(Number.isFinite);
-    const kpis={totalRegistros:rows.length,totalCamiones:historicalDistinct(rows,['camion','patente']),totalOperadores:historicalDistinct(rows,['operador']),disponibilidadPromedio:historicalAvg(rows,'disponibilidad'),puntualidadPromedio:historicalAvg(rows,'puntualidad'),sobreestadiaPromedio:historicalAvg(rows,'sobreestadia'),horasMantenimiento:totalMaintenanceHours.length?round1(totalMaintenanceHours.reduce((a,b)=>a+b,0)):null,frecuenciaMantenimiento:maintenance.length,mtbfHoras:historicalMtbfHours(rows),tiempoPromedioTallerHoras:avgWorkshop.length?round1(avgWorkshop.reduce((a,b)=>a+b,0)/avgWorkshop.length):null};
-    const series=aggregateHistoricalEnterprise(rows,granularity), plantRank=rankHistorical(rows,'planta'), zoneRank=rankHistorical(rows,'zona'), equipMap=new Map(), opMap=new Map();
-    for(const r of rows){const eq=safeText(r.camion||r.patente);if(eq)equipMap.set(eq,(equipMap.get(eq)||0)+1);const op=safeText(r.operador);if(op)opMap.set(op,(opMap.get(op)||0)+1);}
+    const granularity=['day','week','month','quarter','year'].includes(String(req.query.granularity))?String(req.query.granularity):'week';
+    const rows=historicalFilterRecords(req.query).filter(r=>HISTORICAL_SOURCES[r?.fuente]);
+    const all=(Array.isArray(historicalWarehouse?.records)?historicalWarehouse.records:[]).filter(r=>HISTORICAL_SOURCES[r?.fuente]);
+    const dates=rows.map(r=>r.fecha).filter(Boolean).sort();
+    const statusRows=rows.filter(r=>r.fuente==='status');
+    const kpis={
+      totalRegistros:rows.length,
+      turnosHistoricos:rows.filter(r=>r.fuente==='turnos').length,
+      citacionesHistoricas:rows.filter(r=>r.fuente==='citaciones').length,
+      eventosStatus:statusRows.length,
+      totalOperadores:historicalDistinct(rows,['operador']),
+      totalPlantas:new Set(rows.map(r=>r.planta).filter(p=>p&&p!=='Sin planta')).size,
+      diasDisponibles:new Set(rows.map(r=>r.fecha).filter(Boolean)).size,
+      loginsDetectados:statusRows.filter(r=>historicalStatusKind(r)==='login').length,
+      asignadosDetectados:statusRows.filter(r=>historicalStatusKind(r)==='asignado').length,
+      primeraCargaDetectada:statusRows.filter(r=>historicalStatusKind(r)==='primeraCarga').length,
+      operadoresTurnoDia:historicalUniqueOperatorDay(rows,'turnos'),
+      operadoresStatusDia:historicalUniqueOperatorDay(rows,'status'),
+    };
+    const series=aggregateHistoricalEnterprise(rows,granularity), plantRank=rankHistorical(rows,'planta'), zoneRank=rankHistorical(rows,'zona');
+    const equipMap=new Map(), opMap=new Map();
+    for(const r of statusRows){const eq=safeText(r.camion||r.patente);if(eq)equipMap.set(eq,(equipMap.get(eq)||0)+1);const op=safeText(r.operador);if(op)opMap.set(op,(opMap.get(op)||0)+1);}
     return res.json({
-      ok:true,source:'historicalWarehouse',granularity,from:req.query.from||null,to:req.query.to||null,totalBase:all.length,minDate:dates[0]||null,maxDate:dates.at(-1)||null,kpis,series,
-      rankings:{plantas:plantRank,zonas:zoneRank,equipos:[...equipMap.entries()].map(([equipo,eventos])=>({equipo,eventos})).sort((a,b)=>b.eventos-a.eventos).slice(0,20),operadores:[...opMap.entries()].map(([operador,asignaciones])=>({operador,asignaciones})).sort((a,b)=>b.asignaciones-a.asignaciones).slice(0,20)},
+      ok:true,source:'historicalWarehouse:turnos+citaciones+status',granularity,from:req.query.from||null,to:req.query.to||null,totalBase:all.length,minDate:dates[0]||null,maxDate:dates.at(-1)||null,kpis,series,
+      rankings:{plantas:plantRank,zonas:zoneRank,equipos:[...equipMap.entries()].map(([equipo,eventos])=>({equipo,eventos})).sort((a,b)=>b.eventos-a.eventos).slice(0,20),operadores:[...opMap.entries()].map(([operador,eventos])=>({operador,asignaciones:eventos})).sort((a,b)=>b.asignaciones-a.asignaciones).slice(0,20)},
       pareto:paretoHistorical(rows),heatmap:heatmapHistorical(rows),
       plants:[...new Set(rows.map(r=>r.planta).filter(p=>p&&p!=='Sin planta'))].sort((a,b)=>a.localeCompare(b,'es')),
       zones:[...new Set(rows.map(r=>r.zona).filter(z=>z&&z!=='Sin zona'))].sort((a,b)=>a.localeCompare(b,'es')),
@@ -2111,7 +2131,7 @@ app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 if (require.main === module && process.env.CCO_TEST_MODE !== '1') {
   server.listen(PORT, () => {
-    console.log(`[CCO][startup] CCO Intelligence v3.2.0 activo en puerto ${PORT}`);
+    console.log(`[CCO][startup] CCO Intelligence v3.3.0 activo en puerto ${PORT}`);
     console.log(`[CCO][startup] Diccionario plantas: ${PLANT_DICTIONARY.plants.length} plantas, ${PLANT_DICTIONARY_LOOKUP.size} alias resolubles, ${Object.keys(PLANT_DICTIONARY.conflicts||{}).length} alias ambiguos`);
     if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producción.');
   });
