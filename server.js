@@ -1601,7 +1601,7 @@ function etlDiagBase(source,file){
     sheet:null,headerRow:null,sheetsDetected:[],columns:[],columnCount:0,
     rowsFound:0,rowsStored:0,rowsPartial:0,rowsRejected:0,rowsFiltered:0,duplicates:0,
     missing:[],reason:'Procesando archivo...',ruleCounts:{},samples:[],log:[],
-    durationMs:0,memoryMb:0,md5:null,fromCache:false,blocksProcessed:0,_errorRows:[]
+    durationMs:0,memoryMb:0,md5:null,fromCache:false,blocksProcessed:0,currentStage:'Archivo seleccionado',progress:0,_errorRows:[]
   };
 }
 function etlReason(diag,row,code,field,reason,kind='rejected'){
@@ -1618,7 +1618,12 @@ function etlReason(diag,row,code,field,reason,kind='rejected'){
 }
 function etlLog(diag,msg){diag.log.push({at:nowIso(),msg});if(diag.log.length>50)diag.log.shift();}
 function etlUpdateJob(job,progress,stage,diag=null){
+  if(job?.cancelled && Number(progress)<100){
+    const e=new Error('Proceso cancelado por exceder el tiempo permitido.');
+    e.code='JOB_CANCELLED';throw e;
+  }
   job.progress=progress;job.stage=stage;if(diag)job.diagnostic=diag;job.updatedAt=nowIso();
+  if(diag){diag.currentStage=stage;diag.progress=progress;}
 }
 function etlStoreDiagnostic(diag){
   if(!Array.isArray(historicalWarehouse.diagnostics))historicalWarehouse.diagnostics=[];
@@ -1977,9 +1982,12 @@ async function processHistoricalUploadJob(job){
     etlUpdateJob(job,100,'Finalizado',diag);
   }catch(err){
     diag.status='error';
-    diag.reason=err?.code==='VALIDATION_TIMEOUT'
-      ? `Timeout de lectura: ${err?.message||'el parser no reportó progreso'}. Este error ocurre antes de homologar plantas y no está relacionado con el diccionario de plantas.`
-      : (err?.message||'El archivo no pudo ser procesado.');
+    diag.failedStage=diag.currentStage||job.stage||'Procesamiento';
+    diag.reason=err?.code==='JOB_CANCELLED'
+      ? 'La carga excedió el tiempo permitido. Verifique el archivo y vuelva a intentar.'
+      : err?.code==='VALIDATION_TIMEOUT'
+        ? `Timeout de lectura en ${diag.failedStage}: ${err?.message||'el parser no reportó progreso'}.`
+        : (err?.message||'El archivo no pudo ser procesado.');
     diag.finishedAt=nowIso();etlLog(diag,`Error: ${err?.message||String(err)}`);finalizeDiagRuntime(diag);
     etlStoreDiagnostic(publicDiagnostic(diag));try{persistHistoricalWarehouse();}catch{}
     etlUpdateJob(job,100,'Error diagnosticado',diag);job.error=err?.message||String(err);
@@ -2430,6 +2438,13 @@ app.get('/api/historico/job/:id',requireAuth,(req,res)=>{
   const job=HIST_JOBS.get(req.params.id);if(!job)return res.status(404).json({error:'Proceso no encontrado o ya expiró'});
   return res.json({ok:true,id:job.id,source:job.source,progress:job.progress,stage:job.stage,queuePosition:job.queuePosition||0,diagnostic:publicDiagnostic(job.diagnostic),error:job.error,done:job.progress>=100});
 });
+app.post('/api/historico/job/:id/cancel',requireAuth,(req,res)=>{
+  const job=HIST_JOBS.get(req.params.id);
+  if(!job)return res.status(404).json({error:'Proceso no encontrado o ya expiró'});
+  job.cancelled=true;job.error='La carga excedió el tiempo permitido. Verifique el archivo y vuelva a intentar.';
+  job.stage='Cancelado por timeout';job.updatedAt=nowIso();
+  return res.json({ok:true,id:job.id,cancelled:true});
+});
 
 app.post('/api/historico/ingesta',requireAuth,(req,res)=>{
   try{
@@ -2649,6 +2664,77 @@ function historicalCoverage(query={}){
     rows:rows.length
   };
 }
+
+function historicalFilesUsed(from='',to=''){
+  const rows=(historicalWarehouse.records||[]).filter(r=>(!from||r.fecha>=from)&&(!to||r.fecha<=to));
+  const map=new Map();
+  for(const r of rows){
+    const key=`${r.source}|${r.archivo||'Archivo sin nombre'}`;
+    if(!map.has(key))map.set(key,{source:r.source,archivo:r.archivo||'Archivo sin nombre',records:0,minDate:null,maxDate:null});
+    const x=map.get(key);x.records++;
+    if(r.fecha){if(!x.minDate||r.fecha<x.minDate)x.minDate=r.fecha;if(!x.maxDate||r.fecha>x.maxDate)x.maxDate=r.fecha;}
+  }
+  return [...map.values()].map(x=>{
+    const meta=historicalSourceMeta(x.source);
+    return {...x,status:'Procesado',loadedAt:meta.lastLoadedAt||null,processedBy:meta.loadedBy||'Sistema'};
+  }).sort((a,b)=>a.source.localeCompare(b.source)||a.archivo.localeCompare(b.archivo,'es'));
+}
+function validateHistoricalDashboardModel(rows,mode='logeo'){
+  const issues=[],warnings=[];
+  const has=(field)=>rows.some(r=>r[field]!==null&&r[field]!==undefined&&r[field]!=='');
+  const requirements=[
+    ['Operador / RUT','operadorKey'],['Fecha','fecha'],['Planta','planta'],['Zona','zona'],['Turno','turnoMin'],
+    ['Status Break / Logeo','loginMin'],['Marcaje TAM','tamIngresoMin']
+  ];
+  if(mode==='citacion')requirements.push(['Citación','citacionMin']);
+  for(const [label,field] of requirements)if(!has(field))issues.push(`Falta información consolidada: ${label}`);
+  const linkedRows=rows.filter(r=>
+    r.operadorKey&&r.fecha&&r.turnoMin!==null&&
+    (mode==='citacion'?r.citacionMin!==null:r.loginMin!==null)
+  ).length;
+  if(rows.length&&linkedRows!==rows.length)warnings.push(`Diferencia encontrada entre datos procesados y KPI calculables: ${rows.length-linkedRows} operador/día sin cruce completo.`);
+  return {ready:issues.length===0,issues,warnings,processedRows:rows.length,kpiLinkedRows:linkedRows,difference:Math.max(0,rows.length-linkedRows)};
+}
+function operatorDelayProfile(items,cfg){
+  const vals=(fieldA,fieldB,positiveOnly=true)=>items.map(r=>{
+    if(r[fieldA]===null||r[fieldA]===undefined||r[fieldB]===null||r[fieldB]===undefined)return null;
+    const d=histMinutesDiff(r[fieldA],r[fieldB]);return d===null?null:(positiveOnly?Math.max(0,d):d);
+  }).filter(Number.isFinite);
+  const delayCit=vals('loginMin','citacionMin');
+  const delayLogin=vals('loginMin','turnoMin');
+  const delayTam=vals('tamIngresoMin','turnoMin');
+  const s=(v)=>histStats(v);
+  return {atrasoCitacion:s(delayCit),atrasoLogeo:s(delayLogin),atrasoTam:s(delayTam)};
+}
+function buildAdvancedOperatorRankings(rows,cfg){
+  const groups=new Map();
+  for(const r of rows){if(!groups.has(r.operadorKey))groups.set(r.operadorKey,[]);groups.get(r.operadorKey).push(r);}
+  const ops=[...groups.entries()].map(([key,items])=>{
+    const first=items[0],m=histMetrics(items,cfg),d=operatorDelayProfile(items,cfg);
+    const incumplimientoTurno=m.adherenciaTurno===null?null:round1(100-m.adherenciaTurno);
+    return {
+      key,operador:first.operadorNombre||first.operadorId||key,rut:first.operadorId||key,
+      planta:first.planta||'Sin planta',zona:first.zona||'Sin zona',
+      eventos:items.length,atrasoCitacion:d.atrasoCitacion,atrasoLogeo:d.atrasoLogeo,atrasoTam:d.atrasoTam,
+      incumplimientoTurno,adherenciaTurno:m.adherenciaTurno,adherenciaCitacion:m.adherenciaCitacion
+    };
+  });
+  const metricPath={atrasoCitacion:'atrasoCitacion.promedio',atrasoLogeo:'atrasoLogeo.promedio',atrasoTam:'atrasoTam.promedio',incumplimientoTurno:'incumplimientoTurno'};
+  const get=(o,p)=>p.split('.').reduce((v,k)=>v?.[k],o);
+  const make=(metric)=>{
+    const p=metricPath[metric],eligible=ops.filter(o=>Number.isFinite(Number(get(o,p))));
+    const sorted=[...eligible].sort((a,b)=>Number(get(b,p))-Number(get(a,p)));
+    return sorted.slice(0,10);
+  };
+  return {
+    atrasoCitacion:make('atrasoCitacion'),
+    atrasoLogeo:make('atrasoLogeo'),
+    atrasoTam:make('atrasoTam'),
+    incumplimientoTurno:make('incumplimientoTurno'),
+    totalOperators:ops.length
+  };
+}
+
 function histCrossLabel(r){
   const p=[];
   if(r.turnoMin!==null&&r.turnoMin!==undefined)p.push('Turno');
@@ -2685,6 +2771,8 @@ app.get('/api/historico/dashboard-enterprise',requireAuth,(req,res)=>{
     const cfg=histCfg(req.query),rows=histFilterBase(req.query),from=safeText(req.query.from),to=safeText(req.query.to);
     const mode=String(req.query.mode||'logeo')==='citacion'?'citacion':'logeo';
     const coverage=historicalCoverage(req.query);
+    const integrity=validateHistoricalDashboardModel(rows,mode);
+    const filesUsed=historicalFilesUsed(from,to);
     const prevRange=histPreviousRange(from,to),prevRows=prevRange?histFilterBase(req.query,prevRange):[];
     const granularity=['day','week','month','quarter','year'].includes(String(req.query.granularity))?String(req.query.granularity):'week';
     const metrics=histMetricsForMode(rows,cfg,mode),operators=histOperatorGroups(rows,cfg,prevRows,mode);
@@ -2725,10 +2813,11 @@ app.get('/api/historico/dashboard-enterprise',requireAuth,(req,res)=>{
     const heatMap=new Map();for(const r of rows){if(r.planta==='Sin planta')continue;const d=r.turnoMin!==null&&r.loginMin!==null?Math.max(0,histMinutesDiff(r.loginMin,r.turnoMin)||0):null;if(d===null)continue;const k=`${r.planta}|${r.fecha}`;if(!heatMap.has(k))heatMap.set(k,[]);heatMap.get(k).push(d);}
     const heatmap=[...heatMap.entries()].map(([k,v])=>{const [planta,fecha]=k.split('|');return {planta,fecha,valor:round1(v.reduce((a,b)=>a+b,0)/v.length)};});
     const findings=histInsights(metrics,plants,zones,operators);
+    const advancedRankings=buildAdvancedOperatorRankings(rows,cfg);
     return res.json({
       ok:true,source:'historicalWarehouse:file-attachments-only',from,to,previousRange:prevRange,granularity,cfg,mode,empty:rows.length===0,
       mensaje:rows.length?'':'NO SE ENCONTRARON DATOS PARA EL PERÍODO SELECCIONADO',
-      metrics,trend,rankings,operatorRanking,plants,zones,byPlant,heatmap,findings,coverage,
+      metrics,trend,rankings,operatorRanking,advancedRankings,plants,zones,byPlant,heatmap,findings,coverage,integrity,filesUsed,
       recommendedDate:latestCommonHistoricalDate(),
       sourceRanges:historicalSourceRanges(),
       detailed:rows.slice(0,5000).map(r=>({...r,crossLabel:histCrossLabel(r)})),totalDetailed:rows.length,
@@ -3161,7 +3250,7 @@ app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 if (require.main === module && process.env.CCO_TEST_MODE !== '1') {
   server.listen(PORT, () => {
-    console.log(`[CCO][startup] CCO Intelligence v4.0.0 activo en puerto ${PORT}`);
+    console.log(`[CCO][startup] CCO Intelligence v4.1.0 activo en puerto ${PORT}`);
     console.log(`[CCO][startup] Diccionario plantas: ${PLANT_DICTIONARY.plants.length} plantas, ${PLANT_DICTIONARY_LOOKUP.size} alias resolubles, ${Object.keys(PLANT_DICTIONARY.conflicts||{}).length} alias ambiguos`);
     if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producción.');
   });
