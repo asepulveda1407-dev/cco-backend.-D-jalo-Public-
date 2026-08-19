@@ -9,6 +9,10 @@ const { Server } = require('socket.io');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const os = require('os');
+const multer = require('multer');
+const ExcelJS = require('exceljs');
+const XLSXNode = require('xlsx');
 
 const PORT = Number(process.env.PORT || 10000);
 const NODE_ENV = process.env.NODE_ENV || 'development';
@@ -59,7 +63,7 @@ let state = loadState();
 let historicalWarehouse = loadHistoricalWarehouse();
 
 function emptyHistoricalWarehouse() {
-  return { version: 2, revision: 0, loaded_at: null, sources: {}, records: [] };
+  return { version: 3, revision: 0, loaded_at: null, sources: {}, records: [], partialRecords: [], diagnostics: [] };
 }
 function loadHistoricalWarehouse() {
   try {
@@ -67,7 +71,7 @@ function loadHistoricalWarehouse() {
     const parsed = JSON.parse(fs.readFileSync(HISTORICAL_FILE, 'utf8'));
     // v3.4+ usa un modelo histórico distinto (operador/día + archivos adjuntos).
     // No se mezclan registros heredados de la implementación por carpetas.
-    if (Number(parsed?.version || 0) !== 2) {
+    if (Number(parsed?.version || 0) !== 3) {
       console.warn('[CCO][historico] Base histórica anterior detectada; se inicia modelo v2 independiente.');
       return emptyHistoricalWarehouse();
     }
@@ -76,6 +80,8 @@ function loadHistoricalWarehouse() {
       ...(parsed && typeof parsed === 'object' ? parsed : {}),
       sources: parsed?.sources && typeof parsed.sources === 'object' ? parsed.sources : {},
       records: Array.isArray(parsed?.records) ? parsed.records : [],
+      partialRecords: Array.isArray(parsed?.partialRecords) ? parsed.partialRecords : [],
+      diagnostics: Array.isArray(parsed?.diagnostics) ? parsed.diagnostics : [],
     };
   } catch (err) {
     console.error('[CCO][historico] No se pudo leer base histórica:', err?.message || err);
@@ -276,8 +282,8 @@ function asDate(value) {
 
 function parseTimeMinutes(value) {
   if (value === null || value === undefined || value === '') return null;
+  if (value instanceof Date && !isNaN(value)) return value.getHours() * 60 + value.getMinutes();
   if (typeof value === 'number') {
-    // Excel date+time serial (ej. 46139.3125): usa solo la fracción como hora.
     if (value > 20_000 && value < 80_000) {
       const fraction = value - Math.floor(value);
       return Math.round(fraction * 1440) % 1440;
@@ -288,16 +294,29 @@ function parseTimeMinutes(value) {
       if (h <= 23 && m <= 59) return h * 60 + m;
     }
   }
-  if (value instanceof Date && !isNaN(value)) return value.getHours() * 60 + value.getMinutes();
   const s = String(value).trim();
-  const match = s.match(/(?:^|\s)(\d{1,2}):(\d{2})(?::\d{2})?(?:\s|$)/);
-  if (match) {
-    const h = Number(match[1]), m = Number(match[2]);
-    if (h <= 23 && m <= 59) return h * 60 + m;
+  if(!s) return null;
+
+  // 08:00 / 8:00 / 08:00:00 / 8:00 PM
+  let m=s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/i);
+  if(m){
+    let h=Number(m[1]),min=Number(m[2]);const ap=(m[3]||'').toUpperCase();
+    if(ap){if(h===12)h=0;if(ap==='PM')h+=12;}
+    if(h<=23&&min<=59)return h*60+min;
   }
+  // 8 AM / 08 PM
+  m=s.match(/^(\d{1,2})\s*(AM|PM)$/i);
+  if(m){let h=Number(m[1]);const ap=m[2].toUpperCase();if(h===12)h=0;if(ap==='PM')h+=12;if(h<=23)return h*60;}
+  // 0800
+  m=s.match(/^(\d{1,2})(\d{2})$/);
+  if(m){const h=Number(m[1]),min=Number(m[2]);if(h<=23&&min<=59)return h*60+min;}
+
   const d = new Date(s);
   if (!isNaN(d)) return d.getHours() * 60 + d.getMinutes();
   return null;
+}
+function normalizePlate(v){
+  return String(v??'').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9]/g,'').trim();
 }
 function fmtMinutes(mins) {
   if (mins === null || mins === undefined || !Number.isFinite(mins)) return null;
@@ -314,18 +333,40 @@ function diffMinutes(actual, planned) {
 
 function parseDateKey(value) {
   if (value === null || value === undefined || value === '') return null;
-  if (typeof value === 'number' && value > 20_000 && value < 80_000) {
-    const d = new Date(Date.UTC(1899, 11, 30) + Math.floor(value) * 86400000);
-    return d.toISOString().slice(0,10);
-  }
   if (value instanceof Date && !isNaN(value)) {
     return `${value.getFullYear()}-${String(value.getMonth()+1).padStart(2,'0')}-${String(value.getDate()).padStart(2,'0')}`;
   }
+  if (typeof value === 'number') {
+    // Excel serial.
+    if (value > 20_000 && value < 80_000) {
+      const d = new Date(Date.UTC(1899, 11, 30) + Math.floor(value) * 86400000);
+      return d.toISOString().slice(0,10);
+    }
+    // Unix seconds / milliseconds.
+    if (value >= 1_000_000_000 && value < 10_000_000_000) {
+      const d=new Date(value*1000); if(!isNaN(d)) return d.toISOString().slice(0,10);
+    }
+    if (value >= 1_000_000_000_000 && value < 10_000_000_000_000) {
+      const d=new Date(value); if(!isNaN(d)) return d.toISOString().slice(0,10);
+    }
+  }
   const s = String(value).trim();
+  if (!s) return null;
+
   let m = s.match(/^(\d{4})[-\/]([01]?\d)[-\/]([0-3]?\d)(?:[T\s]|$)/);
   if (m) return `${m[1]}-${String(+m[2]).padStart(2,'0')}-${String(+m[3]).padStart(2,'0')}`;
-  m = s.match(/^([0-3]?\d)[-\/]([01]?\d)[-\/](\d{4})(?:\s|$)/);
-  if (m) return `${m[3]}-${String(+m[2]).padStart(2,'0')}-${String(+m[1]).padStart(2,'0')}`;
+
+  m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})(?:[T\s]|$)/);
+  if (m) {
+    let a=Number(m[1]),b=Number(m[2]),y=Number(m[3]),day,month;
+    // Chile: ambiguos se interpretan DD/MM. Si el segundo valor >12, es MM/DD.
+    if (a > 12) { day=a; month=b; }
+    else if (b > 12) { month=a; day=b; }
+    else { day=a; month=b; }
+    if(month>=1&&month<=12&&day>=1&&day<=31)
+      return `${y}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+  }
+
   const d = new Date(s);
   if (!isNaN(d)) return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   return null;
@@ -1455,6 +1496,342 @@ app.get('/api/analisis-operadores', requireAuth, (req, res) => {
 
 
 
+
+// ============================================================================
+// CCO INTELLIGENCE v3.6 — ETL HISTÓRICO SERVER-SIDE / STREAMING
+// El archivo se sube como binario. XLSX grande se procesa con ExcelJS streaming,
+// evitando convertir 482.000+ filas a JSON en el navegador.
+// ============================================================================
+const HIST_UPLOAD_DIR = path.join(os.tmpdir(),'cco-historical-upload');
+try{fs.mkdirSync(HIST_UPLOAD_DIR,{recursive:true});}catch{}
+const historicalUpload = multer({
+  dest:HIST_UPLOAD_DIR,
+  limits:{fileSize:160*1024*1024,files:1}
+});
+const HIST_JOBS = new Map();
+
+const HIST_ETL_HEADER_ALIASES = {
+  operador:['operador','nombre operador','nombre_operador','conductor','chofer','nombre de operador','nombre_de_operador','primero empleado','primero_empleado'],
+  operadorId:['id operador','id_operador','id','numero funcionario','número funcionario','numero_funcionario','rut','codigo operador'],
+  planta:['planta','planta original','planta_original','descripcion planta','descripción planta','descripcion_planta','centro','sucursal','base'],
+  camion:['camion','camión','equipo','mixer','patente','numero equipo','número equipo','numero_equipo','n° camion','n_camion'],
+  turno:['hora ingreso','hora_ingreso','turno','inicio turno','inicio_turno','hora turno'],
+  citacion:['hora citacion','hora citación','hora_citacion','citacion','citación','citacion sugerida'],
+  fecha:['fecha','date','fecha turno','fecha_turno','fecha programada','fecha_programada','fecha inicio semana','fecha_inicio_semana','hora inicio','hora_inicio'],
+  semana:['anosemana','ano_semana','semana','semana iso','semana_iso'],
+  estado:['descripcion estado','descripción estado','descripcion_estado','estado','status'],
+};
+const HIST_ETL_REQUIRED = {
+  turnos:[['operadorId','operador'],['fecha','semana']],
+  citaciones:[['operadorId','operador'],['fecha']],
+  status:[['operadorId','operador'],['fecha'],['estado']],
+};
+function etlCanonicalHeader(v){
+  const k=normalizeKey(v);
+  for(const [canonical,aliases] of Object.entries(HIST_ETL_HEADER_ALIASES)){
+    if(aliases.some(a=>normalizeKey(a)===k))return canonical;
+  }
+  return null;
+}
+function etlCell(v){
+  if(v===null||v===undefined)return null;
+  if(v instanceof Date)return v;
+  if(typeof v==='object'){
+    if(v.result!==undefined)return etlCell(v.result);
+    if(v.text!==undefined)return v.text;
+    if(Array.isArray(v.richText))return v.richText.map(x=>x.text||'').join('');
+    if(v.hyperlink&&v.text)return v.text;
+  }
+  return v;
+}
+function etlRowValues(row){
+  const vals=Array.isArray(row?.values)?row.values.slice(1):[];
+  return vals.map(etlCell);
+}
+function etlRowEmpty(vals){return !vals.some(v=>v!==null&&v!==undefined&&String(v).trim()!=='');}
+function etlHeaderScore(vals,source){
+  const recognized=new Map();
+  (vals||[]).forEach((v,i)=>{const c=etlCanonicalHeader(v);if(c&&!recognized.has(c))recognized.set(c,i);});
+  const required=HIST_ETL_REQUIRED[source]||[];
+  const requiredHits=required.reduce((n,g)=>n+(g.some(x=>recognized.has(x))?1:0),0);
+  const textish=(vals||[]).filter(v=>typeof v==='string'&&/[A-Za-zÁÉÍÓÚáéíóúÑñ]/.test(v)).length;
+  return {recognized,requiredHits,requiredTotal:required.length,score:requiredHits*120+recognized.size*25+Math.min(textish,20)};
+}
+function etlHeaders(vals){
+  const seen=new Map();
+  return (vals||[]).map((v,i)=>{
+    let h=safeText(v)||`col_${i+1}`;const k=normalizeKey(h),n=(seen.get(k)||0)+1;seen.set(k,n);
+    return n>1?`${h}_${n}`:h;
+  });
+}
+function etlObject(headers,vals){
+  const o={};for(let i=0;i<headers.length;i++)o[headers[i]]=vals[i]??null;return o;
+}
+function etlLooksMeta(vals,headers){
+  if(etlRowEmpty(vals))return {skip:true,code:'FILA_VACIA',field:'fila',reason:'Fila completamente vacía'};
+  const txt=vals.filter(v=>v!==null&&v!==undefined&&String(v).trim()!=='').map(v=>normalizeName(v));
+  const joined=txt.join(' ');
+  if(txt.length<=3&&(joined.startsWith('total')||joined.includes('subtotal')||joined.startsWith('comentario')||joined.startsWith('observacion')))
+    return {skip:true,code:'FILA_TOTAL_COMENTARIO',field:'fila',reason:'Fila de total/comentario, no es un registro operacional'};
+  const headerKeys=new Set(headers.map(normalizeKey));
+  const headerMatches=vals.filter(v=>headerKeys.has(normalizeKey(v))).length;
+  if(headerMatches>=Math.max(2,Math.floor(headers.length*.35)))
+    return {skip:true,code:'ENCABEZADO_REPETIDO',field:'fila',reason:'Encabezado repetido dentro de los datos'};
+  return {skip:false};
+}
+function etlDiagBase(source,file){
+  return {
+    source,file,status:'procesando',startedAt:nowIso(),finishedAt:null,
+    sheet:null,headerRow:null,sheetsDetected:[],columns:[],columnCount:0,
+    rowsFound:0,rowsStored:0,rowsPartial:0,rowsRejected:0,rowsFiltered:0,duplicates:0,
+    missing:[],reason:'Procesando archivo...',ruleCounts:{},samples:[],log:[]
+  };
+}
+function etlReason(diag,row,code,field,reason,kind='rejected'){
+  diag.ruleCounts[code]=(diag.ruleCounts[code]||0)+1;
+  if(diag.samples.length<80)diag.samples.push({row,code,field,reason,kind});
+  if(kind==='rejected')diag.rowsRejected++;
+  else if(kind==='partial')diag.rowsPartial++;
+  else diag.rowsFiltered++;
+}
+function etlLog(diag,msg){diag.log.push({at:nowIso(),msg});if(diag.log.length>50)diag.log.shift();}
+function etlUpdateJob(job,progress,stage,diag=null){
+  job.progress=progress;job.stage=stage;if(diag)job.diagnostic=diag;job.updatedAt=nowIso();
+}
+function etlStoreDiagnostic(diag){
+  if(!Array.isArray(historicalWarehouse.diagnostics))historicalWarehouse.diagnostics=[];
+  historicalWarehouse.diagnostics.unshift({...diag});
+  historicalWarehouse.diagnostics=historicalWarehouse.diagnostics.slice(0,200);
+}
+function etlMissingHeaderGroups(best,source){
+  const rec=best?.recognized||new Map();const missing=[];
+  for(const group of HIST_ETL_REQUIRED[source]||[])if(!group.some(x=>rec.has(x)))missing.push(group.join(' / '));
+  return missing;
+}
+function etlRecordQuality(rec){
+  const missing=[];
+  if(!rec.operadorKey)missing.push('OPERADOR');
+  if(!rec.fecha)missing.push('FECHA');
+  return {partial:missing.length>0,missing};
+}
+function etlNormalizeRow(source,row,archivo,rowNumber,diag,statusAccumulator=null){
+  const r=normalizeRows([row])[0]||{};
+  const base={source,archivo,rowIndex:rowNumber,fecha:null,planta:'',zona:'',operadorId:'',operadorNombre:'',operadorKey:'',camion:'',turnoMin:null,citacionMin:null,loginMin:null,asignacionMin:null,primeraCargaMin:null,quality:'completo',qualityIssues:[]};
+
+  if(source==='turnos'){
+    const id=histPick(r,HIST_FIELD.turnos.operatorId),name=safeText(histPick(r,HIST_FIELD.turnos.operatorName)),key=histOperatorKey(id,name);
+    let start=parseDateKey(histPick(r,HIST_FIELD.turnos.start))||parseDateKey(histPick(r,HIST_FIELD.turnos.date));
+    if(!start)start=histIsoWeekStart(histPick(r,HIST_FIELD.turnos.week));
+    const end=parseDateKey(histPick(r,HIST_FIELD.turnos.end));
+    const shift=histTime(histPick(r,HIST_FIELD.turnos.shift));
+    const plant=histResolvePlant(histPick(r,HIST_FIELD.turnos.plant));
+    if(!key){etlReason(diag,rowNumber,'OPERADOR_NO_IDENTIFICABLE','OPERADOR','No se encontró ID ni nombre de operador','rejected');return [];}
+    if(!start){etlReason(diag,rowNumber,'FECHA_NO_RECONOCIBLE','FECHA','No se pudo interpretar fecha de inicio ni semana','rejected');return [];}
+    const out=[];
+    for(let i=0;i<7;i++){
+      const fecha=histDateAdd(start,i);if(!fecha||(end&&fecha>end))break;
+      const dow=new Date(`${fecha}T12:00:00`).getDay();if(dow===0||dow===6)continue;
+      const rec={...base,fecha,planta,zona:plant?inferZona(plant):'',operadorId:normalizeId(id),operadorNombre:name,operadorKey:key,turnoMin:shift};
+      if(shift===null){rec.quality='parcial';rec.qualityIssues.push('HORA_TURNO_NO_RECONOCIBLE');}
+      out.push(rec);
+    }
+    return out;
+  }
+
+  if(source==='citaciones'){
+    const id=histPick(r,HIST_FIELD.citaciones.operatorId),name=safeText(histPick(r,HIST_FIELD.citaciones.operatorName)),key=histOperatorKey(id,name);
+    const fecha=parseDateKey(histPick(r,HIST_FIELD.citaciones.date)),citation=histTime(histPick(r,HIST_FIELD.citaciones.citation));
+    const plant=histResolvePlant(histPick(r,HIST_FIELD.citaciones.plant));
+    if(!key){etlReason(diag,rowNumber,'OPERADOR_NO_IDENTIFICABLE','OPERADOR','No se encontró ID ni nombre de operador','rejected');return [];}
+    if(!fecha){etlReason(diag,rowNumber,'FECHA_NO_RECONOCIBLE','FECHA','Formato de fecha no reconocible','rejected');return [];}
+    const rec={...base,fecha,planta,zona:plant?inferZona(plant):'',operadorId:normalizeId(id),operadorNombre:name,operadorKey:key,citacionMin:citation,camion:normalizePlate(histPick(r,HIST_FIELD.citaciones.truck))||safeText(histPick(r,HIST_FIELD.citaciones.truck))};
+    if(citation===null){rec.quality='parcial';rec.qualityIssues.push('HORA_CITACION_NO_RECONOCIBLE');}
+    if(!plant){rec.quality='parcial';rec.qualityIssues.push('PLANTA_NO_INFORMADA');}
+    return [rec];
+  }
+
+  // Status: se consolida directamente a operador/día. Eventos no KPI no son
+  // "filas descartadas": se registran como filtrados por una regla explícita.
+  const dt=histPick(r,HIST_FIELD.status.datetime),fecha=parseDateKey(dt)||parseDateKey(histPick(r,HIST_FIELD.status.date)),eventMin=histTime(dt);
+  const state=safeText(histPick(r,HIST_FIELD.status.state)),kind=histStatusKind(state);
+  if(kind==='otro'){etlReason(diag,rowNumber,'EVENTO_STATUS_NO_KPI','ESTADO',`Estado "${state||'vacío'}" no participa en LOGIN/ASIGNADO/1ª CARGA`,'filtered');return [];}
+  const id=histPick(r,HIST_FIELD.status.operatorId),first=safeText(histPick(r,HIST_FIELD.status.firstName)),last=safeText(histPick(r,HIST_FIELD.status.lastName)),name=[first,last].filter(Boolean).join(' ').trim(),key=histOperatorKey(id,name);
+  if(!key){etlReason(diag,rowNumber,'OPERADOR_NO_IDENTIFICABLE','OPERADOR','Evento KPI sin operador identificable','rejected');return [];}
+  if(!fecha){etlReason(diag,rowNumber,'FECHA_NO_RECONOCIBLE','HORA_INICIO','No se pudo extraer la fecha del evento','rejected');return [];}
+  if(eventMin===null){etlReason(diag,rowNumber,'HORA_EVENTO_NO_RECONOCIBLE','HORA_INICIO','No se pudo interpretar la hora del evento','rejected');return [];}
+  const plant=histResolvePlant(histPick(r,HIST_FIELD.status.plant),histPick(r,HIST_FIELD.status.plantCode));
+  const accKey=`${fecha}|${key}`;
+  if(!statusAccumulator.has(accKey))statusAccumulator.set(accKey,{...base,fecha,planta,zona:plant?inferZona(plant):'',operadorId:normalizeId(id),operadorNombre:name,operadorKey:key,camion:normalizePlate(histPick(r,HIST_FIELD.status.truck))||safeText(histPick(r,HIST_FIELD.status.truck))});
+  const rec=statusAccumulator.get(accKey);
+  if(!rec.planta&&plant){rec.planta=plant;rec.zona=inferZona(plant);}
+  if(kind==='login'&&(rec.loginMin===null||eventMin<rec.loginMin))rec.loginMin=eventMin;
+  if(kind==='asignado'&&(rec.asignacionMin===null||eventMin<rec.asignacionMin))rec.asignacionMin=eventMin;
+  if(kind==='primera_carga'&&(rec.primeraCargaMin===null||eventMin<rec.primeraCargaMin))rec.primeraCargaMin=eventMin;
+  return [];
+}
+function etlDedupeKey(r){
+  if(r.source==='turnos')return `T|${r.fecha}|${r.operadorKey}|${r.turnoMin??''}`;
+  if(r.source==='citaciones')return `C|${r.fecha}|${r.operadorKey}|${r.citacionMin??''}`;
+  return `S|${r.fecha}|${r.operadorKey}`;
+}
+function etlChooseBest(candidates,source){
+  const usable=candidates.filter(c=>c.rows>0&&c.bestHeader);
+  if(!usable.length)return null;
+  usable.sort((a,b)=>{
+    const av=a.bestHeader.requiredHits===a.bestHeader.requiredTotal?1:0,bv=b.bestHeader.requiredHits===b.bestHeader.requiredTotal?1:0;
+    if(av!==bv)return bv-av;
+    if(a.bestHeader.requiredHits!==b.bestHeader.requiredHits)return b.bestHeader.requiredHits-a.bestHeader.requiredHits;
+    if(a.bestHeader.score!==b.bestHeader.score)return b.bestHeader.score-a.bestHeader.score;
+    return b.rows-a.rows;
+  });
+  return usable[0];
+}
+async function etlScanXlsx(filePath,source,job,diag){
+  const candidates=[];
+  const reader=new ExcelJS.stream.xlsx.WorkbookReader(filePath,{entries:'emit',sharedStrings:'cache',styles:'ignore',hyperlinks:'ignore',worksheets:'emit'});
+  for await(const ws of reader){
+    let rows=0,bestHeader=null;
+    for await(const row of ws){
+      rows++;if(rows<=100){
+        const vals=etlRowValues(row);if(etlRowEmpty(vals))continue;
+        const h=etlHeaderScore(vals,source);const score=h.score-rows*.2;
+        if(!bestHeader||score>bestHeader.score)bestHeader={...h,score,rowNumber:rows,values:vals};
+      }
+    }
+    candidates.push({sheetName:ws.name,rows,bestHeader});
+    diag.sheetsDetected.push({name:ws.name,rows});
+  }
+  const best=etlChooseBest(candidates,source);
+  if(!best)throw new Error('No se encontró ninguna hoja con datos.');
+  return best;
+}
+async function etlProcessXlsx(filePath,source,archivo,job,diag){
+  etlUpdateJob(job,25,'Detectando hojas',diag);etlLog(diag,'Escaneando todas las hojas y buscando encabezados desplazados.');
+  const best=await etlScanXlsx(filePath,source,job,diag);
+  diag.sheet=best.sheetName;diag.headerRow=best.bestHeader.rowNumber;diag.columns=best.bestHeader.values.map(v=>safeText(v)).filter(Boolean);diag.columnCount=diag.columns.length;diag.missing=etlMissingHeaderGroups(best.bestHeader,source);
+  etlLog(diag,`Hoja principal: ${best.sheetName} · ${best.rows} filas · encabezado fila ${diag.headerRow}.`);
+  etlUpdateJob(job,45,'Analizando columnas',diag);
+
+  const existing=new Set((historicalWarehouse.records||[]).filter(r=>r.source===source).map(etlDedupeKey));
+  const staged=[],partial=[],statusAcc=new Map();
+  const reader=new ExcelJS.stream.xlsx.WorkbookReader(filePath,{entries:'emit',sharedStrings:'cache',styles:'ignore',hyperlinks:'ignore',worksheets:'emit'});
+  for await(const ws of reader){
+    if(ws.name!==best.sheetName)continue;
+    let headers=null,rowNumber=0,lastProgress=45;
+    for await(const row of ws){
+      rowNumber++;
+      if(rowNumber<diag.headerRow)continue;
+      const vals=etlRowValues(row);
+      if(rowNumber===diag.headerRow){headers=etlHeaders(vals);continue;}
+      diag.rowsFound++;
+      const meta=etlLooksMeta(vals,headers);
+      if(meta.skip){etlReason(diag,rowNumber,meta.code,meta.field,meta.reason,'filtered');continue;}
+      const obj=etlObject(headers,vals);
+      const recs=etlNormalizeRow(source,obj,archivo,rowNumber,diag,statusAcc);
+      for(const rec of recs){
+        const dk=etlDedupeKey(rec);
+        if(existing.has(dk)){diag.duplicates++;continue;}
+        existing.add(dk);
+        if(rec.quality==='parcial'){partial.push(rec);diag.rowsPartial++;}
+        staged.push(rec);
+      }
+      if(rowNumber%5000===0){
+        const p=Math.min(88,45+Math.round((rowNumber/Math.max(best.rows,1))*43));
+        if(p>lastProgress){lastProgress=p;etlUpdateJob(job,p,`Procesando filas ${rowNumber.toLocaleString('es-CL')} / ${best.rows.toLocaleString('es-CL')}`,diag);}
+        await new Promise(r=>setImmediate(r));
+      }
+    }
+    break;
+  }
+  if(source==='status'){
+    for(const rec of statusAcc.values()){
+      const dk=etlDedupeKey(rec);if(existing.has(dk)){diag.duplicates++;continue;}existing.add(dk);
+      if(!rec.planta){rec.quality='parcial';rec.qualityIssues.push('PLANTA_NO_INFORMADA');diag.rowsPartial++;}
+      staged.push(rec);
+    }
+  }
+  diag.rowsStored=staged.length;
+  historicalWarehouse.records.push(...staged);
+  if(partial.length){
+    if(!Array.isArray(historicalWarehouse.partialRecords))historicalWarehouse.partialRecords=[];
+    historicalWarehouse.partialRecords.push(...partial.slice(0,5000));
+    historicalWarehouse.partialRecords=historicalWarehouse.partialRecords.slice(-10000);
+  }
+  return staged;
+}
+function etlSheetJsRows(filePath,source,diag){
+  const wb=XLSXNode.readFile(filePath,{cellDates:true,cellNF:false,cellStyles:false});
+  const candidates=[];
+  for(const name of wb.SheetNames){
+    const ws=wb.Sheets[name],matrix=XLSXNode.utils.sheet_to_json(ws,{header:1,defval:null,raw:true});
+    let bestHeader=null;for(let i=0;i<Math.min(matrix.length,100);i++){if(etlRowEmpty(matrix[i]||[]))continue;const h=etlHeaderScore(matrix[i],source),score=h.score-i*.2;if(!bestHeader||score>bestHeader.score)bestHeader={...h,score,rowNumber:i+1,values:matrix[i]};}
+    candidates.push({sheetName:name,rows:matrix.length,bestHeader,matrix});
+    diag.sheetsDetected.push({name,rows:matrix.length});
+  }
+  return {wb,best:etlChooseBest(candidates,source)};
+}
+async function etlProcessNonXlsx(filePath,ext,source,archivo,job,diag){
+  etlUpdateJob(job,25,'Detectando estructura',diag);
+  let wb;
+  if(ext==='csv'||ext==='txt'){
+    const text=fs.readFileSync(filePath,'utf8');if(!text.trim())throw new Error('El archivo está vacío.');
+    wb=XLSXNode.read(text,{type:'string',raw:true});
+  }else wb=XLSXNode.readFile(filePath,{cellDates:true,raw:true});
+  const candidates=[];
+  for(const name of wb.SheetNames){
+    const ws=wb.Sheets[name],matrix=XLSXNode.utils.sheet_to_json(ws,{header:1,defval:null,raw:true});
+    let bestHeader=null;for(let i=0;i<Math.min(matrix.length,100);i++){if(etlRowEmpty(matrix[i]||[]))continue;const h=etlHeaderScore(matrix[i],source),score=h.score-i*.2;if(!bestHeader||score>bestHeader.score)bestHeader={...h,score,rowNumber:i+1,values:matrix[i]};}
+    candidates.push({sheetName:name,rows:matrix.length,bestHeader,matrix});diag.sheetsDetected.push({name,rows:matrix.length});
+  }
+  const best=etlChooseBest(candidates,source);if(!best)throw new Error('No se encontró ninguna hoja/tabla con datos.');
+  diag.sheet=best.sheetName;diag.headerRow=best.bestHeader.rowNumber;diag.columns=best.bestHeader.values.map(v=>safeText(v)).filter(Boolean);diag.columnCount=diag.columns.length;diag.missing=etlMissingHeaderGroups(best.bestHeader,source);
+  etlUpdateJob(job,55,'Procesando registros',diag);
+  const headers=etlHeaders(best.bestHeader.values),existing=new Set((historicalWarehouse.records||[]).filter(r=>r.source===source).map(etlDedupeKey)),staged=[],statusAcc=new Map();
+  const matrix=best.matrix;
+  for(let i=diag.headerRow;i<matrix.length;i++){
+    const vals=matrix[i]||[];diag.rowsFound++;
+    const meta=etlLooksMeta(vals,headers);if(meta.skip){etlReason(diag,i+1,meta.code,meta.field,meta.reason,'filtered');continue;}
+    const recs=etlNormalizeRow(source,etlObject(headers,vals),archivo,i+1,diag,statusAcc);
+    for(const rec of recs){const dk=etlDedupeKey(rec);if(existing.has(dk)){diag.duplicates++;continue;}existing.add(dk);if(rec.quality==='parcial')diag.rowsPartial++;staged.push(rec);}
+  }
+  if(source==='status')for(const rec of statusAcc.values()){const dk=etlDedupeKey(rec);if(existing.has(dk)){diag.duplicates++;continue;}existing.add(dk);staged.push(rec);}
+  diag.rowsStored=staged.length;historicalWarehouse.records.push(...staged);return staged;
+}
+function etlRefreshSourceMeta(source,archivo,diag,user){
+  const rows=(historicalWarehouse.records||[]).filter(r=>r.source===source),dates=rows.map(r=>r.fecha).filter(Boolean).sort(),prev=historicalWarehouse.sources?.[source]||{};
+  historicalWarehouse.sources[source]={...prev,source,label:HISTORICAL_SOURCES[source].label,status:rows.length?'cargado':'sin_datos',records:rows.length,files:[...new Set([...(prev.files||[]),archivo])],minDate:dates[0]||null,maxDate:dates.at(-1)||null,lastLoadedAt:nowIso(),loadedBy:user||'Sistema',lastDiagnostic:diag};
+}
+async function processHistoricalUploadJob(job){
+  const {source,file}=job;const diag=etlDiagBase(source,file.originalname);job.diagnostic=diag;
+  try{
+    etlUpdateJob(job,10,'Archivo recibido',diag);etlLog(diag,`Archivo recibido: ${(file.size/1024/1024).toFixed(2)} MB.`);
+    const ext=path.extname(file.originalname||'').toLowerCase().replace('.','');
+    if(ext==='pdf'){
+      diag.status='parcial';diag.reason='PDF registrado como lectura informativa. No se usa para KPI estructurados.';diag.finishedAt=nowIso();
+      etlStoreDiagnostic(diag);etlUpdateJob(job,100,'PDF registrado',diag);persistHistoricalWarehouse();return;
+    }
+    if(!['xlsx','xls','csv','txt'].includes(ext))throw new Error(`Extensión .${ext||'?'} no permitida.`);
+    if(ext==='xlsx')await etlProcessXlsx(file.path,source,file.originalname,job,diag);
+    else await etlProcessNonXlsx(file.path,ext,source,file.originalname,job,diag);
+
+    diag.status=diag.rowsStored>0?(diag.rowsPartial||diag.rowsRejected?'parcial':'correcto'):'parcial';
+    if(diag.rowsStored>0)diag.reason=`${diag.rowsStored.toLocaleString('es-CL')} registros recuperados. ${diag.rowsPartial?diag.rowsPartial.toLocaleString('es-CL')+' registros con cruce parcial. ':''}${diag.rowsRejected?diag.rowsRejected.toLocaleString('es-CL')+' filas rechazadas con causa explícita.':''}`;
+    else diag.reason=`Se leyó el archivo, pero no se generaron registros KPI completos. Rechazados: ${diag.rowsRejected}; filtrados por regla explícita: ${diag.rowsFiltered}.`;
+    diag.finishedAt=nowIso();
+    etlRefreshSourceMeta(source,file.originalname,diag,job.user);
+    historicalWarehouse.revision=Number(historicalWarehouse.revision||0)+1;historicalWarehouse.loaded_at=nowIso();historicalDailyCache.revision=-1;etlStoreDiagnostic(diag);persistHistoricalWarehouse();
+    etlUpdateJob(job,100,'Carga finalizada',diag);
+  }catch(err){
+    diag.status='error';diag.reason='El archivo no pudo ser procesado. Revise el diagnóstico técnico.';diag.finishedAt=nowIso();etlLog(diag,`Error técnico: ${err?.message||String(err)}`);
+    etlStoreDiagnostic(diag);try{persistHistoricalWarehouse();}catch{}
+    etlUpdateJob(job,100,'Error diagnosticado',diag);job.error=err?.message||String(err);
+  }finally{
+    try{fs.unlinkSync(file.path);}catch{}
+    setTimeout(()=>HIST_JOBS.delete(job.id),30*60*1000).unref?.();
+  }
+}
+
+
 // ============================================================================
 // CCO INTELLIGENCE v3.4 — TRAZABILIDAD INTELLIGENCE
 // Base histórica independiente, construida EXCLUSIVAMENTE desde archivos
@@ -1700,6 +2077,11 @@ function getHistoricalDailyIndex(){
       if(!d.planta&&r.planta){d.planta=r.planta;d.zona=r.zona||inferZona(r.planta);}
     }
     if(source==='status'){
+      // v3.6: Status ya viene consolidado por operador/día.
+      if(r.loginMin!==null&&r.loginMin!==undefined&&(d.loginMin===null||r.loginMin<d.loginMin))d.loginMin=r.loginMin;
+      if(r.asignacionMin!==null&&r.asignacionMin!==undefined&&(d.asignacionMin===null||r.asignacionMin<d.asignacionMin))d.asignacionMin=r.asignacionMin;
+      if(r.primeraCargaMin!==null&&r.primeraCargaMin!==undefined&&(d.primeraCargaMin===null||r.primeraCargaMin<d.primeraCargaMin))d.primeraCargaMin=r.primeraCargaMin;
+      // Compatibilidad defensiva con registros antiguos del mismo modelo.
       if(r.eventoKind==='login'&&(d.loginMin===null||r.eventoMin<d.loginMin))d.loginMin=r.eventoMin;
       if(r.eventoKind==='asignado'&&(d.asignacionMin===null||r.eventoMin<d.asignacionMin))d.asignacionMin=r.eventoMin;
       if(r.eventoKind==='primera_carga'&&(d.primeraCargaMin===null||r.eventoMin<d.primeraCargaMin))d.primeraCargaMin=r.eventoMin;
@@ -1845,6 +2227,23 @@ function histInsights(metrics,plants,zones,ops){
   return {insights,alerts};
 }
 
+
+app.post('/api/historico/upload',requireAuth,historicalUpload.single('file'),(req,res)=>{
+  try{
+    const source=safeText(req.body?.source);
+    if(!HISTORICAL_SOURCES[source]){if(req.file?.path)try{fs.unlinkSync(req.file.path)}catch{};return res.status(400).json({error:'Fuente histórica inválida'});}
+    if(!req.file)return res.status(400).json({error:'No se recibió archivo'});
+    const id=crypto.randomUUID(),job={id,source,file:req.file,user:req.user?.nombre||'Sistema',progress:5,stage:'Archivo recibido',createdAt:nowIso(),updatedAt:nowIso(),diagnostic:null,error:null};
+    HIST_JOBS.set(id,job);
+    setImmediate(()=>processHistoricalUploadJob(job));
+    return res.status(202).json({ok:true,jobId:id,file:req.file.originalname,size:req.file.size});
+  }catch(err){return res.status(422).json({error:'No fue posible recibir el archivo',detalle:err?.message||String(err)});}
+});
+app.get('/api/historico/job/:id',requireAuth,(req,res)=>{
+  const job=HIST_JOBS.get(req.params.id);if(!job)return res.status(404).json({error:'Proceso no encontrado o ya expiró'});
+  return res.json({ok:true,id:job.id,source:job.source,progress:job.progress,stage:job.stage,diagnostic:job.diagnostic,error:job.error,done:job.progress>=100});
+});
+
 app.post('/api/historico/ingesta',requireAuth,(req,res)=>{
   try{
     const source=safeText(req.body?.source),incoming=req.body?.datos,archivo=safeText(req.body?.archivo||'archivo'),modo=safeText(req.body?.modo||'append').toLowerCase(),finalizar=req.body?.finalizar===true;
@@ -1945,7 +2344,8 @@ app.get('/api/historico/fuentes',requireAuth,(req,res)=>{
     sources:Object.keys(HISTORICAL_SOURCES).map(k=>({source:k,label:HISTORICAL_SOURCES[k].label,...historicalSourceMeta(k),fileDetails:historicalFileDetails(k)})),
     plants:idx.plants,
     plantCatalog:idx.plants.map(planta=>({planta,zona:(idx.rows.find(r=>r.planta===planta)?.zona)||inferZona(planta)})),
-    zones:idx.zones,operators:idx.operators
+    zones:idx.zones,operators:idx.operators,
+    diagnostics:(historicalWarehouse.diagnostics||[]).slice(0,100)
   });
 });
 app.get('/api/historico/dashboard-enterprise',requireAuth,(req,res)=>{
@@ -2406,7 +2806,7 @@ app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 if (require.main === module && process.env.CCO_TEST_MODE !== '1') {
   server.listen(PORT, () => {
-    console.log(`[CCO][startup] CCO Intelligence v3.5.0 activo en puerto ${PORT}`);
+    console.log(`[CCO][startup] CCO Intelligence v3.6.0 activo en puerto ${PORT}`);
     console.log(`[CCO][startup] Diccionario plantas: ${PLANT_DICTIONARY.plants.length} plantas, ${PLANT_DICTIONARY_LOOKUP.size} alias resolubles, ${Object.keys(PLANT_DICTIONARY.conflicts||{}).length} alias ambiguos`);
     if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producción.');
   });
