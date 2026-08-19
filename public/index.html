@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CCO Intelligence v3.1 · Centro de Control Operacional</title>
+<title>CCO Intelligence v3.3 · Centro de Control Operacional</title>
 <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4/dist/socket.io.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
@@ -257,11 +257,11 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v3.2</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v3.3</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
     <div id="opDateControl" class="pill" style="margin:0">Operación de hoy · <b id="scopeFechaLabel">—</b><input id="scopeFecha" type="hidden"></div>
-    <span id="appVersion" class="pill">v3.2</span><span id="connPill" class="pill">Conectando…</span>
+    <span id="appVersion" class="pill">v3.3</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
 <div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
@@ -288,11 +288,11 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
     <div class="tower-upload">
       <div class="tower-upload-row">
-        <div><b style="font-size:11px;color:#244764">Archivo Flota Nacional</b><div class="small">Excel/CSV · se recomienda hoja “Flota”</div></div>
+        <div><b style="font-size:11px;color:#244764">Archivo Flota Nacional</b><div class="small">Excel/CSV · compatible con “Registro de operadores y Flota nacional”</div></div>
         <input type="file" id="towerFleetFile" accept=".xlsx,.xls,.csv">
         <div class="tower-upload-status" id="towerFleetStatus">Seleccione el archivo de flota.</div>
       </div>
-      <div class="small" style="margin-top:7px">CCO detecta automáticamente columnas de equipo, número, patente, marca, año, zona, planta, estado y activo/inactivo. Los cambios manuales de mantenimiento se conservan al volver a cargar el mismo equipo.</div>
+      <div class="small" style="margin-top:7px">CCO reconoce automáticamente las hojas “Flota” y “Terceros” del archivo nacional y las consolida en una sola Torre. La hoja “Operadores” no se mezcla con la flota. Los cambios manuales de mantenimiento se conservan al recargar el mismo equipo.</div>
     </div>
 
     <div class="tower-kpis" id="towerKpis"></div>
@@ -351,19 +351,14 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
     <p class="small"><b>Fuente exclusiva:</b> base consolidada histórica. Esta vista no consulta Turnos, Citaciones ni StatusBreakdown activos de Operación Nacional.</p>
 
     <div class="hist-load-grid" id="histLoadGrid">
-      <div class="hist-source-card" data-source="status"><div><b>Status Black / Breakdown</b><div class="small">Eventos y estados históricos de flota</div></div><input type="file" id="histFolder_status" webkitdirectory directory multiple accept=".xlsx,.xls,.csv" style="display:none"><button class="secondary" onclick="seleccionarCarpetaHistorica('status')">📁 Cargar carpeta</button><div class="hist-source-status" id="histSource_status">Sin datos</div></div>
-      <div class="hist-source-card" data-source="disponibilidad"><div><b>Disponibilidad</b><div class="small">Disponibilidad por equipo/planta/fecha</div></div><input type="file" id="histFolder_disponibilidad" webkitdirectory directory multiple accept=".xlsx,.xls,.csv" style="display:none"><button class="secondary" onclick="seleccionarCarpetaHistorica('disponibilidad')">📁 Cargar carpeta</button><div class="hist-source-status" id="histSource_disponibilidad">Sin datos</div></div>
-      <div class="hist-source-card" data-source="mantenimiento"><div><b>Mantención</b><div class="small">Ingresos, salidas, causas y horas de taller</div></div><input type="file" id="histFolder_mantenimiento" webkitdirectory directory multiple accept=".xlsx,.xls,.csv" style="display:none"><button class="secondary" onclick="seleccionarCarpetaHistorica('mantenimiento')">📁 Cargar carpeta</button><div class="hist-source-status" id="histSource_mantenimiento">Sin datos</div></div>
-      <div class="hist-source-card" data-source="puntualidad"><div><b>Puntualidad</b><div class="small">Cumplimiento histórico</div></div><input type="file" id="histFolder_puntualidad" webkitdirectory directory multiple accept=".xlsx,.xls,.csv" style="display:none"><button class="secondary" onclick="seleccionarCarpetaHistorica('puntualidad')">📁 Cargar carpeta</button><div class="hist-source-status" id="histSource_puntualidad">Sin datos</div></div>
-      <div class="hist-source-card" data-source="sobreestadia"><div><b>Sobreestadía</b><div class="small">Minutos históricos por planta/cliente</div></div><input type="file" id="histFolder_sobreestadia" webkitdirectory directory multiple accept=".xlsx,.xls,.csv" style="display:none"><button class="secondary" onclick="seleccionarCarpetaHistorica('sobreestadia')">📁 Cargar carpeta</button><div class="hist-source-status" id="histSource_sobreestadia">Sin datos</div></div>
-      <div class="hist-source-card" data-source="operadores"><div><b>Operadores</b><div class="small">Asignaciones y actividad histórica</div></div><input type="file" id="histFolder_operadores" webkitdirectory directory multiple accept=".xlsx,.xls,.csv" style="display:none"><button class="secondary" onclick="seleccionarCarpetaHistorica('operadores')">📁 Cargar carpeta</button><div class="hist-source-status" id="histSource_operadores">Sin datos</div></div>
-      <div class="hist-source-card" data-source="flota"><div><b>Flota</b><div class="small">Patentes, equipos y estados históricos</div></div><input type="file" id="histFolder_flota" webkitdirectory directory multiple accept=".xlsx,.xls,.csv" style="display:none"><button class="secondary" onclick="seleccionarCarpetaHistorica('flota')">📁 Cargar carpeta</button><div class="hist-source-status" id="histSource_flota">Sin datos</div></div>
-      <div class="hist-source-card" data-source="otros"><div><b>Otros históricos</b><div class="small">Fuente adicional configurable</div></div><input type="file" id="histFolder_otros" webkitdirectory directory multiple accept=".xlsx,.xls,.csv" style="display:none"><button class="secondary" onclick="seleccionarCarpetaHistorica('otros')">📁 Cargar carpeta</button><div class="hist-source-status" id="histSource_otros">Sin datos</div></div>
+      <div class="hist-source-card" data-source="turnos"><div><b>Turnos</b><div class="small">Programación histórica por operador, planta y fecha</div></div><input type="file" id="histFolder_turnos" webkitdirectory directory multiple accept=".xlsx,.xls,.csv" style="display:none"><button class="secondary" onclick="seleccionarCarpetaHistorica('turnos')">📁 Cargar carpeta</button><div class="hist-source-status" id="histSource_turnos">Sin datos</div></div>
+      <div class="hist-source-card" data-source="citaciones"><div><b>Citaciones</b><div class="small">Citaciones históricas de operadores</div></div><input type="file" id="histFolder_citaciones" webkitdirectory directory multiple accept=".xlsx,.xls,.csv" style="display:none"><button class="secondary" onclick="seleccionarCarpetaHistorica('citaciones')">📁 Cargar carpeta</button><div class="hist-source-status" id="histSource_citaciones">Sin datos</div></div>
+      <div class="hist-source-card" data-source="status"><div><b>Status Black / StatusBreakdown</b><div class="small">LOGIN, ASIGNADO, CARGANDO/CARGADO y demás eventos históricos</div></div><input type="file" id="histFolder_status" webkitdirectory directory multiple accept=".xlsx,.xls,.csv" style="display:none"><button class="secondary" onclick="seleccionarCarpetaHistorica('status')">📁 Cargar carpeta</button><div class="hist-source-status" id="histSource_status">Sin datos</div></div>
     </div>
 
     <div class="history-audit" id="histWarehouseAudit">
       <div class="kpi-card"><div class="kpi-label">Estado base histórica</div><div class="kpi-valor" id="histBaseEstado">Sin datos</div><div class="kpi-sub">Consolidación independiente</div></div>
-      <div class="kpi-card"><div class="kpi-label">Registros históricos</div><div class="kpi-valor" id="histBaseRegistros">0</div><div class="kpi-sub">Todos los orígenes</div></div>
+      <div class="kpi-card"><div class="kpi-label">Registros históricos</div><div class="kpi-valor" id="histBaseRegistros">0</div><div class="kpi-sub">Turnos + Citaciones + StatusBreakdown</div></div>
       <div class="kpi-card"><div class="kpi-label">Fecha mínima</div><div class="kpi-valor" id="histBaseMin">—</div><div class="kpi-sub">Cobertura consolidada</div></div>
       <div class="kpi-card"><div class="kpi-label">Fecha máxima</div><div class="kpi-valor" id="histBaseMax">—</div><div class="kpi-sub">Cobertura consolidada</div></div>
     </div>
@@ -390,22 +385,22 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
     <div id="histKpis" class="history-kpis"></div>
 
     <div class="hist-chart-grid">
-      <div class="hist-chart-card"><h3>Disponibilidad histórica</h3><canvas id="histDisponibilidad"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
-      <div class="hist-chart-card"><h3>Puntualidad histórica</h3><canvas id="histPuntualidad"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
-      <div class="hist-chart-card"><h3>Sobreestadía histórica</h3><canvas id="histSobreestadia"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
-      <div class="hist-chart-card"><h3>Ingresos a mantención</h3><canvas id="histMantIngresos"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
-      <div class="hist-chart-card"><h3>Salidas de mantención</h3><canvas id="histMantSalidas"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
+      <div class="hist-chart-card"><h3>Turnos históricos por período</h3><canvas id="histTurnos"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
+      <div class="hist-chart-card"><h3>Citaciones históricas por período</h3><canvas id="histCitaciones"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
+      <div class="hist-chart-card"><h3>Eventos StatusBreakdown</h3><canvas id="histStatus"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
+      <div class="hist-chart-card"><h3>LOGIN detectados</h3><canvas id="histLogin"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
+      <div class="hist-chart-card"><h3>ASIGNADO detectados</h3><canvas id="histAsignados"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
+      <div class="hist-chart-card"><h3>Primera carga detectada</h3><canvas id="histPrimeraCarga"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
       <div class="hist-chart-card"><h3>Distribución por planta</h3><canvas id="histDistribPlanta"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
       <div class="hist-chart-card"><h3>Distribución por zona</h3><canvas id="histDistribZona"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
-      <div class="hist-chart-card"><h3>Pareto causas de detención</h3><canvas id="histPareto"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
+      <div class="hist-chart-card"><h3>Estados StatusBreakdown</h3><canvas id="histPareto"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
       <div class="hist-chart-card"><h3>Heatmap planta / fecha</h3><div id="histHeatmap" class="hist-heatmap"><div class="history-empty">Sin datos</div></div></div>
-      <div class="hist-chart-card"><h3>Equipos con más eventos</h3><canvas id="histTopEquipos"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
-      <div class="hist-chart-card"><h3>Operadores con más asignaciones</h3><canvas id="histTopOperadores"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
-      <div class="hist-chart-card"><h3>Evolución histórica nacional</h3><canvas id="histNacional"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
+      <div class="hist-chart-card"><h3>Equipos con más eventos Status</h3><canvas id="histTopEquipos"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
+      <div class="hist-chart-card"><h3>Operadores con más eventos Status</h3><canvas id="histTopOperadores"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
     </div>
 
     <div class="rep-header"><span class="rep-titulo">Ranking de plantas</span></div>
-    <div class="history-table-wrap"><table class="history-table"><thead><tr><th>Planta</th><th>Registros</th><th>Disponibilidad</th><th>Puntualidad</th><th>Sobreestadía</th></tr></thead><tbody id="histBody"><tr><td colspan="5" class="history-empty">Cargue una carpeta histórica para comenzar.</td></tr></tbody></table></div>
+    <div class="history-table-wrap"><table class="history-table"><thead><tr><th>Planta</th><th>Registros</th><th>Turnos</th><th>Citaciones</th><th>Status</th></tr></thead><tbody id="histBody"><tr><td colspan="5" class="history-empty">Cargue Turnos, Citaciones o StatusBreakdown para comenzar.</td></tr></tbody></table></div>
     <div class="history-note"><b>Separación obligatoria:</b> Operación Nacional procesa solo archivos del día actual. Trazabilidad procesa exclusivamente carpetas históricas consolidadas en su propia base.</div>
   </div>
 
@@ -2107,7 +2102,7 @@ function renderTowerPlants(){
 }
 function renderTowerDetail(){
   const t=towerSelected(),box=document.getElementById('towerDetail'),badge=document.getElementById('towerDetailBadge');if(!t){badge.textContent='—';box.innerHTML='<div class="tower-detail-empty">Seleccione un mixer para ver su detalle.</div>';return;}badge.textContent=TOWER_STATUS_LABELS[t.status]||t.status;
-  const hist=(Array.isArray(t.history)?t.history:[]).slice().reverse().slice(0,8);box.innerHTML=`<div class="tower-truck-hero"><div class="ico">🚛</div><div class="id">${towerEsc(t.id||t.number||'Equipo')}</div><div class="state">${towerEsc(TOWER_STATUS_LABELS[t.status]||t.status)}</div></div><div class="tower-info"><div class="k">Número</div><div class="val">${towerEsc(t.number||'—')}</div><div class="k">Patente</div><div class="val">${towerEsc(t.plate||'—')}</div><div class="k">Marca / año</div><div class="val">${towerEsc([t.brand,t.year].filter(Boolean).join(' · ')||'—')}</div><div class="k">Zona</div><div class="val">${towerEsc(t.zone||'—')}</div><div class="k">Planta</div><div class="val">${towerEsc(t.plant||'—')}</div><div class="k">Estado registro</div><div class="val">${towerEsc(t.sourceStatus||'—')}</div><div class="k">Taller</div><div class="val">${towerEsc(t.workshop||'—')}</div><div class="k">Responsable</div><div class="val">${towerEsc(t.responsible||'—')}</div><div class="k">ETA</div><div class="val">${towerEsc(t.eta||'—')}</div><div class="k">Avance</div><div class="val">${Number(t.progress||0)}%</div><div class="k">Causa</div><div class="val">${towerEsc(t.cause||'—')}</div><div class="k">Observación</div><div class="val">${towerEsc(t.observation||'—')}</div></div><div class="tower-detail-actions"><button type="button" onclick="abrirTowerEditor()">Editar estado</button></div><div class="tower-history">${hist.length?hist.map(h=>`<div class="tower-history-item"><b>${new Date(h.timestamp).toLocaleString('es-CL')}</b> · ${towerEsc(h.usuario||'CCO')}<br>${towerEsc(Object.entries(h.cambios||{}).map(([k,v])=>`${k}: ${v.antes||'—'} → ${v.despues||'—'}`).join(' · '))}</div>`).join(''):'<div class="small" style="padding:8px">Sin cambios registrados.</div>'}</div>`;
+  const hist=(Array.isArray(t.history)?t.history:[]).slice().reverse().slice(0,8);box.innerHTML=`<div class="tower-truck-hero"><div class="ico">🚛</div><div class="id">${towerEsc(t.id||t.number||'Equipo')}</div><div class="state">${towerEsc(TOWER_STATUS_LABELS[t.status]||t.status)}</div></div><div class="tower-info"><div class="k">Número</div><div class="val">${towerEsc(t.number||'—')}</div><div class="k">Patente</div><div class="val">${towerEsc(t.plate||'—')}</div><div class="k">Marca / modelo / año</div><div class="val">${towerEsc([t.brand,t.model,t.year].filter(Boolean).join(' · ')||'—')}</div><div class="k">Origen</div><div class="val">${towerEsc(t.sourceSheet||'Flota')}</div><div class="k">Compañía</div><div class="val">${towerEsc(t.company||'—')}</div><div class="k">Zona</div><div class="val">${towerEsc(t.zone||'—')}</div><div class="k">Planta</div><div class="val">${towerEsc(t.plant||'—')}</div><div class="k">Estado registro</div><div class="val">${towerEsc(t.sourceStatus||'—')}</div><div class="k">Taller</div><div class="val">${towerEsc(t.workshop||'—')}</div><div class="k">Responsable</div><div class="val">${towerEsc(t.responsible||'—')}</div><div class="k">ETA</div><div class="val">${towerEsc(t.eta||'—')}</div><div class="k">Avance</div><div class="val">${Number(t.progress||0)}%</div><div class="k">Causa</div><div class="val">${towerEsc(t.cause||'—')}</div><div class="k">Observación</div><div class="val">${towerEsc(t.observation||'—')}</div></div><div class="tower-detail-actions"><button type="button" onclick="abrirTowerEditor()">Editar estado</button></div><div class="tower-history">${hist.length?hist.map(h=>`<div class="tower-history-item"><b>${new Date(h.timestamp).toLocaleString('es-CL')}</b> · ${towerEsc(h.usuario||'CCO')}<br>${towerEsc(Object.entries(h.cambios||{}).map(([k,v])=>`${k}: ${v.antes||'—'} → ${v.despues||'—'}`).join(' · '))}</div>`).join(''):'<div class="small" style="padding:8px">Sin cambios registrados.</div>'}</div>`;
 }
 function renderTowerTables(){
   const groups={};towerFleet.forEach(t=>(groups[t.plant||'Sin planta asignada']??=[]).push(t));const rows=Object.entries(groups).sort((a,b)=>a[0].localeCompare(b[0],'es'));document.getElementById('towerPlantCount').textContent=`${rows.length} plantas`;document.getElementById('towerPlantTable').innerHTML=rows.map(([plant,arr])=>{const c=towerCounts(arr);return `<tr><td>${towerEsc(arr[0]?.zone||'—')}</td><td><b>${towerEsc(plant)}</b></td><td>${c.total}</td><td>${c.available}</td><td>${c.maint}</td><td>${c.oos}</td><td>${c.pct.toFixed(1)}%</td></tr>`}).join('')||'<tr><td colspan="7" class="history-empty">Sin flota cargada.</td></tr>';
@@ -2120,7 +2115,30 @@ async function cargarTorreFlota(){
 }
 function towerSheetScore(wb,name){const n=name.toLowerCase();let score=n.includes('flota')?100:0;try{const matrix=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,defval:null,range:0});score+=Math.min(matrix.length,10000)/1000;const text=(matrix.slice(0,12).flat().join(' ')||'').toLowerCase();['patente','marca','camion','camión','planta','estado'].forEach(k=>{if(text.includes(k))score+=10});}catch{}return score;}
 async function procesarTowerFleetFile(file){
-  if(!file)return;towerSetStatus(`Leyendo ${file.name}...`);try{const wb=XLSX.read(new Uint8Array(await file.arrayBuffer()),{type:'array',cellDates:true});if(!wb.SheetNames.length)throw new Error('El archivo no contiene hojas');const sheet=[...wb.SheetNames].sort((a,b)=>towerSheetScore(wb,b)-towerSheetScore(wb,a))[0];const header=typeof detectarFilaHeader==='function'?detectarFilaHeader(wb,sheet):0;const rows=XLSX.utils.sheet_to_json(wb.Sheets[sheet],{defval:null,range:header});if(!rows.length)throw new Error(`La hoja ${sheet} no contiene registros`);towerSetStatus(`${rows.length} filas detectadas en ${sheet}. Validando...`);const r=await fetch(API+'/api/flota/ingesta',{method:'POST',headers:authHeaders(),body:JSON.stringify({datos:rows,archivo:file.name,hoja:sheet})});const data=await leerRespuestaApiSegura(r);towerSetStatus(`${data.cantidad} equipos cargados · hoja ${sheet}`,'ok');await cargarTorreFlota();}catch(err){towerSetStatus('Archivo de flota inválido: '+(err.message||err),'err');}
+  if(!file)return;
+  towerSetStatus(`Leyendo ${file.name}...`);
+  try{
+    const wb=XLSX.read(new Uint8Array(await file.arrayBuffer()),{type:'array',cellDates:true});
+    if(!wb.SheetNames.length)throw new Error('El archivo no contiene hojas');
+    const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+    const exact=wb.SheetNames.filter(n=>['flota','terceros'].includes(norm(n)));
+    const sheets=exact.length?exact:[[...wb.SheetNames].sort((a,b)=>towerSheetScore(wb,b)-towerSheetScore(wb,a))[0]];
+    const rows=[];const usados=[];const detalle=[];
+    for(const sheet of sheets){
+      if(!sheet)continue;
+      const header=typeof detectarFilaHeader==='function'?detectarFilaHeader(wb,sheet):0;
+      const part=XLSX.utils.sheet_to_json(wb.Sheets[sheet],{defval:null,range:header});
+      if(!part.length)continue;
+      part.forEach(r=>rows.push({...r,__source_sheet:sheet}));
+      usados.push(sheet);detalle.push(`${sheet}: ${part.length}`);
+    }
+    if(!rows.length)throw new Error('No se encontraron registros en Flota/Terceros');
+    towerSetStatus(`${rows.length} filas detectadas · ${detalle.join(' · ')}. Validando...`);
+    const r=await fetch(API+'/api/flota/ingesta',{method:'POST',headers:authHeaders(),body:JSON.stringify({datos:rows,archivo:file.name,hoja:usados.join(' + ')})});
+    const data=await leerRespuestaApiSegura(r);
+    towerSetStatus(`${data.cantidad} equipos consolidados · ${usados.join(' + ')}`,'ok');
+    await cargarTorreFlota();
+  }catch(err){towerSetStatus('Archivo de flota inválido: '+(err.message||err),'err');}
 }
 async function actualizarTowerEquipo(key,patch){const r=await fetch(API+'/api/flota/'+encodeURIComponent(key),{method:'PATCH',headers:authHeaders(),body:JSON.stringify(patch)});const data=await leerRespuestaApiSegura(r);const i=towerFleet.findIndex(x=>x.key===key);if(i>=0)towerFleet[i]=data.equipo;towerRevision=Number(data.revision||towerRevision);document.getElementById('towerRevision').textContent=`Rev. ${towerRevision} · ${towerFleet.length} equipos`;return data.equipo;}
 function abrirTowerEditor(){const t=towerSelected();if(!t)return;document.getElementById('towerEditTitle').textContent=`Editar · ${t.id||t.number}`;towerEditStatus.value=t.status||'stale';const plants=[...new Set(towerFleet.map(x=>x.plant).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));towerEditPlant.innerHTML=plants.map(x=>`<option value="${towerEsc(x)}">${towerEsc(x)}</option>`).join('');if(!plants.includes(t.plant))towerEditPlant.insertAdjacentHTML('afterbegin',`<option value="${towerEsc(t.plant)}">${towerEsc(t.plant)}</option>`);towerEditPlant.value=t.plant;towerEditWorkshop.value=t.workshop||'';towerEditResponsible.value=t.responsible||'';towerEditEta.value=(t.eta||'').slice(0,16);towerEditProgress.value=Number(t.progress||0);towerEditCause.value=t.cause||'';towerEditObservation.value=t.observation||'';towerEditMsg.textContent='';towerEditModal.classList.add('open');towerEditModal.setAttribute('aria-hidden','false');}
@@ -2132,7 +2150,7 @@ window.towerDragStart=towerDragStart;window.towerDragOver=towerDragOver;window.t
 let historicoUltimo=null;
 let histPlantasSeleccionadas=new Set();
 let histCatalogo={plants:[],zones:[],sources:[],plantCatalog:[]};
-const HIST_SOURCE_KEYS=['status','disponibilidad','mantenimiento','puntualidad','sobreestadia','operadores','flota','otros'];
+const HIST_SOURCE_KEYS=['turnos','citaciones','status'];
 const histCharts={};
 
 let modulosInicializados=false;
@@ -2213,7 +2231,9 @@ function setHistRangeSemana25(){poblarSelectoresSemanas();}
 function seleccionarCarpetaHistorica(source){document.getElementById('histFolder_'+source)?.click();}
 function histSourceStatus(source,text,cls=''){const el=document.getElementById('histSource_'+source);if(el){el.textContent=text;el.className='hist-source-status '+cls;}}
 
-function histHojaSugerida(wb){
+function histHojaSugerida(wb,source){
+  const tipo=source==='status'?'logeo':source;
+  try{if(typeof hojaSugeridaLote==='function')return hojaSugeridaLote(tipo,wb);}catch{}
   const counts=wb.SheetNames.map(nombre=>({nombre,filas:contarFilasHoja(wb,nombre)})).sort((a,b)=>b.filas-a.filas);
   return counts[0]?.nombre||wb.SheetNames[0];
 }
@@ -2227,7 +2247,7 @@ async function procesarCarpetaHistorica(source,files){
     try{
       histSourceStatus(source,`Procesando ${i+1}/${files.length}: ${file.name}`,'busy');
       const wb=XLSX.read(new Uint8Array(await file.arrayBuffer()),{type:'array',cellDates:true});
-      const sheet=histHojaSugerida(wb);if(!sheet)throw new Error('No se encontró hoja legible');
+      const sheet=histHojaSugerida(wb,source);if(!sheet)throw new Error('No se encontró hoja legible');
       const header=detectarFilaHeader(wb,sheet);
       const rows=XLSX.utils.sheet_to_json(wb.Sheets[sheet],{defval:null,range:header});
       if(!rows.length)throw new Error('Hoja sin registros');
@@ -2299,13 +2319,20 @@ async function cargarHistorico(){
 }
 function renderHistoricoDashboard(data){
   const k=data.kpis||{},cards=[
-    ['Total registros históricos',fmtHist(k.totalRegistros),'Base consolidada'],['Total camiones históricos',fmtHist(k.totalCamiones),'Equipo/patente únicos'],['Total operadores históricos',fmtHist(k.totalOperadores),'Operadores únicos'],
-    ['Disponibilidad promedio',fmtHist(k.disponibilidadPromedio,'%'),'Promedio registros válidos'],['Puntualidad promedio',fmtHist(k.puntualidadPromedio,'%'),'Promedio registros válidos'],['Sobreestadía promedio',fmtHist(k.sobreestadiaPromedio,' min'),'Promedio registros válidos'],
-    ['Horas mantención',fmtHist(k.horasMantenimiento,' h'),'Acumulado'],['Ingresos mantención',fmtHist(k.frecuenciaMantenimiento),'Frecuencia histórica'],['MTBF',fmtHist(k.mtbfHoras,' h'),'Entre eventos de falla/mantención'],['Tiempo promedio taller',fmtHist(k.tiempoPromedioTallerHoras,' h'),'Solo cuando existe duración'],
+    ['Total registros históricos',fmtHist(k.totalRegistros),'Turnos + Citaciones + StatusBreakdown'],
+    ['Turnos históricos',fmtHist(k.turnosHistoricos),'Filas de programación'],
+    ['Citaciones históricas',fmtHist(k.citacionesHistoricas),'Filas de citaciones'],
+    ['Eventos StatusBreakdown',fmtHist(k.eventosStatus),'Eventos históricos'],
+    ['Operadores únicos',fmtHist(k.totalOperadores),'IDs/nombres detectados'],
+    ['Plantas con datos',fmtHist(k.totalPlantas),'Catálogo dinámico'],
+    ['Días disponibles',fmtHist(k.diasDisponibles),'Fechas con registros'],
+    ['LOGIN detectados',fmtHist(k.loginsDetectados),'Status LOGIN / PRE-VIAJE'],
+    ['ASIGNADO detectados',fmtHist(k.asignadosDetectados),'Eventos ASIGNADO'],
+    ['Primera carga',fmtHist(k.primeraCargaDetectada),'CARGANDO / CARGADO'],
   ];
   document.getElementById('histKpis').innerHTML=cards.map(c=>`<div class="kpi-card"><div class="kpi-label">${c[0]}</div><div class="kpi-valor">${c[1]}</div><div class="kpi-sub">${c[2]}</div></div>`).join('');
   const plants=data.rankings?.plantas||[];
-  document.getElementById('histBody').innerHTML=plants.length?plants.map(p=>`<tr><td><b>${escapeHtml(p.nombre)}</b></td><td>${p.registros}</td><td>${fmtHist(p.disponibilidad,'%')}</td><td>${fmtHist(p.puntualidad,'%')}</td><td>${fmtHist(p.sobreestadia,' min')}</td></tr>`).join(''):'<tr><td colspan="5" class="history-empty">NO SE ENCONTRARON DATOS PARA EL PERÍODO SELECCIONADO</td></tr>';
+  document.getElementById('histBody').innerHTML=plants.length?plants.map(p=>`<tr><td><b>${escapeHtml(p.nombre)}</b></td><td>${p.registros}</td><td>${p.turnos||0}</td><td>${p.citaciones||0}</td><td>${p.status||0}</td></tr>`).join(''):'<tr><td colspan="5" class="history-empty">NO SE ENCONTRARON DATOS PARA EL PERÍODO SELECCIONADO</td></tr>';
   renderHistCharts(data);
 }
 function destroyHistChart(id){if(histCharts[id]){histCharts[id].destroy();delete histCharts[id];}}
@@ -2319,17 +2346,17 @@ function chartDataOrEmpty(id,labels,values,label,type='line',suffix=''){
 }
 function renderHistCharts(data){
   const s=data.series||[],labels=s.map(x=>x.periodo);
-  chartDataOrEmpty('histDisponibilidad',labels,s.map(x=>x.disponibilidad),'Disponibilidad','line','%');
-  chartDataOrEmpty('histPuntualidad',labels,s.map(x=>x.puntualidad),'Puntualidad','line','%');
-  chartDataOrEmpty('histSobreestadia',labels,s.map(x=>x.sobreestadia),'Sobreestadía','line',' min');
-  chartDataOrEmpty('histMantIngresos',labels,s.map(x=>x.ingresosMantenimiento),'Ingresos','bar','');
-  chartDataOrEmpty('histMantSalidas',labels,s.map(x=>x.salidasMantenimiento),'Salidas','bar','');
+  chartDataOrEmpty('histTurnos',labels,s.map(x=>x.turnos),'Turnos','line','');
+  chartDataOrEmpty('histCitaciones',labels,s.map(x=>x.citaciones),'Citaciones','line','');
+  chartDataOrEmpty('histStatus',labels,s.map(x=>x.statusEventos),'Eventos Status','line','');
+  chartDataOrEmpty('histLogin',labels,s.map(x=>x.logins),'LOGIN','bar','');
+  chartDataOrEmpty('histAsignados',labels,s.map(x=>x.asignados),'ASIGNADO','bar','');
+  chartDataOrEmpty('histPrimeraCarga',labels,s.map(x=>x.primeraCarga),'Primera carga','bar','');
   const pr=(data.rankings?.plantas||[]).slice(0,15);chartDataOrEmpty('histDistribPlanta',pr.map(x=>x.nombre),pr.map(x=>x.registros),'Registros','bar','');
   const zr=(data.rankings?.zonas||[]);chartDataOrEmpty('histDistribZona',zr.map(x=>x.nombre),zr.map(x=>x.registros),'Registros','bar','');
   const pa=(data.pareto||[]).slice(0,15);chartDataOrEmpty('histPareto',pa.map(x=>x.causa),pa.map(x=>x.cantidad),'Eventos','bar','');
   const eq=data.rankings?.equipos||[];chartDataOrEmpty('histTopEquipos',eq.map(x=>x.equipo),eq.map(x=>x.eventos),'Eventos','bar','');
-  const op=data.rankings?.operadores||[];chartDataOrEmpty('histTopOperadores',op.map(x=>x.operador),op.map(x=>x.asignaciones),'Asignaciones','bar','');
-  chartDataOrEmpty('histNacional',labels,s.map(x=>x.registros),'Registros nacionales','line','');
+  const op=data.rankings?.operadores||[];chartDataOrEmpty('histTopOperadores',op.map(x=>x.operador),op.map(x=>x.asignaciones),'Eventos','bar','');
   renderHeatmap(data.heatmap||[]);
 }
 function renderHeatmap(rows){
@@ -2340,7 +2367,7 @@ function renderHeatmap(rows){
 }
 function exportarHistoricoCSV(){
   const rows=historicoUltimo?.rankings?.plantas||[];if(!rows.length){alert('No hay histórico para exportar.');return;}
-  const data=[['Planta','Registros','Disponibilidad','Puntualidad','Sobreestadía'],...rows.map(x=>[x.nombre,x.registros,x.disponibilidad,x.puntualidad,x.sobreestadia])];
+  const data=[['Planta','Registros','Turnos','Citaciones','StatusBreakdown'],...rows.map(x=>[x.nombre,x.registros,x.turnos||0,x.citaciones||0,x.status||0])];
   const csv=data.map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='trazabilidad-historica-cco.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),500);
 }
 
