@@ -300,6 +300,17 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 .hist-two-col .history-table-wrap{overflow-x:hidden}
 #histPeriodoControls select{min-width:330px;max-width:100%}
 
+
+.global-system-status{margin:8px auto 0;max-width:1500px;border:1px solid #d6e5f2;border-radius:10px;background:#fff;overflow:hidden}
+.global-system-status summary{cursor:pointer;padding:8px 12px;display:flex;justify-content:space-between;color:#183f63;background:#f8fbfe;font-size:10px}
+.sys-grid{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:1px;background:#e5eef6;border-top:1px solid #e5eef6}
+.sys-grid>div{background:#fff;padding:7px 9px;min-width:0}.sys-grid span{display:block;font-size:8px;text-transform:uppercase;color:#7890a4}.sys-grid b{display:block;font-size:10px;color:#173f65;overflow-wrap:anywhere}
+.sys-error-detail{padding:7px 10px;font-size:9px;color:#9d2532;background:#fff7f8;display:none}
+.global-system-status.has-error{border-color:#efb8bf}.global-system-status.has-error .sys-error-detail{display:block}
+.hist-files-audit{margin:10px 0}.hist-files-audit table{width:100%;border-collapse:collapse}.hist-files-audit th,.hist-files-audit td{padding:6px;border-bottom:1px solid #e2ebf3;font-size:9px;text-align:left}
+.hist-rank-table td,.hist-rank-table th{white-space:normal!important;overflow-wrap:anywhere}
+@media(max-width:900px){.sys-grid{grid-template-columns:repeat(3,1fr)}}@media(max-width:600px){.sys-grid{grid-template-columns:repeat(2,1fr)}}
+
 </style>
 </head>
 <body>
@@ -339,11 +350,11 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v4.0</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v4.1</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
     <div id="opDateControl" class="pill" style="margin:0">Operación de hoy · <b id="scopeFechaLabel">—</b><input id="scopeFecha" type="hidden"></div>
-    <span id="appVersion" class="pill">v4.0</span><span id="connPill" class="pill">Conectando…</span>
+    <span id="appVersion" class="pill">v4.1</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
 <div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
@@ -352,6 +363,24 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
   <button type="button" id="quickHistorico" class="secondary" onclick="console.log('Botón ejecutado correctamente'); cambiarModulo('historico',true)">📈 Trazabilidad Histórica</button>
   <button type="button" id="quickTorre" class="secondary" onclick="console.log('Botón ejecutado correctamente'); cambiarModulo('torre',true)">🚛 Torre de Control</button>
 </div>
+<details id="globalSystemStatus" class="global-system-status" open>
+  <summary><b>Estado Sistema</b><span id="sysHeadline">Sistema operativo</span></summary>
+  <div class="sys-grid">
+    <div><span>Vista</span><b id="sysModule">Operación Nacional</b></div>
+    <div><span>Etapa</span><b id="sysStage">Listo</b></div>
+    <div><span>Archivo</span><b id="sysFile">—</b></div>
+    <div><span>Registros detectados</span><b id="sysRows">0</b></div>
+    <div><span>Registros válidos</span><b id="sysValid">0</b></div>
+    <div><span>Descartados</span><b id="sysRejected">0</b></div>
+    <div><span>Columnas</span><b id="sysColumns">0</b></div>
+    <div><span>KPIs generados</span><b id="sysKpis">0</b></div>
+    <div><span>Rankings generados</span><b id="sysRankings">0</b></div>
+    <div><span>Tiempo</span><b id="sysTime">—</b></div>
+    <div><span>Última actualización</span><b id="sysUpdated">—</b></div>
+    <div><span>Errores</span><b id="sysErrors">0</b></div>
+  </div>
+  <div id="sysErrorDetail" class="sys-error-detail"></div>
+</details>
 <main>
 
   <div id="ccoTabs" class="module-tabs">
@@ -546,6 +575,10 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
       <div class="hist-chart-card hist-wide"><h3>Heatmap de atraso al turno · planta × fecha</h3><div id="histHeatmap" class="hist-heatmap"><div class="history-empty">Sin datos</div></div></div>
     </div>
 
+    <div class="rep-header"><span class="rep-titulo">Archivos Procesados</span><span class="rep-meta">Trazabilidad de fuentes utilizadas</span></div>
+    <div class="hist-files-audit history-table-wrap">
+      <table><thead><tr><th>Fuente</th><th>Archivo</th><th>Registros</th><th>Período</th><th>Estado</th><th>Procesado por</th></tr></thead><tbody id="histProcessedFiles"><tr><td colspan="6">Cargue archivos históricos para comenzar.</td></tr></tbody></table>
+    </div>
     <div class="rep-header"><span class="rep-titulo">Ranking Operacional</span><span class="rep-meta" id="histRankingStatus">Top 10 / Bottom 10 según filtros</span></div>
     <div class="hist-ranking-controls">
       <label>Métrica
@@ -560,8 +593,8 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
       </label>
     </div>
     <div class="hist-two-col">
-      <div><h3>🏆 Top 10 Operadores</h3><div class="history-table-wrap"><table class="history-table"><thead><tr><th>#</th><th>Operador</th><th>Planta</th><th>Valor</th><th>Δ período</th></tr></thead><tbody id="histTopOps"><tr><td colspan="5" class="history-empty">Seleccione una semana con cruces y actualice el análisis.</td></tr></tbody></table></div></div>
-      <div><h3>⚠️ Top 10 Operadores Críticos</h3><div class="history-table-wrap"><table class="history-table"><thead><tr><th>#</th><th>Operador</th><th>Planta</th><th>Valor</th><th>Δ período</th></tr></thead><tbody id="histCriticalOps"><tr><td colspan="5" class="history-empty">Seleccione una semana con cruces y actualice el análisis.</td></tr></tbody></table></div></div>
+      <div><h3>🏆 Top 10 Operadores</h3><div class="history-table-wrap"><table class="history-table"><thead><tr><th>#</th><th>Operador</th><th>Planta</th><th>Valor</th><th>Δ período</th></tr></thead><tbody id="histTopOps"><tr><td colspan="5" class="history-empty">SIN INFORMACIÓN PARA LOS FILTROS SELECCIONADOS · Registros encontrados: 0</td></tr></tbody></table></div></div>
+      <div><h3>⚠️ Top 10 Operadores Críticos</h3><div class="history-table-wrap"><table class="history-table"><thead><tr><th>#</th><th>Operador</th><th>Planta</th><th>Valor</th><th>Δ período</th></tr></thead><tbody id="histCriticalOps"><tr><td colspan="5" class="history-empty">SIN INFORMACIÓN PARA LOS FILTROS SELECCIONADOS · Registros encontrados: 0</td></tr></tbody></table></div></div>
     </div>
 
     <div class="rep-header"><span class="rep-titulo">Ranking por Planta</span></div>
@@ -2377,6 +2410,7 @@ function initModuleTabs(){inicializarModulos();cambiarModulo('operacion',false);
 function cambiarModulo(modulo,scrollTop=false){
   const permitidos=new Set(['operacion','historico','torre']);if(!permitidos.has(modulo))return;
   const hist=modulo==='historico',tower=modulo==='torre',op=modulo==='operacion';
+  if(typeof updateSystemStatus==='function')updateSystemStatus({module:hist?'Trazabilidad':tower?'Torre de Control':'Operación Nacional',stage:'Listo',errorDetail:'',errors:0});
   document.querySelectorAll('.operation-view').forEach(el=>el.style.display=op?'':'none');
   const hp=document.getElementById('historicoPanel');if(hp)hp.style.display=hist?'block':'none';
   const tp=document.getElementById('towerPanel');if(tp)tp.style.display=tower?'block':'none';
@@ -2735,8 +2769,8 @@ function histUploadOne(source,file){
   });
 }
 async function histPollJob(source,fileName,jobId,diag){
-  const deadline=Date.now()+30*60*1000;
-  let pollDelay=450,lastProgress=-1;
+  const deadline=Date.now()+10_000;
+  let pollDelay=350,lastProgress=-1;
   while(Date.now()<deadline){
     await new Promise(r=>setTimeout(r,pollDelay));
     const r=await fetch(API+'/api/historico/job/'+encodeURIComponent(jobId),{headers:authHeaders()});
@@ -2744,6 +2778,7 @@ async function histPollJob(source,fileName,jobId,diag){
     const p=Math.max(20,Math.min(100,Number(data.progress||20)));
     const stage=data.queuePosition?`En cola · posición ${data.queuePosition}`:(data.stage||'Procesando archivo');
     histProgress(source,p,stage);
+    updateSystemStatus({module:'Trazabilidad',stage,file:fileName,rows:Number(data.diagnostic?.rowsFound||0),valid:Number(data.diagnostic?.rowsStored||0),rejected:Number(data.diagnostic?.rowsRejected||0)+Number(data.diagnostic?.rowsFiltered||0),columns:Number(data.diagnostic?.columnCount||0),time:data.diagnostic?.durationMs?`${(Number(data.diagnostic.durationMs)/1000).toFixed(1)} s`:'—',errors:data.error?1:0,errorDetail:data.error||''});
     if(data.diagnostic){
       diag=histDiagFromServer(source,fileName,data.diagnostic);histSetDiagnostic(source,diag);
       histFileStatus(source,`${fileName} · ${diag.rowsFound.toLocaleString('es-CL')} filas leídas · ${diag.rowsStored.toLocaleString('es-CL')} registros recuperados`,'busy');
@@ -2754,12 +2789,17 @@ async function histPollJob(source,fileName,jobId,diag){
     pollDelay=current!==lastProgress?450:Math.min(1200,pollDelay+150);
     lastProgress=current;
   }
-  throw new Error('El procesamiento excedió el tiempo máximo de espera.');
+  try{await fetch(API+'/api/historico/job/'+encodeURIComponent(jobId)+'/cancel',{method:'POST',headers:authHeaders()});}catch{}
+  const msg='La carga excedió el tiempo permitido. Verifique el archivo y vuelva a intentar.';
+  histProgress(source,100,'ERROR · Timeout 10 segundos');
+  updateSystemStatus({module:'Trazabilidad',stage:'ERROR DETECTADO EN: Procesamiento',file:fileName,errors:1,errorDetail:msg});
+  throw new Error(msg);
 }
 async function histReadFile(source,file,diag){
   if(!file.size)throw new Error('El archivo está vacío.');
   const ext=(file.name.split('.').pop()||'').toLowerCase();
   if(!['xlsx','xls','csv','txt','pdf'].includes(ext))throw new Error(`Extensión .${ext||'?'} no permitida.`);
+  updateSystemStatus({module:'Trazabilidad',stage:'Archivo seleccionado',file:file.name,rows:0,valid:0,rejected:0,columns:0,kpis:0,rankings:0,errors:0,errorDetail:''});
   histProgress(source,0,'Validando archivo en Web Worker');
   await histWorkerPreflight(file);
   histProgress(source,2,'Archivo recibido');
@@ -2790,6 +2830,7 @@ async function procesarArchivosHistoricos(source,files){
       errors++;console.error('[CCO][TRAZABILIDAD][ARCHIVO]',file.name,err);
       diag.status='error';diag.reason=err?.message||'No fue posible procesar el archivo.';
       histAddLog(diag,`Error: ${err.message||err}`);histSetDiagnostic(source,diag);histProgress(source,100,'Error diagnosticado');
+      updateSystemStatus({module:'Trazabilidad',stage:'ERROR DETECTADO EN: Carga / ETL',file:file.name,errors:1,errorDetail:diag.reason});
     }
   });
   await Promise.allSettled(tasks);
@@ -2982,8 +3023,35 @@ function validarDashboardHistorico(data){
   for(const p of (data?.byPlant||[])){if(dup(p.mejores)||dup(p.criticos))issues.push(`Ranking de ${p.planta} contiene duplicados internos`);const a=new Set((p.mejores||[]).map(x=>x.key).filter(Boolean));if((p.criticos||[]).some(x=>x?.key&&a.has(x.key)))issues.push(`Operadores repetidos entre Top y Críticos en ${p.planta}`);}
   return issues;
 }
+
+const systemStatusState={module:'Operación Nacional',stage:'Listo',file:'—',rows:0,valid:0,rejected:0,columns:0,kpis:0,rankings:0,time:'—',errors:0,errorDetail:''};
+function updateSystemStatus(patch={}){
+  Object.assign(systemStatusState,patch);
+  const map={sysModule:'module',sysStage:'stage',sysFile:'file',sysRows:'rows',sysValid:'valid',sysRejected:'rejected',sysColumns:'columns',sysKpis:'kpis',sysRankings:'rankings',sysTime:'time',sysErrors:'errors'};
+  for(const [id,key] of Object.entries(map)){const el=document.getElementById(id);if(el)el.textContent=systemStatusState[key]??'—';}
+  const now=new Date().toLocaleString('es-CL');const u=document.getElementById('sysUpdated');if(u)u.textContent=now;
+  const box=document.getElementById('globalSystemStatus'),err=document.getElementById('sysErrorDetail'),head=document.getElementById('sysHeadline');
+  const hasErr=Number(systemStatusState.errors||0)>0||!!systemStatusState.errorDetail;
+  box?.classList.toggle('has-error',hasErr);if(err)err.textContent=systemStatusState.errorDetail||'';if(head)head.textContent=hasErr?'Requiere atención':'Sistema operativo';
+}
+function renderProcessedFiles(data){
+  const box=document.getElementById('histProcessedFiles');if(!box)return;
+  const rows=data?.filesUsed||[];
+  box.innerHTML=rows.length?rows.map(f=>`<tr><td>${escapeHtml(f.source||'')}</td><td><b>${escapeHtml(f.archivo||'')}</b></td><td>${Number(f.records||0).toLocaleString('es-CL')}</td><td>${f.minDate||'—'} → ${f.maxDate||'—'}</td><td>${escapeHtml(f.status||'')}</td><td>${escapeHtml(f.processedBy||'Sistema')}</td></tr>`).join(''):'<tr><td colspan="6">SIN INFORMACIÓN PARA LOS FILTROS SELECCIONADOS</td></tr>';
+}
+
 function renderHistoricoDashboard(data){
   const issues=validarDashboardHistorico(data),diag=document.getElementById('histDiagnostico');if(issues.length&&diag)diag.innerHTML=`⚠ <b>Validación:</b> ${issues.map(escapeHtml).join(' · ')}`;
+  renderProcessedFiles(data);
+  const integrity=data.integrity||{};
+  const kpiCount=Object.values(data.metrics||{}).filter(v=>typeof v==='number'&&Number.isFinite(v)).length;
+  const rankCount=Object.values(data.advancedRankings||{}).filter(Array.isArray).reduce((n,a)=>n+(a.length?1:0),0);
+  updateSystemStatus({
+    module:'Trazabilidad',stage:integrity.ready?'Dashboard validado':'Validación incompleta',
+    rows:integrity.processedRows||0,valid:integrity.kpiLinkedRows||0,rejected:integrity.difference||0,
+    kpis:kpiCount,rankings:rankCount,errors:(integrity.issues||[]).length,
+    errorDetail:[...(integrity.issues||[]),...(integrity.warnings||[])].join(' · ')
+  });
   const m=data.metrics||{},tm=m.tiempoMuerto||{},ac=m.atrasoCitacion||{},at=m.atrasoTurno||{},mode=data.mode||'logeo';document.getElementById('histGeneralClass').textContent=mode==='citacion'?'Modo CITACIÓN':'Modo LOGEO';
   if(mode==='logeo')document.getElementById('histKpiRow1').innerHTML=[histMetricCard('Adherencia al Turno',hfmt(m.adherenciaTurno,'%'),m.adherenciaTurno!==null?`${m.adherenciaTurnoN||0} con ingreso real`:histNoDataReason(data,'adherenciaTurno')),histMetricCard('Turno vs Asignación',hfmt(m.turnVsAssignment,'%'),m.turnVsAssignment!==null?`${m.turnVsAssignmentN||0} comparaciones`:histNoDataReason(data,'turnVsAssignment')),histMetricCard('Tiempo Muerto',hfmt(tm.promedio,' min'),tm.promedio!==null?`Mediana ${hfmt(tm.mediana,' min')} · P90 ${hfmt(tm.p90,' min')}`:histNoDataReason(data,'tiempoMuerto')),histMetricCard('Atraso Turno',hfmt(at.promedio,' min'),at.promedio!==null?`${hfmt(at.porcentaje,'%')} con atraso`:histNoDataReason(data,'atrasoTurno')),histMetricCard('Operadores',hfmt(m.operadores),`${m.registros||0} operador/día`)].join('');
   else document.getElementById('histKpiRow1').innerHTML=[histMetricCard('Adherencia a Citación',hfmt(m.adherenciaCitacion,'%'),m.adherenciaCitacion!==null?`${m.adherenciaCitacionN||0} con citación + ingreso`:histNoDataReason(data,'adherenciaCitacion')),histMetricCard('Turno vs Citación',hfmt(m.turnVsCitation,'%'),m.turnVsCitation!==null?`${m.turnVsCitationN||0} comparaciones`:histNoDataReason(data,'turnVsCitation')),histMetricCard('Atraso Citación',hfmt(ac.promedio,' min'),ac.promedio!==null?`${hfmt(ac.porcentaje,'%')} con atraso`:histNoDataReason(data,'atrasoCitacion')),histMetricCard('Operadores',hfmt(m.operadores),`${m.registros||0} operador/día`),histMetricCard('Plantas',hfmt(m.plantas),'Detectadas automáticamente')].join('');
@@ -3029,34 +3097,56 @@ function renderHeatmapV34(rows){
   box.innerHTML='<table><thead><tr><th>Planta</th>'+dates.map(d=>`<th>${d.slice(5)}</th>`).join('')+'</tr></thead><tbody>'+plants.map(p=>'<tr><th>'+escapeHtml(p)+'</th>'+dates.map(d=>{const v=map.get(p+'|'+d);if(v===undefined)return '<td></td>';const op=.12+.78*(v/max);return `<td title="${escapeHtml(p)} · ${d} · atraso ${v} min" style="background:rgba(47,128,237,${op})">${Math.round(v)}</td>`;}).join('')+'</tr>').join('')+'</tbody></table>';
 }
 function rankingArrays(metric){const mode=historicoUltimo?.mode||'logeo',logeo={turno:['mejorTurno','critAdherenciaTurno','adherenciaTurno','%'],tiempoMuerto:['menorTiempoMuerto','critTiempoMuerto','tiempoMuerto.promedio',' min'],atrasoTurno:['menorAtrasoTurno','critAtrasoTurno','atrasoTurno.promedio',' min']},cit={citacion:['mejorCitacion','critAdherenciaCitacion','adherenciaCitacion','%'],atrasoCitacion:['menorAtrasoCitacion','critAtrasoCitacion','atrasoCitacion.promedio',' min']},map=mode==='citacion'?cit:logeo;return map[metric]||Object.values(map)[0];}
+function nested(obj,path){return String(path||'').split('.').filter(Boolean).reduce((v,k)=>v?.[k],obj);}
 function renderRankingRows(rows,path,suffix){
   if(!rows?.length)return '<tr><td colspan="5" class="history-empty">No hay operadores con datos completos para esta métrica.</td></tr>';
   return rows.map((x,i)=>`<tr><td>${i+1}</td><td class="hist-ranking-name"><b>${escapeHtml(x.operador)}</b><div class="small">${escapeHtml(x.operadorId||'')}</div></td><td class="hist-ranking-plant">${escapeHtml(x.planta||'—')}</td><td class="hist-ranking-value">${hfmt(nested(x,path),suffix)}</td><td class="hist-ranking-delta">${x.variacionGeneral===null?'—':`${x.variacionGeneral>0?'+':''}${x.variacionGeneral} pp`}</td></tr>`).join('');
 }
-function syncRankingMetricOptions(){const sel=document.getElementById('histRankingMetric');if(!sel)return;const mode=historicoUltimo?.mode||currentHistMode(),opts=mode==='citacion'?[['citacion','Adherencia a Citación'],['atrasoCitacion','Atraso Citación']]:[['turno','Adherencia al Turno'],['tiempoMuerto','Tiempo Muerto'],['atrasoTurno','Atraso Turno']],cur=sel.value;sel.innerHTML=opts.map(([v,t])=>`<option value="${v}">${t}</option>`).join('');if(opts.some(x=>x[0]===cur))sel.value=cur;}
+function syncRankingMetricOptions(){
+  const sel=document.getElementById('histRankingMetric');if(!sel)return;
+  const opts=[
+    ['incumplimientoTurno','Incumplimiento Turno'],
+    ['atrasoLogeo','Atraso Logeo'],
+    ['atrasoCitacion','Atraso Citación'],
+    ['atrasoTam','Atraso Marcaje TAM']
+  ];
+  const cur=sel.value;sel.innerHTML=opts.map(([v,t])=>`<option value="${v}">${t}</option>`).join('');
+  sel.value=opts.some(x=>x[0]===cur)?cur:'incumplimientoTurno';
+}
+function renderAdvancedRankingRows(rows,metric){
+  if(!rows?.length)return '<tr><td colspan="8" class="history-empty">SIN INFORMACIÓN PARA LOS FILTROS SELECCIONADOS · Registros encontrados: 0</td></tr>';
+  const stat=o=>metric==='incumplimientoTurno'
+    ? {prom:o.incumplimientoTurno,max:o.incumplimientoTurno,dev:0}
+    : (o[metric]||{});
+  return rows.map((o,i)=>{
+    const s=stat(o);
+    return `<tr><td>${i+1}</td><td><b>${escapeHtml(o.operador||'—')}</b></td><td>${escapeHtml(o.rut||o.operadorId||'—')}</td><td>${escapeHtml(o.planta||'—')}</td><td>${escapeHtml(o.zona||'—')}</td><td>${Number(o.eventos||0).toLocaleString('es-CL')}</td><td>${hfmt(s.promedio??s.prom,'%')}</td><td>${metric==='incumplimientoTurno'?hfmt(s.max,'%'):hfmt(s.max,' min')}</td></tr>`;
+  }).join('');
+}
 function renderRankingOperacional(){
   syncRankingMetricOptions();
-  const resolved=historicoUltimo?.operatorRanking;
-  if(resolved){
-    const suffix='%';
-    const path=resolved.metric;
-    const top=resolved.top||[],critical=resolved.critical||[];
-    const status=document.getElementById('histRankingStatus');
-    if(status)status.textContent=resolved.totalEligible
-      ? `${resolved.totalEligible} operadores elegibles · ${resolved.label}`
-      : resolved.reason||'Sin operadores elegibles';
-    document.getElementById('histTopOps').innerHTML=top.length
-      ? renderRankingRows(top,path,suffix)
-      : `<tr><td colspan="5" class="history-empty">${escapeHtml(resolved.reason||'No existen operadores elegibles para este ranking.')}</td></tr>`;
-    document.getElementById('histCriticalOps').innerHTML=critical.length
-      ? renderRankingRows(critical,path,suffix)
-      : `<tr><td colspan="5" class="history-empty">${escapeHtml(resolved.reason||'No existen operadores críticos adicionales sin repetir el Top 10.')}</td></tr>`;
-    return;
+  const metric=document.getElementById('histRankingMetric')?.value||'incumplimientoTurno';
+  const data=historicoUltimo?.advancedRankings||{};
+  const rows=data[metric]||[];
+  const status=document.getElementById('histRankingStatus');
+  if(status)status.textContent=`${rows.length} resultado(s) · ${document.getElementById('histRankingMetric')?.selectedOptions?.[0]?.textContent||metric}`;
+  const top=document.getElementById('histTopOps'),critical=document.getElementById('histCriticalOps');
+  const topTable=top?.closest('table'),critTable=critical?.closest('table');
+  const head='<tr><th>#</th><th>Operador</th><th>RUT / ID</th><th>Planta</th><th>Zona</th><th>Eventos</th><th>Promedio</th><th>Máximo</th></tr>';
+  if(topTable)topTable.querySelector('thead').innerHTML=head;
+  if(critTable)critTable.querySelector('thead').innerHTML=head;
+  if(!rows.length){
+    const msg='<tr><td colspan="8" class="history-empty">SIN INFORMACIÓN PARA LOS FILTROS SELECCIONADOS · Registros encontrados: 0</td></tr>';
+    if(top)top.innerHTML=msg;if(critical)critical.innerHTML=msg;return;
   }
-  const metric=document.getElementById('histRankingMetric')?.value||(historicoUltimo?.mode==='citacion'?'citacion':'turno');
-  const [best,worst,path,suffix]=rankingArrays(metric),r=historicoUltimo?.rankings||{};
-  document.getElementById('histTopOps').innerHTML=renderRankingRows(r[best],path,suffix);
-  document.getElementById('histCriticalOps').innerHTML=renderRankingRows(r[worst],path,suffix);
+  // Para métricas de atraso/incumplimiento, mayor valor = condición crítica.
+  const criticalRows=rows.slice(0,10);
+  const bestRows=[...rows].sort((a,b)=>{
+    const val=o=>metric==='incumplimientoTurno'?Number(o.incumplimientoTurno??Infinity):Number(o[metric]?.promedio??Infinity);
+    return val(a)-val(b);
+  }).slice(0,10);
+  if(top)top.innerHTML=renderAdvancedRankingRows(bestRows,metric);
+  if(critical)critical.innerHTML=renderAdvancedRankingRows(criticalRows,metric);
 }
 function renderPlantRanking(data){
   const mode=data.mode||'logeo',field=mode==='citacion'?'adherenciaCitacion':'adherenciaTurno',label=mode==='citacion'?'Adherencia Citación':'Adherencia Turno';
