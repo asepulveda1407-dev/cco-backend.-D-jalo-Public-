@@ -306,11 +306,11 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v3.5</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v3.6</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
     <div id="opDateControl" class="pill" style="margin:0">Operación de hoy · <b id="scopeFechaLabel">—</b><input id="scopeFecha" type="hidden"></div>
-    <span id="appVersion" class="pill">v3.5</span><span id="connPill" class="pill">Conectando…</span>
+    <span id="appVersion" class="pill">v3.6</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
 <div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
@@ -2494,7 +2494,11 @@ function renderHistDiagnostics(){
         <div class="hist-diag-k hist-diag-wide">Columnas</div><div class="hist-diag-v hist-diag-wide">${escapeHtml(cols)}</div>
         <div class="hist-diag-k hist-diag-wide">Motivo / resultado</div><div class="hist-diag-v hist-diag-wide">${escapeHtml(d.reason||'Archivo recuperado sin incidencias críticas.')}</div>
       </div>
-      <details class="hist-diag-log"><summary>Detalle técnico</summary>${(d.log||[]).map(x=>`<div><b>${escapeHtml(x.at)}</b> · ${escapeHtml(x.msg)}</div>`).join('')||'<div>Sin eventos adicionales.</div>'}</details>
+      <details class="hist-diag-log"><summary>Detalle técnico</summary>
+        ${(d.log||[]).map(x=>`<div><b>${escapeHtml(x.at)}</b> · ${escapeHtml(x.msg)}</div>`).join('')||'<div>Sin eventos adicionales.</div>'}
+        ${d.ruleCounts&&Object.keys(d.ruleCounts).length?`<div style="margin-top:7px"><b>Reglas aplicadas:</b> ${Object.entries(d.ruleCounts).map(([k,v])=>`${escapeHtml(k)}: ${Number(v).toLocaleString('es-CL')}`).join(' · ')}</div>`:''}
+        ${Array.isArray(d.samples)&&d.samples.length?`<div style="margin-top:7px"><b>Muestras de filas:</b>${d.samples.slice(0,12).map(s=>`<div>Fila ${s.row} · Campo ${escapeHtml(s.field||'—')} · ${escapeHtml(s.reason||s.code||'')}</div>`).join('')}</div>`:''}
+      </details>
     </div>`;
   }).join('');
 }
@@ -2580,81 +2584,95 @@ async function histProcessWorkbook(source,file,wb,diag){
   return {sent,stored,rejected,ignored,duplicates,sheet:det.sheetName,headerRow:det.headerRow+1,rowsFound:readRows,missing:diag.missing};
 }
 
-async function histReadFile(source,file,diag){
-  const ext=(file.name.split('.').pop()||'').toLowerCase();
-  if(!file.size)throw new Error('El archivo está vacío.');
-  if(ext==='pdf'){
-    histFilesReadOnly[source].push(file.name);
-    diag.status='parcial';diag.reason='PDF cargado como lectura informativa. No se utiliza como fuente principal de KPI.';diag.rowsFound=0;diag.rowsStored=0;
-    histAddLog(diag,'PDF aceptado en modo solo lectura.');
-    histProgress(source,100,'PDF cargado · solo lectura');histSetDiagnostic(source,diag);
-    return {pdf:true,sent:0,stored:0,rejected:0,ignored:0,duplicates:0};
-  }
-  if(!['xlsx','xls','csv','txt'].includes(ext))throw new Error(`Extensión .${ext||'?'} no permitida.`);
-  histProgress(source,0,'Leyendo archivo');
-  let wb;
-  if(ext==='csv'||ext==='txt'){
-    const text=await file.text();
-    if(!text.trim())throw new Error('El archivo no contiene contenido legible.');
-    wb=XLSX.read(text,{type:'string',cellDates:true,raw:false});
-  }else{
-    const buf=new Uint8Array(await file.arrayBuffer());
-    if(!buf.length)throw new Error('El archivo está vacío.');
-    wb=XLSX.read(buf,{type:'array',cellDates:true,raw:false});
-  }
-  return histProcessWorkbook(source,file,wb,diag);
-}
 
+function histDiagFromServer(source,fileName,d){
+  const diag={
+    id:`srv-${Date.now()}-${Math.random()}`,file:fileName,source,
+    sourceLabel:source==='turnos'?'Turnos':source==='citaciones'?'Citaciones':'StatusBreakdown',
+    startedAt:d?.startedAt||new Date().toISOString(),status:d?.status||'procesando',
+    rowsFound:Number(d?.rowsFound||0),rowsStored:Number(d?.rowsStored||0),
+    rowsDiscarded:Number(d?.rowsRejected||0)+Number(d?.rowsFiltered||0),
+    rowsPartial:Number(d?.rowsPartial||0),columnCount:Number(d?.columnCount||0),
+    columns:Array.isArray(d?.columns)?d.columns:[],missing:Array.isArray(d?.missing)?d.missing:[],
+    sheet:d?.sheet||null,reason:d?.reason||'Procesando archivo...',
+    log:Array.isArray(d?.log)?d.log.map(x=>({at:x.at?new Date(x.at).toLocaleString('es-CL'):new Date().toLocaleString('es-CL'),msg:x.msg||''})):[],
+    ruleCounts:d?.ruleCounts||{},samples:d?.samples||[]
+  };
+  return diag;
+}
+function histUploadOne(source,file){
+  return new Promise((resolve,reject)=>{
+    const fd=new FormData();fd.append('source',source);fd.append('file',file,file.name);
+    const xhr=new XMLHttpRequest();xhr.open('POST',API+'/api/historico/upload');xhr.setRequestHeader('Authorization','Bearer '+token);
+    xhr.upload.onprogress=e=>{
+      if(e.lengthComputable){
+        const p=Math.max(1,Math.min(20,Math.round(e.loaded/e.total*20)));
+        histProgress(source,p,p<20?'Subiendo archivo':'Archivo enviado');
+      }
+    };
+    xhr.onerror=()=>reject(new Error('No fue posible enviar el archivo al servidor.'));
+    xhr.onload=()=>{
+      let data={};try{data=JSON.parse(xhr.responseText||'{}');}catch{}
+      if(xhr.status<200||xhr.status>=300)return reject(new Error(data.error||`Error HTTP ${xhr.status}`));
+      resolve(data);
+    };
+    xhr.send(fd);
+  });
+}
+async function histPollJob(source,fileName,jobId,diag){
+  const deadline=Date.now()+30*60*1000;
+  while(Date.now()<deadline){
+    await new Promise(r=>setTimeout(r,700));
+    const r=await fetch(API+'/api/historico/job/'+encodeURIComponent(jobId),{headers:authHeaders()});
+    const data=await leerRespuestaApiSegura(r);
+    const p=Math.max(20,Math.min(100,Number(data.progress||20)));
+    histProgress(source,p,data.stage||'Procesando archivo');
+    if(data.diagnostic){
+      diag=histDiagFromServer(source,fileName,data.diagnostic);histSetDiagnostic(source,diag);
+      histFileStatus(source,`${fileName} · ${diag.rowsFound.toLocaleString('es-CL')} filas leídas · ${diag.rowsStored.toLocaleString('es-CL')} registros recuperados`,'busy');
+    }
+    if(data.done)return {data,diag};
+  }
+  throw new Error('El procesamiento excedió el tiempo máximo de espera.');
+}
+async function histReadFile(source,file,diag){
+  if(!file.size)throw new Error('El archivo está vacío.');
+  const ext=(file.name.split('.').pop()||'').toLowerCase();
+  if(!['xlsx','xls','csv','txt','pdf'].includes(ext))throw new Error(`Extensión .${ext||'?'} no permitida.`);
+  histProgress(source,0,'Leyendo archivo');
+  histAddLog(diag,`Archivo seleccionado · ${(file.size/1024/1024).toFixed(2)} MB · se procesará en servidor.`);
+  histSetDiagnostic(source,diag);
+  const accepted=await histUploadOne(source,file);
+  histProgress(source,20,'Archivo recibido · iniciando ETL');
+  const result=await histPollJob(source,file.name,accepted.jobId,diag);
+  const finalDiag=result.diag||diag;
+  if(result.data?.error&&finalDiag.status==='error')throw new Error(result.data.error);
+  return {diagnostic:finalDiag};
+}
 async function procesarArchivosHistoricos(source,files){
   const selected=[...files];
   if(!selected.length)return;
-  const compatible=selected.filter(f=>/\.(xlsx|xls|csv|txt|pdf)$/i.test(f.name));
-  const invalid=selected.filter(f=>!/\.(xlsx|xls|csv|txt|pdf)$/i.test(f.name));
+  histFileStatus(source,`Archivo(s) seleccionado(s): ${selected.length} · iniciando validación`,'busy');
+  let ok=0,partial=0,errors=0,totalStored=0;
 
-  for(const f of invalid){
-    const diag={id:`${Date.now()}-${Math.random()}`,file:f.name,source,sourceLabel:source==='turnos'?'Turnos':source==='citaciones'?'Citaciones':'StatusBreakdown',startedAt:new Date().toISOString(),status:'error',rowsFound:0,rowsStored:0,rowsDiscarded:0,columnCount:0,columns:[],missing:[],reason:'Formato no permitido. Use XLSX, XLS, CSV, TXT o PDF.',log:[]};
-    histAddLog(diag,'Archivo rechazado antes de lectura por extensión no compatible.');histSetDiagnostic(source,diag);
-  }
-  if(!compatible.length){histFileStatus(source,'Archivo seleccionado con error · revise Diagnóstico de carga','err');return;}
-
-  histFileStatus(source,`Archivo(s) seleccionado(s): ${compatible.length} · iniciando validación`,'busy');
-  let totals={sent:0,stored:0,rejected:0,ignored:0,duplicates:0,pdf:0},errors=0;
-
-  for(const file of compatible){
-    const diag={id:`${Date.now()}-${Math.random()}`,file:file.name,source,sourceLabel:source==='turnos'?'Turnos':source==='citaciones'?'Citaciones':'StatusBreakdown',startedAt:new Date().toISOString(),status:'procesando',rowsFound:0,rowsStored:0,rowsDiscarded:0,columnCount:0,columns:[],missing:[],reason:'Procesando archivo...',log:[]};
-    histAddLog(diag,`Archivo seleccionado · ${(file.size/1024/1024).toFixed(2)} MB`);
+  for(const file of selected){
+    const diag={id:`local-${Date.now()}-${Math.random()}`,file:file.name,source,sourceLabel:source==='turnos'?'Turnos':source==='citaciones'?'Citaciones':'StatusBreakdown',startedAt:new Date().toISOString(),status:'procesando',rowsFound:0,rowsStored:0,rowsDiscarded:0,columnCount:0,columns:[],missing:[],reason:'Preparando archivo...',log:[]};
     histSetDiagnostic(source,diag);
     try{
-      const r=await histReadFile(source,file,diag);
-      totals.sent+=r.sent||0;totals.stored+=r.stored||0;totals.rejected+=r.rejected||0;totals.ignored+=r.ignored||0;totals.duplicates+=r.duplicates||0;totals.pdf+=r.pdf?1:0;
+      const r=await histReadFile(source,file,diag),d=r.diagnostic||diag;
+      totalStored+=Number(d.rowsStored||0);
+      if(d.status==='correcto')ok++;else if(d.status==='parcial')partial++;else errors++;
+      histSetDiagnostic(source,d);
     }catch(err){
-      errors++;
-      console.error('[CCO][TRAZABILIDAD][ARCHIVO]',file.name,err);
-      diag.status='error';
-      diag.reason='El archivo no pudo ser procesado. Revise formato, estructura o contenido.';
-      histAddLog(diag,`Error técnico: ${err.message||err}`);
-      histAddLog(diag,'Acción realizada: búsqueda automática de hojas, encabezados y estructura recuperable.');
-      histSetDiagnostic(source,diag);
-      histProgress(source,100,'Carga finalizada con error diagnosticado');
+      errors++;console.error('[CCO][TRAZABILIDAD][ARCHIVO]',file.name,err);
+      diag.status='error';diag.reason='El archivo no pudo ser procesado. Revise formato, estructura o contenido.';
+      histAddLog(diag,`Error técnico: ${err.message||err}`);histSetDiagnostic(source,diag);histProgress(source,100,'Error diagnosticado');
     }
   }
 
-  try{await fetch(API+'/api/historico/finalizar',{method:'POST',headers:authHeaders(),body:'{}'});}catch(finalErr){console.error('[CCO][TRAZABILIDAD][FINALIZAR]',finalErr);}
-  const hadAny=compatible.length>0;
-  const state=totals.stored>0?(errors?'warn':'ok'):'err';
-  const summary=totals.stored>0
-    ? `${totals.stored.toLocaleString('es-CL')} registros recuperados · ${compatible.length-errors} archivo(s) procesado(s)${errors?` · ${errors} con error diagnosticado`:''}`
-    : `${compatible.length} archivo(s) seleccionado(s) · no se generaron registros KPI; revise Diagnóstico de carga`;
-  histFileStatus(source,summary,state);
-
-  try{
-    await cargarCatalogoHistorico();
-    renderHistPeriodControls(true);
-    await cargarHistorico();
-  }catch(uiErr){
-    console.error('[CCO][TRAZABILIDAD][REFRESH]',uiErr);
-    if(hadAny)histFileStatus(source,summary+' · El archivo permanece diagnosticado; no se perdió silenciosamente.','err');
-  }
+  const kind=errors?'err':partial?'warn':'ok';
+  histFileStatus(source,`${selected.length} archivo(s) procesado(s) · ${totalStored.toLocaleString('es-CL')} registros recuperados · ${ok} correctos · ${partial} parciales · ${errors} con error`,kind);
+  try{await cargarCatalogoHistorico();renderHistPeriodControls(true);await cargarHistorico();}catch(e){console.error('[CCO][TRAZABILIDAD][REFRESH]',e);}
 }
 
 function histDateFmt(d){return d?String(d).slice(0,10):'—';}
