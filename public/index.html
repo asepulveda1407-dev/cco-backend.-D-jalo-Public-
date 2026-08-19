@@ -277,6 +277,29 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 /* v3.9 */
 .hist-ms{position:relative}.hist-ms-btn{width:100%;min-height:38px;border:1px solid #cddff0;background:#fff;border-radius:8px;padding:8px 34px 8px 10px;text-align:left;font-size:10px;color:#244764;position:relative}.hist-ms-btn:after{content:"▾";position:absolute;right:11px;top:10px}.hist-ms.open .hist-ms-btn:after{content:"▴"}.hist-ms-menu{display:none;position:absolute;z-index:50;top:42px;left:0;right:0;background:#fff;border:1px solid #cddff0;border-radius:10px;box-shadow:0 10px 28px rgba(35,74,111,.14);padding:8px;max-height:300px;overflow:auto}.hist-ms.open .hist-ms-menu{display:block}.hist-ms-search{width:100%;margin-bottom:6px}.hist-ms-actions{display:flex;gap:6px;margin-bottom:6px}.hist-ms-actions button{flex:1;padding:6px!important;font-size:9px!important}.hist-ms-option{display:flex;align-items:center;gap:7px;padding:5px;border-radius:6px;font-size:10px}.hist-ms-option:hover{background:#f4f8fc}.hist-ms-option input{width:auto}.hist-mode-segment{display:grid;grid-template-columns:1fr 1fr;border:1px solid #cddff0;border-radius:9px;overflow:hidden;background:#fff}.hist-mode-segment button{border:0!important;border-radius:0!important;background:#fff!important;color:#31516f!important;box-shadow:none!important;padding:10px!important}.hist-mode-segment button.active{background:#2f80ed!important;color:#fff!important}.history-table{table-layout:auto}.history-table td,.history-table th{white-space:normal;overflow-wrap:anywhere;vertical-align:top}.hist-two-col{align-items:start}.hist-two-col>div{min-width:0}.history-table-wrap{overflow-x:auto}.hist-ranking-name{min-width:210px}.hist-ranking-plant{min-width:120px}.hist-ranking-value{min-width:72px}.hist-ranking-delta{min-width:86px}@media(max-width:900px){.hist-two-col{grid-template-columns:1fr}.hist-ranking-name{min-width:180px}}
+
+/* ===== v3.9.2 · diagnóstico plegable + rendimiento ===== */
+.hist-diagnostics-details{border:1px solid #d8e7f5;border-radius:12px;background:#fff;margin:10px 0 14px;overflow:hidden}
+.hist-diagnostics-details>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 13px;background:#f8fbfe;color:#173e63;user-select:none}
+.hist-diagnostics-details>summary::-webkit-details-marker{display:none}
+.hist-diagnostics-details>summary:before{content:"▶";font-size:10px;margin-right:8px;color:#2f80ed;transition:transform .16s ease}
+.hist-diagnostics-details[open]>summary:before{transform:rotate(90deg)}
+.hist-diagnostics-details>summary>span:first-of-type{display:flex;align-items:center;gap:8px;flex:1}
+.hist-diag-toggle-label{font-size:9px;color:#6d8296;font-weight:600}
+.hist-diagnostics-body{padding:10px 12px 12px;border-top:1px solid #e5eef6}
+.hist-diagnostics-body>.rep-meta{margin-bottom:7px}
+
+
+/* ===== v3.9.3 · rankings visibles + semanas disponibles ===== */
+.hist-two-col .history-table{width:100%;table-layout:fixed}
+.hist-two-col .history-table th:nth-child(1),.hist-two-col .history-table td:nth-child(1){width:42px}
+.hist-two-col .history-table th:nth-child(2),.hist-two-col .history-table td:nth-child(2){width:40%}
+.hist-two-col .history-table th:nth-child(3),.hist-two-col .history-table td:nth-child(3){width:24%}
+.hist-two-col .history-table th:nth-child(4),.hist-two-col .history-table td:nth-child(4){width:16%}
+.hist-two-col .history-table th:nth-child(5),.hist-two-col .history-table td:nth-child(5){width:16%}
+.hist-two-col .history-table-wrap{overflow-x:hidden}
+#histPeriodoControls select{min-width:330px;max-width:100%}
+
 </style>
 </head>
 <body>
@@ -316,11 +339,11 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v3.9.1</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v3.9.3</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
     <div id="opDateControl" class="pill" style="margin:0">Operación de hoy · <b id="scopeFechaLabel">—</b><input id="scopeFecha" type="hidden"></div>
-    <span id="appVersion" class="pill">v3.9.1</span><span id="connPill" class="pill">Conectando…</span>
+    <span id="appVersion" class="pill">v3.9.3</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
 <div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
@@ -453,10 +476,18 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
     <div class="history-note">También puedes <b>arrastrar y soltar</b> uno o varios archivos sobre cada tarjeta. XLSX/XLS/CSV/TXT participan en los cálculos. PDF se registra como <b>solo lectura</b> y no genera KPI si no contiene datos estructurados extraíbles.</div>
 
     <div class="hist-audit-strip" id="histAuditStrip"></div><div class="history-note" id="histPlantDictionaryState">Diccionario de plantas: se aplicará después de leer y normalizar cada archivo.</div>
-    <div class="rep-header"><span class="rep-titulo">Diagnóstico de carga</span><span class="rep-meta">Cada archivo conserva estado, recuperación y causa</span></div>
-    <div id="histLoadDiagnostics" class="hist-load-diagnostics">
-      <div class="history-empty">Aún no se han seleccionado archivos de trazabilidad.</div>
-    </div>
+    <details class="hist-diagnostics-details" id="histDiagnosticsDetails">
+      <summary>
+        <span><b>Diagnóstico de carga</b> <span class="small" id="histDiagnosticsSummary">Sin archivos diagnosticados</span></span>
+        <span class="hist-diag-toggle-label">Mostrar / ocultar</span>
+      </summary>
+      <div class="hist-diagnostics-body">
+        <div class="rep-meta">Cada archivo conserva estado, recuperación y causa.</div>
+        <div id="histLoadDiagnostics" class="hist-load-diagnostics">
+          <div class="history-empty">Aún no se han seleccionado archivos de trazabilidad.</div>
+        </div>
+      </div>
+    </details>
 
 
     <div class="rep-header"><span class="rep-titulo">Filtros de análisis</span><span class="rep-meta">Nacional → Zona → Planta → Operador</span></div>
@@ -504,7 +535,7 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
       <div class="hist-chart-card hist-wide"><h3>Heatmap de atraso al turno · planta × fecha</h3><div id="histHeatmap" class="hist-heatmap"><div class="history-empty">Sin datos</div></div></div>
     </div>
 
-    <div class="rep-header"><span class="rep-titulo">Ranking Operacional</span><span class="rep-meta">Top 10 / Bottom 10 según filtros</span></div>
+    <div class="rep-header"><span class="rep-titulo">Ranking Operacional</span><span class="rep-meta" id="histRankingStatus">Top 10 / Bottom 10 según filtros</span></div>
     <div class="hist-ranking-controls">
       <label>Métrica
         <select id="histRankingMetric">
@@ -518,8 +549,8 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
       </label>
     </div>
     <div class="hist-two-col">
-      <div><h3>🏆 Top 10 Operadores</h3><div class="history-table-wrap"><table class="history-table"><thead><tr><th>#</th><th>Operador</th><th>Planta</th><th>Valor</th><th>Δ período</th></tr></thead><tbody id="histTopOps"></tbody></table></div></div>
-      <div><h3>⚠️ Top 10 Operadores Críticos</h3><div class="history-table-wrap"><table class="history-table"><thead><tr><th>#</th><th>Operador</th><th>Planta</th><th>Valor</th><th>Δ período</th></tr></thead><tbody id="histCriticalOps"></tbody></table></div></div>
+      <div><h3>🏆 Top 10 Operadores</h3><div class="history-table-wrap"><table class="history-table"><thead><tr><th>#</th><th>Operador</th><th>Planta</th><th>Valor</th><th>Δ período</th></tr></thead><tbody id="histTopOps"><tr><td colspan="5" class="history-empty">Seleccione una semana con cruces y actualice el análisis.</td></tr></tbody></table></div></div>
+      <div><h3>⚠️ Top 10 Operadores Críticos</h3><div class="history-table-wrap"><table class="history-table"><thead><tr><th>#</th><th>Operador</th><th>Planta</th><th>Valor</th><th>Δ período</th></tr></thead><tbody id="histCriticalOps"><tr><td colspan="5" class="history-empty">Seleccione una semana con cruces y actualice el análisis.</td></tr></tbody></table></div></div>
     </div>
 
     <div class="rep-header"><span class="rep-titulo">Ranking por Planta</span></div>
@@ -2469,7 +2500,18 @@ try{
   const saved=JSON.parse(localStorage.getItem(HIST_DIAG_STORAGE)||'null');
   if(saved&&typeof saved==='object')histLoadDiagnostics={turnos:saved.turnos||[],citaciones:saved.citaciones||[],status:saved.status||[]};
 }catch{}
-function histSaveDiagnostics(){try{localStorage.setItem(HIST_DIAG_STORAGE,JSON.stringify(histLoadDiagnostics));}catch{}}
+let histDiagSaveTimer=null,histDiagRenderQueued=false;
+function histSaveDiagnostics(){
+  clearTimeout(histDiagSaveTimer);
+  histDiagSaveTimer=setTimeout(()=>{
+    try{localStorage.setItem(HIST_DIAG_STORAGE,JSON.stringify(histLoadDiagnostics));}catch{}
+  },350);
+}
+function scheduleHistDiagnosticsRender(){
+  if(histDiagRenderQueued)return;
+  histDiagRenderQueued=true;
+  requestAnimationFrame(()=>{histDiagRenderQueued=false;renderHistDiagnostics();});
+}
 function histProgress(source,pct,text){
   const bar=document.getElementById('histProgressBar_'+source),label=document.getElementById('histProgressText_'+source);
   const p=Math.max(0,Math.min(100,Number(pct)||0));
@@ -2481,17 +2523,30 @@ function histSetDiagnostic(source,diag){
   const idx=list.findIndex(x=>x.id===diag.id);
   if(idx>=0)list[idx]=diag;else list.unshift(diag);
   histLoadDiagnostics[source]=list.slice(0,30);
-  histSaveDiagnostics();renderHistDiagnostics();
+  histSaveDiagnostics();
+  scheduleHistDiagnosticsRender();
 }
 function histDiagState(diag){
   if(diag.status==='correcto')return ['✅ Correcto','ok'];
   if(diag.status==='parcial')return ['⚠️ Recuperado parcialmente','warn'];
   if(diag.status==='procesando')return ['⏳ Procesando','warn'];
+  const details=document.getElementById('histDiagnosticsDetails');
+  if(details)details.open=true;
   return ['❌ Error','err'];
 }
 function renderHistDiagnostics(){
   const box=document.getElementById('histLoadDiagnostics');if(!box)return;
   const all=HIST_SOURCE_KEYS.flatMap(source=>(histLoadDiagnostics[source]||[]).map(x=>({...x,source}))).sort((a,b)=>String(b.startedAt||'').localeCompare(String(a.startedAt||'')));
+  const summary=document.getElementById('histDiagnosticsSummary');
+  if(summary){
+    const ok=all.filter(x=>x.status==='correcto').length;
+    const partial=all.filter(x=>x.status==='parcial').length;
+    const err=all.filter(x=>x.status==='error').length;
+    const processing=all.filter(x=>x.status==='procesando').length;
+    summary.textContent=all.length
+      ? `${all.length} archivo(s) · ${ok} correctos · ${partial} parciales · ${err} errores${processing?` · ${processing} procesando`:''}`
+      : 'Sin archivos diagnosticados';
+  }
   if(!all.length){box.innerHTML='<div class="history-empty">Aún no se han seleccionado archivos de trazabilidad.</div>';return;}
   box.innerHTML=all.map(d=>{
     const [state,cls]=histDiagState(d),cols=(d.columns||[]).slice(0,16).join(', ')||'—',missing=(d.missing||[]).join(', ')||'Ninguno';
@@ -2670,8 +2725,9 @@ function histUploadOne(source,file){
 }
 async function histPollJob(source,fileName,jobId,diag){
   const deadline=Date.now()+30*60*1000;
+  let pollDelay=450,lastProgress=-1;
   while(Date.now()<deadline){
-    await new Promise(r=>setTimeout(r,700));
+    await new Promise(r=>setTimeout(r,pollDelay));
     const r=await fetch(API+'/api/historico/job/'+encodeURIComponent(jobId),{headers:authHeaders()});
     const data=await leerRespuestaApiSegura(r);
     const p=Math.max(20,Math.min(100,Number(data.progress||20)));
@@ -2682,6 +2738,10 @@ async function histPollJob(source,fileName,jobId,diag){
       histFileStatus(source,`${fileName} · ${diag.rowsFound.toLocaleString('es-CL')} filas leídas · ${diag.rowsStored.toLocaleString('es-CL')} registros recuperados`,'busy');
     }
     if(data.done)return {data,diag};
+    const current=Number(data.progress||0);
+    // Si hay progreso, refresca rápido; si permanece igual, evita saturar frontend/API.
+    pollDelay=current!==lastProgress?450:Math.min(1200,pollDelay+150);
+    lastProgress=current;
   }
   throw new Error('El procesamiento excedió el tiempo máximo de espera.');
 }
@@ -2825,7 +2885,13 @@ function renderHistPeriodControls(keep=false){
   const box=document.getElementById('histPeriodoControls');if(!box)return;
   const type=document.getElementById('histPeriodoTipo')?.value||'week',max=histCatalogo.recommendedDate||histCatalogo.maxDate||dateKeyLocal(new Date()),year=max.slice(0,4);
   if(type==='day')box.innerHTML=`<div><label>Fecha</label><input id="histDay" type="date" value="${max}"></div>`;
-  else if(type==='week'){const d=new Date(`${max}T12:00:00`),w=String(isoWeekNumber(d)).padStart(2,'0');box.innerHTML=`<div><label>Semana</label><input id="histWeek" type="week" value="${d.getFullYear()}-W${w}"></div>`;}
+  else if(type==='week'){
+    const weeks=(histCatalogo.availableWeeks||[]).slice().sort((a,b)=>b.key.localeCompare(a.key));
+    const recommended=weeks.find(w=>w.from<=max&&w.to>=max)?.key||weeks.find(w=>w.complete)?.key||weeks[0]?.key||'';
+    box.innerHTML=`<div><label>Semana disponible</label><select id="histWeek">
+      ${weeks.length?weeks.map(w=>`<option value="${w.key}" ${w.key===recommended?'selected':''}>${w.key.replace('-W',' · Semana ')} · ${w.from||'—'} → ${w.to||'—'} · ${w.operators} operadores${w.complete?' · con cruces':''}</option>`).join(''):'<option value="">No hay semanas cargadas</option>'}
+    </select></div>`;
+  }
   else if(type==='month')box.innerHTML=`<div><label>Mes</label><input id="histMonth" type="month" value="${max.slice(0,7)}"></div>`;
   else if(type==='quarter')box.innerHTML=`<div><label>Año</label><input id="histQuarterYear" type="number" value="${year}" min="2020" max="2100"></div><div><label>Trimestre</label><select id="histQuarter"><option value="1">T1</option><option value="2">T2</option><option value="3">T3</option><option value="4">T4</option></select></div>`;
   else if(type==='year')box.innerHTML=`<div><label>Año</label><input id="histYear" type="number" value="${year}" min="2020" max="2100"></div>`;
@@ -2958,14 +3024,27 @@ function renderRankingRows(rows,path,suffix){
 function syncRankingMetricOptions(){const sel=document.getElementById('histRankingMetric');if(!sel)return;const mode=historicoUltimo?.mode||currentHistMode(),opts=mode==='citacion'?[['citacion','Adherencia a Citación'],['atrasoCitacion','Atraso Citación']]:[['turno','Adherencia al Turno'],['tiempoMuerto','Tiempo Muerto'],['atrasoTurno','Atraso Turno']],cur=sel.value;sel.innerHTML=opts.map(([v,t])=>`<option value="${v}">${t}</option>`).join('');if(opts.some(x=>x[0]===cur))sel.value=cur;}
 function renderRankingOperacional(){
   syncRankingMetricOptions();
+  const resolved=historicoUltimo?.operatorRanking;
+  if(resolved){
+    const suffix='%';
+    const path=resolved.metric;
+    const top=resolved.top||[],critical=resolved.critical||[];
+    const status=document.getElementById('histRankingStatus');
+    if(status)status.textContent=resolved.totalEligible
+      ? `${resolved.totalEligible} operadores elegibles · ${resolved.label}`
+      : resolved.reason||'Sin operadores elegibles';
+    document.getElementById('histTopOps').innerHTML=top.length
+      ? renderRankingRows(top,path,suffix)
+      : `<tr><td colspan="5" class="history-empty">${escapeHtml(resolved.reason||'No existen operadores elegibles para este ranking.')}</td></tr>`;
+    document.getElementById('histCriticalOps').innerHTML=critical.length
+      ? renderRankingRows(critical,path,suffix)
+      : `<tr><td colspan="5" class="history-empty">${escapeHtml(resolved.reason||'No existen operadores críticos adicionales sin repetir el Top 10.')}</td></tr>`;
+    return;
+  }
   const metric=document.getElementById('histRankingMetric')?.value||(historicoUltimo?.mode==='citacion'?'citacion':'turno');
   const [best,worst,path,suffix]=rankingArrays(metric),r=historicoUltimo?.rankings||{};
-  const used=new Set(),top=[];
-  for(const x of (r[best]||[])){if(!x?.key||used.has(x.key))continue;used.add(x.key);top.push(x);if(top.length>=10)break;}
-  const critical=[];
-  for(const x of (r[worst]||[])){if(!x?.key||used.has(x.key))continue;used.add(x.key);critical.push(x);if(critical.length>=10)break;}
-  document.getElementById('histTopOps').innerHTML=renderRankingRows(top,path,suffix);
-  document.getElementById('histCriticalOps').innerHTML=renderRankingRows(critical,path,suffix);
+  document.getElementById('histTopOps').innerHTML=renderRankingRows(r[best],path,suffix);
+  document.getElementById('histCriticalOps').innerHTML=renderRankingRows(r[worst],path,suffix);
 }
 function renderPlantRanking(data){
   const mode=data.mode||'logeo',field=mode==='citacion'?'adherenciaCitacion':'adherenciaTurno',label=mode==='citacion'?'Adherencia Citación':'Adherencia Turno';
