@@ -177,7 +177,7 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 @media(max-width:760px){.module-switcher{right:10px;bottom:10px;left:10px;justify-content:center}.module-switcher button{flex:1}.module-tabs{top:4px}}
 
 
-/* v2.8 navegación principal: selector fijo siempre visible */
+/* v3.0 navegación principal: selector fijo siempre visible */
 .module-switcher{position:fixed!important;top:12px!important;right:16px!important;bottom:auto!important;left:auto!important;z-index:99999!important;display:flex!important;align-items:center!important;justify-content:center!important;gap:6px!important;width:auto!important;padding:6px!important;margin:0!important;background:rgba(255,255,255,.98)!important;border:1px solid var(--line)!important;border-radius:12px!important;box-shadow:0 8px 24px rgba(16,42,67,.16)!important;backdrop-filter:blur(8px)!important}
 .module-switcher-label{font-size:9px;font-weight:800;letter-spacing:.5px;color:#607a91;margin:0 3px}
 .module-switcher button{margin:0!important;padding:8px 11px!important;font-size:11px!important;font-weight:800!important;border-radius:8px!important;min-width:0!important;white-space:nowrap!important}
@@ -185,6 +185,20 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 @media(max-width:760px){.module-switcher{top:auto!important;bottom:10px!important;left:10px!important;right:10px!important}.module-switcher-label{display:none}.module-switcher button{flex:1!important}}
 .batch-folder-btn{flex:0 0 auto!important;margin:0!important;padding:7px 10px!important;white-space:nowrap}
 .batch-help{font-size:10px;color:var(--mut);margin:6px 0 0}
+
+
+.hist-load-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:10px;margin:12px 0 14px}
+.hist-source-card{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:10px;background:#fff}
+.hist-source-status{grid-column:1/-1;font-size:10px;color:var(--mut);padding-top:4px;border-top:1px dashed var(--line)}
+.hist-source-status.ok{color:var(--green)} .hist-source-status.err{color:var(--red)} .hist-source-status.busy{color:#b7791f}
+.hist-chart-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:10px}
+.hist-chart-card{border:1px solid var(--line);border-radius:10px;background:#fff;padding:10px;min-height:270px;position:relative}
+.hist-chart-card h3{font-size:12px;margin:0 0 8px;color:var(--text)}
+.hist-chart-card canvas{width:100%!important;height:220px!important}
+.hist-chart-card .chart-empty{display:none;position:absolute;inset:55px 10px 10px;align-items:center;justify-content:center;background:rgba(255,255,255,.9)}
+.hist-heatmap{max-height:220px;overflow:auto;font-size:9px}
+.hist-heatmap table{width:100%;border-collapse:collapse}.hist-heatmap th,.hist-heatmap td{border:1px solid var(--line);padding:3px;text-align:center}
+@media(max-width:900px){.hist-chart-grid{grid-template-columns:1fr}.history-toolbar{grid-template-columns:1fr 1fr!important}}
 
 </style>
 </head>
@@ -225,11 +239,11 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v2.8</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v3.0</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
     <div id="opDateControl" class="pill" style="margin:0">Operación de hoy · <b id="scopeFechaLabel">—</b><input id="scopeFecha" type="hidden"></div>
-    <span id="appVersion" class="pill">v2.8</span><span id="connPill" class="pill">Conectando…</span>
+    <span id="appVersion" class="pill">v3.0</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
 <div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
@@ -245,52 +259,66 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
   </div>
 
   <div id="historicoPanel" class="card" style="display:none">
-    <h2>Trazabilidad histórica <span class="small">(Semana 25 a la semana actual)</span></h2>
-    <p class="small"><b>Fuente exclusiva:</b> snapshots históricos consolidados. Esta vista no lee Turnos, Citaciones ni StatusBreakdown activos. Sus filtros son independientes de Operación Nacional.</p>
+    <h2>Trazabilidad Histórica Enterprise <span class="small">(base histórica independiente)</span></h2>
+    <p class="small"><b>Fuente exclusiva:</b> base consolidada histórica. Esta vista no consulta Turnos, Citaciones ni StatusBreakdown activos de Operación Nacional.</p>
 
-    <div class="history-toolbar" style="grid-template-columns:repeat(4,minmax(150px,1fr))">
+    <div class="hist-load-grid" id="histLoadGrid">
+      <div class="hist-source-card" data-source="status"><div><b>Status Black / Breakdown</b><div class="small">Eventos y estados históricos de flota</div></div><input type="file" id="histFolder_status" webkitdirectory directory multiple accept=".xlsx,.xls,.csv" style="display:none"><button class="secondary" onclick="seleccionarCarpetaHistorica('status')">📁 Cargar carpeta</button><div class="hist-source-status" id="histSource_status">Sin datos</div></div>
+      <div class="hist-source-card" data-source="disponibilidad"><div><b>Disponibilidad</b><div class="small">Disponibilidad por equipo/planta/fecha</div></div><input type="file" id="histFolder_disponibilidad" webkitdirectory directory multiple accept=".xlsx,.xls,.csv" style="display:none"><button class="secondary" onclick="seleccionarCarpetaHistorica('disponibilidad')">📁 Cargar carpeta</button><div class="hist-source-status" id="histSource_disponibilidad">Sin datos</div></div>
+      <div class="hist-source-card" data-source="mantenimiento"><div><b>Mantención</b><div class="small">Ingresos, salidas, causas y horas de taller</div></div><input type="file" id="histFolder_mantenimiento" webkitdirectory directory multiple accept=".xlsx,.xls,.csv" style="display:none"><button class="secondary" onclick="seleccionarCarpetaHistorica('mantenimiento')">📁 Cargar carpeta</button><div class="hist-source-status" id="histSource_mantenimiento">Sin datos</div></div>
+      <div class="hist-source-card" data-source="puntualidad"><div><b>Puntualidad</b><div class="small">Cumplimiento histórico</div></div><input type="file" id="histFolder_puntualidad" webkitdirectory directory multiple accept=".xlsx,.xls,.csv" style="display:none"><button class="secondary" onclick="seleccionarCarpetaHistorica('puntualidad')">📁 Cargar carpeta</button><div class="hist-source-status" id="histSource_puntualidad">Sin datos</div></div>
+      <div class="hist-source-card" data-source="sobreestadia"><div><b>Sobreestadía</b><div class="small">Minutos históricos por planta/cliente</div></div><input type="file" id="histFolder_sobreestadia" webkitdirectory directory multiple accept=".xlsx,.xls,.csv" style="display:none"><button class="secondary" onclick="seleccionarCarpetaHistorica('sobreestadia')">📁 Cargar carpeta</button><div class="hist-source-status" id="histSource_sobreestadia">Sin datos</div></div>
+      <div class="hist-source-card" data-source="operadores"><div><b>Operadores</b><div class="small">Asignaciones y actividad histórica</div></div><input type="file" id="histFolder_operadores" webkitdirectory directory multiple accept=".xlsx,.xls,.csv" style="display:none"><button class="secondary" onclick="seleccionarCarpetaHistorica('operadores')">📁 Cargar carpeta</button><div class="hist-source-status" id="histSource_operadores">Sin datos</div></div>
+      <div class="hist-source-card" data-source="flota"><div><b>Flota</b><div class="small">Patentes, equipos y estados históricos</div></div><input type="file" id="histFolder_flota" webkitdirectory directory multiple accept=".xlsx,.xls,.csv" style="display:none"><button class="secondary" onclick="seleccionarCarpetaHistorica('flota')">📁 Cargar carpeta</button><div class="hist-source-status" id="histSource_flota">Sin datos</div></div>
+      <div class="hist-source-card" data-source="otros"><div><b>Otros históricos</b><div class="small">Fuente adicional configurable</div></div><input type="file" id="histFolder_otros" webkitdirectory directory multiple accept=".xlsx,.xls,.csv" style="display:none"><button class="secondary" onclick="seleccionarCarpetaHistorica('otros')">📁 Cargar carpeta</button><div class="hist-source-status" id="histSource_otros">Sin datos</div></div>
+    </div>
+
+    <div class="history-audit" id="histWarehouseAudit">
+      <div class="kpi-card"><div class="kpi-label">Estado base histórica</div><div class="kpi-valor" id="histBaseEstado">Sin datos</div><div class="kpi-sub">Consolidación independiente</div></div>
+      <div class="kpi-card"><div class="kpi-label">Registros históricos</div><div class="kpi-valor" id="histBaseRegistros">0</div><div class="kpi-sub">Todos los orígenes</div></div>
+      <div class="kpi-card"><div class="kpi-label">Fecha mínima</div><div class="kpi-valor" id="histBaseMin">—</div><div class="kpi-sub">Cobertura consolidada</div></div>
+      <div class="kpi-card"><div class="kpi-label">Fecha máxima</div><div class="kpi-valor" id="histBaseMax">—</div><div class="kpi-sub">Cobertura consolidada</div></div>
+    </div>
+
+    <div class="history-toolbar" style="grid-template-columns:repeat(5,minmax(145px,1fr))">
+      <div><label>Agrupar por</label><select id="histGranularidad"><option value="week" selected>Semana</option><option value="day">Día</option><option value="month">Mes</option><option value="quarter">Trimestre</option><option value="year">Año</option></select></div>
       <div><label>Semana desde</label><select id="histSemanaDesde"></select></div>
       <div><label>Semana hasta</label><select id="histSemanaHasta"></select></div>
-      <div><label>Zona</label><select id="histZona"><option value="">Todas las zonas</option><option value="Norte">Norte</option><option value="Centro">Centro</option><option value="Sur">Sur</option></select></div>
+      <div><label>Zona</label><select id="histZona"><option value="">Todas las zonas</option></select></div>
       <div><button type="button" id="histConsultar" style="width:100%">Actualizar trazabilidad</button></div>
     </div>
 
-    <label style="margin-top:10px">Plantas <span class="small" id="histPlantasResumen">(todas seleccionadas)</span></label>
+    <label style="margin-top:10px">Plantas detectadas <span class="small" id="histPlantasResumen">(sin datos)</span></label>
     <div class="row" style="margin-bottom:6px">
       <button type="button" class="secondary" id="histTodasPlantas">Marcar todas</button>
       <button type="button" class="secondary" id="histNingunaPlanta">Desmarcar todas</button>
       <button type="button" class="secondary" id="histExportar">Exportar histórico CSV</button>
       <span class="small" id="histAlcance" style="align-self:center"></span>
     </div>
-    <div id="histDiagnostico" class="history-note" style="margin:6px 0 10px"></div>
-    <div id="histAudit" class="history-audit">
-      <div class="kpi-card"><div class="kpi-label">Fecha Operación Nacional</div><div class="kpi-valor" id="auditOpFecha">—</div><div class="kpi-sub">Estado independiente</div></div>
-      <div class="kpi-card"><div class="kpi-label">Último Snapshot Histórico</div><div class="kpi-valor" id="auditUltSnapshot">—</div><div class="kpi-sub">Repositorio histórico</div></div>
-      <div class="kpi-card"><div class="kpi-label">Semanas Disponibles</div><div class="kpi-valor" id="auditSemanas">0</div><div class="kpi-sub">Snapshots consolidados</div></div>
-      <div class="kpi-card"><div class="kpi-label">Días Disponibles</div><div class="kpi-valor" id="auditDias">0</div><div class="kpi-sub">Fechas con snapshot</div></div>
-      <div class="kpi-card"><div class="kpi-label">Registros Históricos</div><div class="kpi-valor" id="auditRegistros">0</div><div class="kpi-sub">Snapshots nacionales</div></div>
-    </div>
+    <div id="histDiagnostico" class="history-note"></div>
     <div id="histPlantasLista" class="multiselect-box"></div>
 
-    <div class="rep-header"><span class="rep-titulo">Adherencia general por semana</span><span class="rep-meta">Selección semanal</span></div>
-    <div class="chart-wrap"><canvas id="histChart"></canvas><div id="histChartEmpty" class="history-empty" style="display:none;padding:24px;text-align:center">Sin información disponible para el período seleccionado</div></div>
-
-    <div class="rep-header"><span class="rep-titulo">Acumulados del rango semanal</span></div>
+    <div class="rep-header"><span class="rep-titulo">KPIs históricos</span><span class="rep-meta">Solo base consolidada histórica</span></div>
     <div id="histKpis" class="history-kpis"></div>
 
-    <div class="rep-header"><span class="rep-titulo">Apertura por zonas</span></div>
-    <div id="histZonas" class="history-kpis"></div>
-
-    <div class="rep-header"><span class="rep-titulo">KPIs por planta</span><span class="rep-meta">Responde a Zona + Plantas seleccionadas</span></div>
-    <div class="history-table-wrap">
-      <table class="history-table">
-        <thead><tr>
-          <th>Zona</th><th>Planta</th><th>Programados</th><th>Con logeo</th><th>Asignados</th><th>1ª carga</th><th>Pendientes</th><th>Adherencia</th>
-        </tr></thead>
-        <tbody id="histBody"><tr><td colspan="8" class="history-empty">Aún no se ha consultado el histórico.</td></tr></tbody>
-      </table>
+    <div class="hist-chart-grid">
+      <div class="hist-chart-card"><h3>Disponibilidad histórica</h3><canvas id="histDisponibilidad"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
+      <div class="hist-chart-card"><h3>Puntualidad histórica</h3><canvas id="histPuntualidad"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
+      <div class="hist-chart-card"><h3>Sobreestadía histórica</h3><canvas id="histSobreestadia"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
+      <div class="hist-chart-card"><h3>Ingresos a mantención</h3><canvas id="histMantIngresos"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
+      <div class="hist-chart-card"><h3>Salidas de mantención</h3><canvas id="histMantSalidas"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
+      <div class="hist-chart-card"><h3>Distribución por planta</h3><canvas id="histDistribPlanta"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
+      <div class="hist-chart-card"><h3>Distribución por zona</h3><canvas id="histDistribZona"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
+      <div class="hist-chart-card"><h3>Pareto causas de detención</h3><canvas id="histPareto"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
+      <div class="hist-chart-card"><h3>Heatmap planta / fecha</h3><div id="histHeatmap" class="hist-heatmap"><div class="history-empty">Sin datos</div></div></div>
+      <div class="hist-chart-card"><h3>Equipos con más eventos</h3><canvas id="histTopEquipos"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
+      <div class="hist-chart-card"><h3>Operadores con más asignaciones</h3><canvas id="histTopOperadores"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
+      <div class="hist-chart-card"><h3>Evolución histórica nacional</h3><canvas id="histNacional"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
     </div>
-    <div class="history-note"><b>Regla de separación:</b> Operación Nacional = fotografía activa del día. Trazabilidad Histórica = película construida únicamente desde snapshots guardados. Cargar archivos o cambiar filtros diarios no altera esta vista.</div>
+
+    <div class="rep-header"><span class="rep-titulo">Ranking de plantas</span></div>
+    <div class="history-table-wrap"><table class="history-table"><thead><tr><th>Planta</th><th>Registros</th><th>Disponibilidad</th><th>Puntualidad</th><th>Sobreestadía</th></tr></thead><tbody id="histBody"><tr><td colspan="5" class="history-empty">Cargue una carpeta histórica para comenzar.</td></tr></tbody></table></div>
+    <div class="history-note"><b>Separación obligatoria:</b> Operación Nacional procesa solo archivos del día actual. Trazabilidad procesa exclusivamente carpetas históricas consolidadas en su propia base.</div>
   </div>
 
   <div class="card">
@@ -340,25 +368,25 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
     <h2>Carga de datos <span class="small">(Excel de Turnos, Citaciones y Logeo — se procesa en tu navegador, solo se envían las filas ya leídas)</span></h2>
     <div class="upload-row">
       <label class="filelabel"><span class="status-dot" id="dotTurnos"></span>Turnos (programación)</label>
-      <input type="file" id="fileTurnos" accept=".xlsx,.xls,.csv"><input type="file" id="folderTurnos" accept=".xlsx,.xls,.csv" webkitdirectory directory multiple style="display:none"><button type="button" class="secondary batch-folder-btn" id="btnFolderTurnos">📁 Cargar carpeta</button>
+      <input type="file" id="fileTurnos" accept=".xlsx,.xls,.csv">
       <span class="upload-status" id="statusTurnos">Sin datos</span>
     </div>
     <div id="pickerTurnos"></div>
     <div class="upload-row">
       <label class="filelabel"><span class="status-dot" id="dotCitaciones"></span>Citaciones</label>
-      <input type="file" id="fileCitaciones" accept=".xlsx,.xls,.csv"><input type="file" id="folderCitaciones" accept=".xlsx,.xls,.csv" webkitdirectory directory multiple style="display:none"><button type="button" class="secondary batch-folder-btn" id="btnFolderCitaciones">📁 Cargar carpeta</button>
+      <input type="file" id="fileCitaciones" accept=".xlsx,.xls,.csv">
       <span class="upload-status" id="statusCitaciones">Sin datos</span>
     </div>
     <div id="pickerCitaciones"></div>
     <div class="upload-row">
       <label class="filelabel"><span class="status-dot" id="dotLogeo"></span>Logeo (marcación real)</label>
-      <input type="file" id="fileLogeo" accept=".xlsx,.xls,.csv"><input type="file" id="folderLogeo" accept=".xlsx,.xls,.csv" webkitdirectory directory multiple style="display:none"><button type="button" class="secondary batch-folder-btn" id="btnFolderLogeo">📁 Cargar carpeta</button>
+      <input type="file" id="fileLogeo" accept=".xlsx,.xls,.csv">
       <span class="upload-status" id="statusLogeo">Sin datos</span>
     </div>
     <div id="pickerLogeo"></div>
-    <p class="batch-help">También puedes seleccionar una carpeta por cada fuente. CCO combinará todos los .xls, .xlsx y .csv compatibles de esa carpeta en una sola carga.</p>
+    <p class="batch-help">Operación Nacional acepta únicamente archivos del día actual. Las carpetas históricas se cargan exclusivamente desde Trazabilidad Histórica.</p>
     <button onclick="generarReporte()">Generar reporte ejecutivo</button>
-    <button class="secondary" id="btnSnapshotHistorico" onclick="guardarSnapshotHistorico()">📌 Guardar snapshot histórico</button><span id="snapshotStatus" class="snapshot-status"></span>
+    
     <button class="secondary" onclick="copiarReporte()">Copiar texto</button>
     <button class="wa-btn" onclick="enviarPorCorreo()">📧 Enviar por correo (Outlook)</button>
     <button class="secondary" onclick="descargarImagenReporte()">🖼️ Descargar gráfico (imagen)</button>
@@ -584,7 +612,7 @@ function entrar(){
 }
 
 function cambiarFechaOperacional(){
-  // v2.8: Operación Nacional queda bloqueada al día actual.
+  // v3.0: Operación Nacional queda bloqueada al día actual.
   if(!user) return;
   user.fecha = hoyKey;
   const hidden=document.getElementById('scopeFecha'); if(hidden) hidden.value=hoyKey;
@@ -669,7 +697,7 @@ Object.keys(TIPOS_ARCHIVO).forEach(inputId=>{
 });
 
 
-// v2.8 — Carga masiva optimizada desde carpeta (Chrome / Edge). Cada carpeta debe contener
+// v3.0 — Carga masiva optimizada desde carpeta (Chrome / Edge). Cada carpeta debe contener
 // archivos de la misma fuente: Turnos, Citaciones o StatusBreakdown/Logeo.
 const CARPETAS_ARCHIVO = {
   folderTurnos:{tipo:'turnos', boton:'btnFolderTurnos'},
@@ -1960,211 +1988,191 @@ function descargarImagenReporte(){
 }
 
 
-let historicoUltimo = null;
-let histChart = null;
-let histPlantasSeleccionadas = new Set();
 
-function initModuleTabs(){
-  if(window._ccoTabsInit) return;
-  window._ccoTabsInit = true;
-  const main = document.querySelector('#app main');
-  if(!main) return;
-  [...main.children].forEach(el=>{
-    if(el.id!=='ccoTabs' && el.id!=='historicoPanel') el.classList.add('operation-view');
-  });
+let historicoUltimo=null;
+let histPlantasSeleccionadas=new Set();
+let histCatalogo={plants:[],zones:[],sources:[],plantCatalog:[]};
+const HIST_SOURCE_KEYS=['status','disponibilidad','mantenimiento','puntualidad','sobreestadia','operadores','flota','otros'];
+const histCharts={};
+
+function inicializarModulos(){
+  document.querySelectorAll('main > .card').forEach(el=>{if(el.id!=='historicoPanel')el.classList.add('operation-view');});
   document.getElementById('tabOperacion')?.addEventListener('click',()=>cambiarModulo('operacion'));
   document.getElementById('tabHistorico')?.addEventListener('click',()=>cambiarModulo('historico'));
-  document.getElementById('quickOperacion')?.addEventListener('click',()=>cambiarModulo('operacion', true));
-  document.getElementById('quickHistorico')?.addEventListener('click',()=>cambiarModulo('historico', true));
+  document.getElementById('quickOperacion')?.addEventListener('click',()=>cambiarModulo('operacion',true));
+  document.getElementById('quickHistorico')?.addEventListener('click',()=>cambiarModulo('historico',true));
   document.getElementById('histConsultar')?.addEventListener('click',cargarHistorico);
+  document.getElementById('histGranularidad')?.addEventListener('change',cargarHistorico);
+  document.getElementById('histZona')?.addEventListener('change',()=>{poblarHistPlantas(true);cargarHistorico();});
+  document.getElementById('histTodasPlantas')?.addEventListener('click',()=>{marcarHistPlantas(true);cargarHistorico();});
+  document.getElementById('histNingunaPlanta')?.addEventListener('click',()=>{marcarHistPlantas(false);cargarHistorico();});
   document.getElementById('histExportar')?.addEventListener('click',exportarHistoricoCSV);
-  document.getElementById('histZona')?.addEventListener('change',()=>{ poblarHistPlantas(true); cargarHistorico(); });
-  document.getElementById('histSemanaDesde')?.addEventListener('change',cargarHistorico);
-  document.getElementById('histSemanaHasta')?.addEventListener('change',cargarHistorico);
-  document.getElementById('histTodasPlantas')?.addEventListener('click',()=>{ marcarHistPlantas(true); cargarHistorico(); });
-  document.getElementById('histNingunaPlanta')?.addEventListener('click',()=>{ marcarHistPlantas(false); cargarHistorico(); });
+  HIST_SOURCE_KEYS.forEach(source=>{
+    document.getElementById('histFolder_'+source)?.addEventListener('change',e=>procesarCarpetaHistorica(source,[...(e.target.files||[])]));
+  });
   setHistRangeSemana25();
 }
-
-function cambiarModulo(modulo, desplazar=false){
-  const hist = modulo==='historico';
-  document.querySelectorAll('#app main > .operation-view').forEach(el=>el.style.display=hist?'none':'');
+function cambiarModulo(modulo,scrollTop=false){
+  const hist=modulo==='historico';
+  document.querySelectorAll('.operation-view').forEach(el=>el.style.display=hist?'none':'');
   document.getElementById('historicoPanel').style.display=hist?'block':'none';
-  document.getElementById('tabOperacion').classList.toggle('active',!hist);
-  document.getElementById('tabHistorico').classList.toggle('active',hist);
-  const qOp=document.getElementById('quickOperacion'), qHist=document.getElementById('quickHistorico');
-  const opDateControl=document.getElementById('opDateControl');
-  if(opDateControl) opDateControl.style.display=hist?'none':'';
-  if(qOp){ qOp.classList.toggle('active',!hist); qOp.classList.toggle('secondary',hist); }
-  if(qHist){ qHist.classList.toggle('active',hist); qHist.classList.toggle('secondary',!hist); }
-  if(desplazar) window.scrollTo({top:0,behavior:'smooth'});
-  if(hist){ poblarHistPlantas(false); cargarHistorico(); }
+  document.getElementById('tabOperacion')?.classList.toggle('active',!hist);
+  document.getElementById('tabHistorico')?.classList.toggle('active',hist);
+  document.getElementById('quickOperacion')?.classList.toggle('active',!hist);
+  document.getElementById('quickHistorico')?.classList.toggle('active',hist);
+  if(hist){cargarCatalogoHistorico().then(cargarHistorico);}
+  if(scrollTop) window.scrollTo({top:0,behavior:'smooth'});
 }
-
-function dateKeyLocal(d){
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+function isoWeekNumber(d){
+  const x=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
+  const day=x.getUTCDay()||7;x.setUTCDate(x.getUTCDate()+4-day);
+  const y0=new Date(Date.UTC(x.getUTCFullYear(),0,1));
+  return Math.ceil((((x-y0)/86400000)+1)/7);
 }
-function isoWeekStart(year, week){
-  const jan4 = new Date(year,0,4);
-  const day = jan4.getDay() || 7;
-  const mondayW1 = new Date(year,0,4-(day-1));
-  const d = new Date(mondayW1); d.setDate(mondayW1.getDate()+(week-1)*7); return d;
+function isoWeekStart(year,week){
+  const jan4=new Date(Date.UTC(year,0,4)),dow=jan4.getUTCDay()||7,d=new Date(jan4);
+  d.setUTCDate(jan4.getUTCDate()-dow+1+(week-1)*7);return new Date(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate());
 }
-function isoWeekNumber(date){
-  const d=new Date(Date.UTC(date.getFullYear(),date.getMonth(),date.getDate()));
-  const day=d.getUTCDay()||7; d.setUTCDate(d.getUTCDate()+4-day);
-  const yearStart=new Date(Date.UTC(d.getUTCFullYear(),0,1));
-  return Math.ceil((((d-yearStart)/86400000)+1)/7);
-}
-function isoWeekEnd(year, week){
-  const d=isoWeekStart(year,week); d.setDate(d.getDate()+6); return d;
-}
+function isoWeekEnd(year,week){const d=isoWeekStart(year,week);d.setDate(d.getDate()+6);return d;}
 function poblarSelectoresSemanas(){
-  const year=hoyLocal.getFullYear();
-  const currentWeek=Math.max(25,isoWeekNumber(hoyLocal));
-  const desde=document.getElementById('histSemanaDesde');
-  const hasta=document.getElementById('histSemanaHasta');
-  if(!desde||!hasta) return;
-  const options=[];
-  for(let w=25; w<=currentWeek; w++){
-    const ini=isoWeekStart(year,w), fin=isoWeekEnd(year,w);
-    const iniTxt=ini.toLocaleDateString('es-CL',{day:'2-digit',month:'2-digit'});
-    const finTxt=fin.toLocaleDateString('es-CL',{day:'2-digit',month:'2-digit'});
-    options.push(`<option value="${w}">Semana ${w} · ${iniTxt}–${finTxt}</option>`);
-  }
-  desde.innerHTML=options.join(''); hasta.innerHTML=options.join('');
-  desde.value='25'; hasta.value=String(currentWeek);
+  const year=hoyLocal.getFullYear(),currentWeek=Math.max(25,isoWeekNumber(hoyLocal)),desde=document.getElementById('histSemanaDesde'),hasta=document.getElementById('histSemanaHasta');
+  if(!desde||!hasta)return;
+  const opts=[];for(let w=25;w<=currentWeek;w++){const a=isoWeekStart(year,w),b=isoWeekEnd(year,w);opts.push(`<option value="${w}">Semana ${w} · ${a.toLocaleDateString('es-CL',{day:'2-digit',month:'2-digit'})}–${b.toLocaleDateString('es-CL',{day:'2-digit',month:'2-digit'})}</option>`);}
+  desde.innerHTML=opts.join('');hasta.innerHTML=opts.join('');desde.value='25';hasta.value=String(currentWeek);
 }
-function setHistRangeSemana25(){
-  poblarSelectoresSemanas();
+function setHistRangeSemana25(){poblarSelectoresSemanas();}
+function seleccionarCarpetaHistorica(source){document.getElementById('histFolder_'+source)?.click();}
+function histSourceStatus(source,text,cls=''){const el=document.getElementById('histSource_'+source);if(el){el.textContent=text;el.className='hist-source-status '+cls;}}
+
+function histHojaSugerida(wb){
+  const counts=wb.SheetNames.map(nombre=>({nombre,filas:contarFilasHoja(wb,nombre)})).sort((a,b)=>b.filas-a.filas);
+  return counts[0]?.nombre||wb.SheetNames[0];
+}
+async function procesarCarpetaHistorica(source,files){
+  files=files.filter(f=>/\.(xlsx|xls|csv)$/i.test(f.name));
+  if(!files.length){histSourceStatus(source,'Carpeta sin archivos Excel/CSV compatibles.','err');return;}
+  histSourceStatus(source,`Validando ${files.length} archivo(s)...`,'busy');
+  let totalValidos=0,totalRechazados=0,errores=[],firstBatch=true;
+  for(let i=0;i<files.length;i++){
+    const file=files[i];
+    try{
+      histSourceStatus(source,`Procesando ${i+1}/${files.length}: ${file.name}`,'busy');
+      const wb=XLSX.read(new Uint8Array(await file.arrayBuffer()),{type:'array',cellDates:true});
+      const sheet=histHojaSugerida(wb);if(!sheet)throw new Error('No se encontró hoja legible');
+      const header=detectarFilaHeader(wb,sheet);
+      const rows=XLSX.utils.sheet_to_json(wb.Sheets[sheet],{defval:null,range:header});
+      if(!rows.length)throw new Error('Hoja sin registros');
+      const BATCH=1500;
+      for(let p=0;p<rows.length;p+=BATCH){
+        const batch=rows.slice(p,p+BATCH).map(r=>({...r,__source_file:file.name}));
+        const resp=await fetch(API+'/api/historico/ingesta',{method:'POST',headers:authHeaders(),body:JSON.stringify({source,datos:batch,archivo:file.name,modo:firstBatch?'replace':'append'})});
+        const data=await leerRespuestaApiSegura(resp);
+        totalValidos+=Number(data.cantidad_lote||0);totalRechazados+=Number(data.rechazadas||0);firstBatch=false;
+      }
+    }catch(err){errores.push(`${file.name}: ${err.message||err}`);}
+  }
+  if(!totalValidos){histSourceStatus(source,`Carga fallida. ${errores.slice(0,2).join(' | ')}`,'err');return;}
+  histSourceStatus(source,`${totalValidos.toLocaleString('es-CL')} registros válidos · ${files.length-errores.length}/${files.length} archivos · ${totalRechazados} rechazados${errores.length?' · revisar '+errores.length+' archivo(s)':''}`,'ok');
+  await cargarCatalogoHistorico();await cargarHistorico();
 }
 
+async function cargarCatalogoHistorico(){
+  try{
+    const r=await fetch(API+'/api/historico/fuentes',{headers:authHeaders()});const data=await leerRespuestaApiSegura(r);
+    histCatalogo=data||{plants:[],zones:[],sources:[],plantCatalog:[]}; try{localStorage.setItem('cco_hist_catalog_v3',JSON.stringify({revision:data.revision,totalRecords:data.totalRecords,loadedAt:data.loadedAt,sources:data.sources}));}catch{}
+    const allDates=(data.sources||[]).flatMap(s=>[s.minDate,s.maxDate]).filter(Boolean).sort();
+    document.getElementById('histBaseEstado').textContent=data.totalRecords>0?'Cargada':'Sin datos';
+    document.getElementById('histBaseRegistros').textContent=Number(data.totalRecords||0).toLocaleString('es-CL');
+    document.getElementById('histBaseMin').textContent=allDates[0]||'—';
+    document.getElementById('histBaseMax').textContent=allDates.at(-1)||'—';
+    (data.sources||[]).forEach(s=>{
+      if(Number(s.records||0)>0) histSourceStatus(s.source,`${Number(s.records).toLocaleString('es-CL')} registros · ${s.files?.length||0} archivo(s) · ${s.minDate||'—'} → ${s.maxDate||'—'}`,'ok');
+    });
+    const z=document.getElementById('histZona');if(z){const current=z.value;z.innerHTML='<option value="">Todas las zonas</option>'+(data.zones||[]).map(x=>`<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join('');if([...z.options].some(o=>o.value===current))z.value=current;}
+    poblarHistPlantas(true);
+  }catch(err){document.getElementById('histDiagnostico').textContent='No fue posible leer el catálogo histórico: '+(err.message||err);}
+}
 function plantasHistoricasDisponibles(){
   const zona=document.getElementById('histZona')?.value||'';
-  return (plantasCache||[]).filter(p=>!zona || p.zona===zona).sort((a,b)=>a.nombre.localeCompare(b.nombre));
+  const catalog=Array.isArray(histCatalogo.plantCatalog)?histCatalogo.plantCatalog:[];
+  if(catalog.length) return catalog.filter(x=>!zona||x.zona===zona).map(x=>x.planta).sort((a,b)=>a.localeCompare(b,'es'));
+  return (histCatalogo.plants||[]).slice().sort((a,b)=>a.localeCompare(b,'es'));
 }
 function poblarHistPlantas(reset){
-  const disponibles=plantasHistoricasDisponibles();
-  if(reset || !histPlantasSeleccionadas.size){ histPlantasSeleccionadas=new Set(disponibles.map(p=>p.nombre)); }
-  else histPlantasSeleccionadas=new Set([...histPlantasSeleccionadas].filter(n=>disponibles.some(p=>p.nombre===n)));
-  const box=document.getElementById('histPlantasLista');
-  if(!box) return;
-  box.innerHTML=disponibles.map(p=>`<label><input type="checkbox" value="${escapeHtml(p.nombre)}" ${histPlantasSeleccionadas.has(p.nombre)?'checked':''}> ${escapeHtml(p.nombre)}</label>`).join('');
-  box.querySelectorAll('input[type=checkbox]').forEach(ch=>ch.addEventListener('change',()=>{
-    if(ch.checked) histPlantasSeleccionadas.add(ch.value); else histPlantasSeleccionadas.delete(ch.value);
-    actualizarResumenHistPlantas(); cargarHistorico();
-  }));
+  const available=plantasHistoricasDisponibles();
+  if(reset||!histPlantasSeleccionadas.size)histPlantasSeleccionadas=new Set(available);
+  else histPlantasSeleccionadas=new Set([...histPlantasSeleccionadas].filter(x=>available.includes(x)));
+  const box=document.getElementById('histPlantasLista');if(!box)return;
+  box.innerHTML=available.length?available.map(p=>`<label><input type="checkbox" value="${escapeHtml(p)}" ${histPlantasSeleccionadas.has(p)?'checked':''}> ${escapeHtml(p)}</label>`).join(''):'<span class="small">No se detectaron plantas en la base histórica.</span>';
+  box.querySelectorAll('input').forEach(ch=>ch.addEventListener('change',()=>{ch.checked?histPlantasSeleccionadas.add(ch.value):histPlantasSeleccionadas.delete(ch.value);actualizarResumenHistPlantas();}));
   actualizarResumenHistPlantas();
 }
-function marcarHistPlantas(valor){
-  const disponibles=plantasHistoricasDisponibles();
-  histPlantasSeleccionadas=valor?new Set(disponibles.map(p=>p.nombre)):new Set();
-  document.querySelectorAll('#histPlantasLista input[type=checkbox]').forEach(ch=>ch.checked=valor);
-  actualizarResumenHistPlantas();
-}
-function actualizarResumenHistPlantas(){
-  const total=plantasHistoricasDisponibles().length, sel=histPlantasSeleccionadas.size;
-  const el=document.getElementById('histPlantasResumen');
-  if(el) el.textContent=sel===total?'(todas seleccionadas)':`(${sel} de ${total})`;
-}
+function marcarHistPlantas(v){const a=plantasHistoricasDisponibles();histPlantasSeleccionadas=v?new Set(a):new Set();document.querySelectorAll('#histPlantasLista input').forEach(x=>x.checked=v);actualizarResumenHistPlantas();}
+function actualizarResumenHistPlantas(){const a=plantasHistoricasDisponibles().length,s=histPlantasSeleccionadas.size,el=document.getElementById('histPlantasResumen');if(el)el.textContent=a?(s===a?'(todas seleccionadas)':`(${s} de ${a})`):'(sin datos)';}
 function histDashboardParams(){
-  const p=new URLSearchParams();
-  const year=hoyLocal.getFullYear();
-  const semanaDesde=Number(document.getElementById('histSemanaDesde')?.value||25);
-  const semanaHasta=Number(document.getElementById('histSemanaHasta')?.value||isoWeekNumber(hoyLocal));
-  const desde=dateKeyLocal(isoWeekStart(year,Math.min(semanaDesde,semanaHasta)));
-  const finSemana=isoWeekEnd(year,Math.max(semanaDesde,semanaHasta));
-  const hastaDate=finSemana>hoyLocal?hoyLocal:finSemana;
-  const hasta=dateKeyLocal(hastaDate);
-  const zona=document.getElementById('histZona')?.value||'';
-  p.set('from',desde); p.set('to',hasta); if(zona)p.set('zona',zona);
-  p.set('week_from',String(Math.min(semanaDesde,semanaHasta)));
-  p.set('week_to',String(Math.max(semanaDesde,semanaHasta)));
-  const disponibles=plantasHistoricasDisponibles();
-  if(histPlantasSeleccionadas.size && histPlantasSeleccionadas.size<disponibles.length) p.set('plantas',[...histPlantasSeleccionadas].join(','));
-  if(histPlantasSeleccionadas.size===0) p.set('plantas','__NINGUNA__');
+  const p=new URLSearchParams(),year=hoyLocal.getFullYear(),s1=Number(document.getElementById('histSemanaDesde')?.value||25),s2=Number(document.getElementById('histSemanaHasta')?.value||isoWeekNumber(hoyLocal)),lo=Math.min(s1,s2),hi=Math.max(s1,s2),from=dateKeyLocal(isoWeekStart(year,lo)),end=isoWeekEnd(year,hi),to=dateKeyLocal(end>hoyLocal?hoyLocal:end);
+  p.set('from',from);p.set('to',to);p.set('granularity',document.getElementById('histGranularidad')?.value||'week');
+  const zona=document.getElementById('histZona')?.value||'';if(zona)p.set('zona',zona);
+  const all=plantasHistoricasDisponibles();if(histPlantasSeleccionadas.size&&histPlantasSeleccionadas.size<all.length)p.set('plantas',[...histPlantasSeleccionadas].join(','));
+  if(histPlantasSeleccionadas.size===0&&all.length)p.set('plantas','__NINGUNA__');
   return p;
 }
-function fmtHist(v,suf=''){ return v===null||v===undefined?'—':`${v}${suf}`; }
+function fmtHist(v,suf=''){return v===null||v===undefined||Number.isNaN(v)?'—':`${v}${suf}`;}
 
 async function cargarHistorico(){
-  const body=document.getElementById('histBody');
-  if(!body) return;
-  body.innerHTML='<tr><td colspan="8" class="history-empty">Consultando trazabilidad...</td></tr>';
   try{
-    const r=await fetch(API+'/api/historico/dashboard?'+histDashboardParams().toString(),{headers:authHeaders()});
-    const data=await leerRespuestaApiSegura(r);
-    if(!data || typeof data!=='object') throw new Error('Respuesta histórica inválida');
-    historicoUltimo=data;
-    validarTrazabilidadHistoricaUI(data);
-    validarConsistenciaHistoricaUI(data);
-    const sw1=document.getElementById('histSemanaDesde')?.value||'25'; const sw2=document.getElementById('histSemanaHasta')?.value||sw1;
-    document.getElementById('histAlcance').textContent=`${data.diasConDatos||0} día(s) con snapshot · Semana ${sw1} → Semana ${sw2}`;
+    const r=await fetch(API+'/api/historico/dashboard-enterprise?'+histDashboardParams().toString(),{headers:authHeaders()});const data=await leerRespuestaApiSegura(r);historicoUltimo=data;
     const diag=document.getElementById('histDiagnostico');
-    if(diag){
-      const errores=Array.isArray(data.consistenciaHistorica?.errores)?data.consistenciaHistorica.errores:[];
-      diag.textContent=`Fuente: historicalSnapshots · Validación: ${data.validacionHistorica?.ok?'OK':'ERROR'} · Consistencia: ${data.consistenciaHistorica?.ok?'OK':('Revisar '+errores.length+' registro(s)')}`;
-    }
-    const audit=data.audit||{};
-    const set=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=val??'—';};
-    set('auditOpFecha',user?.fecha||'—');
-    set('auditUltSnapshot',audit.ultimoSnapshotHistorico||'—');
-    set('auditSemanas',audit.semanasDisponibles??0);
-    set('auditDias',audit.diasDisponibles??0);
-    set('auditRegistros',audit.registrosHistoricos??0);
+    if(data.empty){diag.textContent=`NO SE ENCONTRARON DATOS PARA EL PERÍODO SELECCIONADO · Rango ${data.from||'—'} → ${data.to||'—'} · Registros 0 · Fuente historicalWarehouse`;renderHistoricoDashboard(data);return;}
+    diag.textContent=`Base histórica consolidada · ${Number(data.kpis?.totalRegistros||0).toLocaleString('es-CL')} registros · ${data.minDate||'—'} → ${data.maxDate||'—'} · Agrupación ${data.granularity}`;
     renderHistoricoDashboard(data);
-  }catch(err){
-    const diag=document.getElementById('histDiagnostico'); if(diag) diag.textContent='No fue posible consultar la trazabilidad.';
-    body.innerHTML=`<tr><td colspan="8" class="history-empty" style="color:var(--red)">Error al consultar histórico: ${escapeHtml(err.message||String(err))}</td></tr>`;
-  }
+  }catch(err){document.getElementById('histDiagnostico').textContent='Error histórico controlado: '+(err.message||err);}
 }
-
 function renderHistoricoDashboard(data){
-  const a=data.acumulado||{};
-  const histWarn=document.getElementById('histAlcance'); if(histWarn) histWarn.title='Datos obtenidos exclusivamente desde snapshots históricos guardados.';
-  const cards=[
-    ['Adherencia acumulada',fmtHist(a.adherenciaPct,'%'),'Referencia operacional'],
-    ['Programados acumulados',fmtHist(a.programados),'Rango semanal seleccionado'],
-    ['Con logeo acumulado',fmtHist(a.logeados),'Operadores registrados'],
-    ['Asignados acumulados',fmtHist(a.asignados),'Estado ASIGNADO'],
-    ['1ª carga acumulada',fmtHist(a.primeraCarga),'CARGANDO/CARGADO'],
-    ['Pendientes acumulados',fmtHist(a.pendientes),'Sin ingreso registrado'],
+  const k=data.kpis||{},cards=[
+    ['Total registros históricos',fmtHist(k.totalRegistros),'Base consolidada'],['Total camiones históricos',fmtHist(k.totalCamiones),'Equipo/patente únicos'],['Total operadores históricos',fmtHist(k.totalOperadores),'Operadores únicos'],
+    ['Disponibilidad promedio',fmtHist(k.disponibilidadPromedio,'%'),'Promedio registros válidos'],['Puntualidad promedio',fmtHist(k.puntualidadPromedio,'%'),'Promedio registros válidos'],['Sobreestadía promedio',fmtHist(k.sobreestadiaPromedio,' min'),'Promedio registros válidos'],
+    ['Horas mantención',fmtHist(k.horasMantenimiento,' h'),'Acumulado'],['Ingresos mantención',fmtHist(k.frecuenciaMantenimiento),'Frecuencia histórica'],['MTBF',fmtHist(k.mtbfHoras,' h'),'Entre eventos de falla/mantención'],['Tiempo promedio taller',fmtHist(k.tiempoPromedioTallerHoras,' h'),'Solo cuando existe duración'],
   ];
   document.getElementById('histKpis').innerHTML=cards.map(c=>`<div class="kpi-card"><div class="kpi-label">${c[0]}</div><div class="kpi-valor">${c[1]}</div><div class="kpi-sub">${c[2]}</div></div>`).join('');
-
-  document.getElementById('histZonas').innerHTML=(data.zonas||[]).map(z=>`<div class="kpi-card">
-    <div class="kpi-label">Zona ${escapeHtml(z.zona)}</div><div class="kpi-valor">${fmtHist(z.adherenciaPct,'%')}</div>
-    <div class="kpi-sub">Prog. ${z.programados} · Logeo ${z.logeados} · Asig. ${z.asignados} · 1ª carga ${z.primeraCarga}</div>
-  </div>`).join('');
-
-  const plantas=data.plantas||[];
-  document.getElementById('histBody').innerHTML=plantas.length?plantas.map(p=>`<tr>
-    <td>${escapeHtml(p.zona)}</td><td><b>${escapeHtml(p.planta)}</b></td><td>${p.programados}</td><td>${p.logeados}</td><td>${p.asignados}</td><td>${p.primeraCarga}</td><td>${p.pendientes}</td><td><b>${fmtHist(p.adherenciaPct,'%')}</b></td>
-  </tr>`).join(''):'<tr><td colspan="8" class="history-empty">No hay snapshots históricos para los filtros seleccionados. Guarde snapshots desde Operación Nacional para construir la trazabilidad.</td></tr>';
-
-  renderHistChart(data.weekly||[]);
+  const plants=data.rankings?.plantas||[];
+  document.getElementById('histBody').innerHTML=plants.length?plants.map(p=>`<tr><td><b>${escapeHtml(p.nombre)}</b></td><td>${p.registros}</td><td>${fmtHist(p.disponibilidad,'%')}</td><td>${fmtHist(p.puntualidad,'%')}</td><td>${fmtHist(p.sobreestadia,' min')}</td></tr>`).join(''):'<tr><td colspan="5" class="history-empty">NO SE ENCONTRARON DATOS PARA EL PERÍODO SELECCIONADO</td></tr>';
+  renderHistCharts(data);
 }
-
-function renderHistChart(weekly){
-  const ctx=document.getElementById('histChart'); if(!ctx) return;
-  const empty=document.getElementById('histChartEmpty');
-  if(histChart){ histChart.destroy(); histChart=null; }
-  const safeWeekly=Array.isArray(weekly)?weekly.filter(x=>x && x.semana):[];
-  if(!safeWeekly.length){
-    ctx.style.display='none';
-    if(empty) empty.style.display='block';
-    return;
-  }
-  ctx.style.display='block'; if(empty) empty.style.display='none';
-  histChart=new Chart(ctx,{type:'line',data:{labels:safeWeekly.map(x=>x.semana),datasets:[{label:'Adherencia general %',data:safeWeekly.map(x=>x.adherenciaPct),borderWidth:2,tension:.25,pointRadius:3,fill:false}]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%'}}},plugins:{legend:{display:true},tooltip:{callbacks:{label:c=>`Adherencia: ${c.parsed.y ?? '—'}%`}}}}});
+function destroyHistChart(id){if(histCharts[id]){histCharts[id].destroy();delete histCharts[id];}}
+function chartDataOrEmpty(id,labels,values,label,type='line',suffix=''){
+  const canvas=document.getElementById(id);if(!canvas)return;
+  destroyHistChart(id);const card=canvas.closest('.hist-chart-card'),empty=card?.querySelector('.chart-empty');
+  const pairs=(labels||[]).map((l,i)=>({l,v:values?.[i]})).filter(x=>x.v!==null&&x.v!==undefined&&Number.isFinite(Number(x.v)));
+  if(!pairs.length){canvas.style.display='none';if(empty)empty.style.display='flex';return;}
+  canvas.style.display='block';if(empty)empty.style.display='none';
+  histCharts[id]=new Chart(canvas,{type,data:{labels:pairs.map(x=>x.l),datasets:[{label,data:pairs.map(x=>Number(x.v)),borderWidth:2,tension:.2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{tooltip:{callbacks:{label:c=>`${label}: ${c.parsed.y??c.parsed.x}${suffix}`}}},scales:type==='bar'?{x:{beginAtZero:true}}:{y:{beginAtZero:false}}}});
 }
-
+function renderHistCharts(data){
+  const s=data.series||[],labels=s.map(x=>x.periodo);
+  chartDataOrEmpty('histDisponibilidad',labels,s.map(x=>x.disponibilidad),'Disponibilidad','line','%');
+  chartDataOrEmpty('histPuntualidad',labels,s.map(x=>x.puntualidad),'Puntualidad','line','%');
+  chartDataOrEmpty('histSobreestadia',labels,s.map(x=>x.sobreestadia),'Sobreestadía','line',' min');
+  chartDataOrEmpty('histMantIngresos',labels,s.map(x=>x.ingresosMantenimiento),'Ingresos','bar','');
+  chartDataOrEmpty('histMantSalidas',labels,s.map(x=>x.salidasMantenimiento),'Salidas','bar','');
+  const pr=(data.rankings?.plantas||[]).slice(0,15);chartDataOrEmpty('histDistribPlanta',pr.map(x=>x.nombre),pr.map(x=>x.registros),'Registros','bar','');
+  const zr=(data.rankings?.zonas||[]);chartDataOrEmpty('histDistribZona',zr.map(x=>x.nombre),zr.map(x=>x.registros),'Registros','bar','');
+  const pa=(data.pareto||[]).slice(0,15);chartDataOrEmpty('histPareto',pa.map(x=>x.causa),pa.map(x=>x.cantidad),'Eventos','bar','');
+  const eq=data.rankings?.equipos||[];chartDataOrEmpty('histTopEquipos',eq.map(x=>x.equipo),eq.map(x=>x.eventos),'Eventos','bar','');
+  const op=data.rankings?.operadores||[];chartDataOrEmpty('histTopOperadores',op.map(x=>x.operador),op.map(x=>x.asignaciones),'Asignaciones','bar','');
+  chartDataOrEmpty('histNacional',labels,s.map(x=>x.registros),'Registros nacionales','line','');
+  renderHeatmap(data.heatmap||[]);
+}
+function renderHeatmap(rows){
+  const box=document.getElementById('histHeatmap');if(!box)return;
+  if(!rows.length){box.innerHTML='<div class="history-empty">Sin datos</div>';return;}
+  const dates=[...new Set(rows.map(r=>r.fecha))].sort().slice(-20),plants=[...new Set(rows.map(r=>r.planta))].sort().slice(0,20),map=new Map(rows.map(r=>[r.planta+'|'+r.fecha,Number(r.valor)||0])),max=Math.max(1,...map.values());
+  box.innerHTML='<table><thead><tr><th>Planta</th>'+dates.map(d=>`<th>${d.slice(5)}</th>`).join('')+'</tr></thead><tbody>'+plants.map(p=>'<tr><th>'+escapeHtml(p)+'</th>'+dates.map(d=>{const v=map.get(p+'|'+d)||0,op=.08+.82*(v/max);return `<td title="${escapeHtml(p)} · ${d} · ${v} eventos" style="background:rgba(47,128,237,${op})">${v||''}</td>`;}).join('')+'</tr>').join('')+'</tbody></table>';
+}
 function exportarHistoricoCSV(){
-  const rows=historicoUltimo?.plantas||[]; if(!rows.length){alert('No hay histórico para exportar.');return;}
-  const head=['Zona','Planta','Programados acumulados','Con logeo acumulado','Asignados acumulados','Primera carga acumulada','Pendientes acumulados','Adherencia %'];
-  const esc=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
-  const csv=[head,...rows.map(x=>[x.zona,x.planta,x.programados,x.logeados,x.asignados,x.primeraCarga,x.pendientes,x.adherenciaPct])].map(r=>r.map(esc).join(';')).join('\n');
-  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='trazabilidad-cco-semana25.csv'; a.click(); setTimeout(()=>URL.revokeObjectURL(url),500);
+  const rows=historicoUltimo?.rankings?.plantas||[];if(!rows.length){alert('No hay histórico para exportar.');return;}
+  const data=[['Planta','Registros','Disponibilidad','Puntualidad','Sobreestadía'],...rows.map(x=>[x.nombre,x.registros,x.disponibilidad,x.puntualidad,x.sobreestadia])];
+  const csv=data.map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='trazabilidad-historica-cco.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),500);
 }
 
 function roundRect(ctx, x, y, w, h, r){
