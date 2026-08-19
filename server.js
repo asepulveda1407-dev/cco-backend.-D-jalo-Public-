@@ -1520,6 +1520,7 @@ const HIST_QUEUES = {
   turnos:{busy:false,items:[]},
   citaciones:{busy:false,items:[]},
   status:{busy:false,items:[]},
+  tam:{busy:false,items:[]},
 };
 
 const HIST_ETL_HEADER_ALIASES = {
@@ -1532,11 +1533,14 @@ const HIST_ETL_HEADER_ALIASES = {
   fecha:['fecha','date','fecha turno','fecha_turno','fecha programada','fecha_programada','fecha inicio semana','fecha_inicio_semana','hora inicio','hora_inicio'],
   semana:['anosemana','ano_semana','semana','semana iso','semana_iso'],
   estado:['descripcion estado','descripción estado','descripcion_estado','estado','status'],
+  tamIngreso:['a.hora inicio','a hora inicio','a_hora_inicio','hora inicio tam','ingreso tam'],
+  tamSalida:['a. hora fin','a hora fin','a_hora_fin','hora fin tam','salida tam'],
 };
 const HIST_ETL_REQUIRED = {
   turnos:[['operadorId','operador'],['fecha','semana']],
   citaciones:[['operadorId','operador'],['fecha']],
   status:[['operadorId','operador'],['fecha'],['estado']],
+  tam:[['operadorId'],['fecha']],
 };
 function etlCanonicalHeader(v){
   const k=normalizeKey(v);
@@ -1634,7 +1638,7 @@ function etlRecordQuality(rec){
 }
 function etlNormalizeRow(source,row,archivo,rowNumber,diag,statusAccumulator=null){
   const r=normalizeRows([row])[0]||{};
-  const base={source,archivo,rowIndex:rowNumber,fecha:null,planta:'',zona:'',operadorId:'',operadorNombre:'',operadorKey:'',camion:'',turnoMin:null,citacionMin:null,loginMin:null,asignacionMin:null,primeraCargaMin:null,quality:'completo',qualityIssues:[]};
+  const base={source,archivo,rowIndex:rowNumber,fecha:null,planta:'',zona:'',operadorId:'',operadorNombre:'',operadorKey:'',camion:'',turnoMin:null,citacionMin:null,loginMin:null,asignacionMin:null,primeraCargaMin:null,tamIngresoMin:null,tamSalidaMin:null,quality:'completo',qualityIssues:[]};
 
   if(source==='turnos'){
     const id=histPick(r,HIST_FIELD.turnos.operatorId),name=safeText(histPick(r,HIST_FIELD.turnos.operatorName)),key=histOperatorKey(id,name);
@@ -1661,6 +1665,40 @@ function etlNormalizeRow(source,row,archivo,rowNumber,diag,statusAccumulator=nul
       out.push(rec);
     }
     return out;
+  }
+
+
+  if(source==='tam'){
+    // CRUCE TAM: ID de columna A + Fecha.
+    // No se utiliza Nombre Jefe ni Ubicación para identificar operador/planta.
+    const id=histPick(r,HIST_FIELD.tam.operatorId);
+    const operadorId=normalizeId(id);
+    const key=histOperatorKey(id,'');
+    const fecha=parseDateKey(histPick(r,HIST_FIELD.tam.date));
+    const ingreso=histTime(histPick(r,HIST_FIELD.tam.in));
+    const salida=histTime(histPick(r,HIST_FIELD.tam.out));
+
+    if(!key){
+      etlReason(diag,rowNumber,'TAM_ID_COLUMNA_A_VACIO','ID','La columna A (ID) está vacía o no es normalizable.','rejected');
+      return [];
+    }
+    if(!fecha){
+      etlReason(diag,rowNumber,'TAM_FECHA_NO_RECONOCIBLE','FECHA','No se pudo interpretar la fecha TAM.','rejected');
+      return [];
+    }
+
+    const rec={...base,fecha,operadorId,operadorNombre:'',operadorKey:key,tamIngresoMin:ingreso,tamSalidaMin:salida};
+
+    if(ingreso===null){
+      rec.quality='parcial';
+      rec.qualityIssues.push('TAM_INGRESO_NO_RECONOCIBLE');
+      etlReason(diag,rowNumber,'TAM_INGRESO_NO_RECONOCIBLE','A.Hora Inicio','No se pudo interpretar el ingreso TAM; se conserva la fila parcial.','partial');
+    }
+    if(salida===null){
+      rec.quality='parcial';
+      rec.qualityIssues.push('TAM_SALIDA_NO_RECONOCIBLE');
+    }
+    return [rec];
   }
 
   if(source==='citaciones'){
@@ -1701,6 +1739,7 @@ function etlNormalizeRow(source,row,archivo,rowNumber,diag,statusAccumulator=nul
 function etlDedupeKey(r){
   if(r.source==='turnos')return `T|${r.fecha}|${r.operadorKey}|${r.turnoMin??''}`;
   if(r.source==='citaciones')return `C|${r.fecha}|${r.operadorKey}|${r.citacionMin??''}`;
+  if(r.source==='tam')return `M|${r.fecha}|${r.operadorKey}|${r.tamIngresoMin??''}|${r.tamSalidaMin??''}`;
   return `S|${r.fecha}|${r.operadorKey}`;
 }
 function etlChooseBest(candidates,source){
@@ -1740,6 +1779,9 @@ async function etlProcessXlsx(filePath,source,archivo,job,diag){
         if(bestHeader && bestHeader.requiredHits===bestHeader.requiredTotal && bestHeader.score>=250){
           selected=true;diag.sheet=ws.name;diag.headerRow=bestHeader.rowNumber;
           diag.columns=bestHeader.values.map(v=>safeText(v)).filter(Boolean);diag.columnCount=diag.columns.length;
+          if(source==='tam' && normalizeKey(bestHeader.values?.[0])!=='id'){
+            throw new Error('Marcaje TAM inválido: la columna A debe corresponder a ID.');
+          }
           diag.missing=etlMissingHeaderGroups(bestHeader,source);headers=etlHeaders(bestHeader.values);
           etlLog(diag,`Hoja principal detectada: ${ws.name} · encabezado fila ${diag.headerRow}.`);
           etlUpdateJob(job,35,'Estructura validada · procesando registros',diag);
@@ -1825,6 +1867,7 @@ async function etlProcessNonXlsx(filePath,ext,source,archivo,job,diag){
   checkValidationWatchdog(validationWatchdog);
   const best=etlChooseBest(candidates,source);if(!best)throw new Error('No se encontró ninguna hoja/tabla con datos.');
   diag.sheet=best.sheetName;diag.headerRow=best.bestHeader.rowNumber;diag.columns=best.bestHeader.values.map(v=>safeText(v)).filter(Boolean);diag.columnCount=diag.columns.length;diag.missing=etlMissingHeaderGroups(best.bestHeader,source);
+  if(source==='tam' && normalizeKey(best.bestHeader.values?.[0])!=='id')throw new Error('Marcaje TAM inválido: la columna A debe corresponder a ID.');
   etlUpdateJob(job,55,'Procesando registros',diag);
   const headers=etlHeaders(best.bestHeader.values),existing=new Set((historicalWarehouse.records||[]).filter(r=>r.source===source).map(etlDedupeKey)),staged=[],statusAcc=new Map();
   const matrix=best.matrix;
@@ -1955,6 +1998,7 @@ const HISTORICAL_SOURCES = {
   turnos: { label:'Turnos' },
   citaciones: { label:'Citaciones' },
   status: { label:'Status Black / StatusBreakdown' },
+  tam: { label:'Marcaje TAM' },
 };
 
 const HIST_FIELD = {
@@ -1987,6 +2031,13 @@ const HIST_FIELD = {
     state:['descripcion_estado','descripción estado','estado','status'],
     truck:['numero_equipo','número equipo','equipo','camion','mixer'],
     ticket:['n_de_tiquete','n° de tiquete','numero_tiquete','número de tiquete'],
+  },
+  tam: {
+    // Regla corporativa: el identificador es la columna A "ID".
+    operatorId:['id'],
+    date:['fecha'],
+    in:['a.hora inicio','a hora inicio','a_hora_inicio'],
+    out:['a. hora fin','a hora fin','a_hora_fin'],
   }
 };
 
@@ -2171,7 +2222,7 @@ function getHistoricalDailyIndex(){
         fecha:r.fecha,operadorKey:r.operadorKey||histOperatorKey(r.operadorId,r.operadorNombre||r.operador),
         operadorId:r.operadorId||'',operadorNombre:r.operadorNombre||r.operador||'',
         planta:'',zona:'',camion:'',turnoMin:null,citacionMin:null,loginMin:null,
-        asignacionMin:null,primeraCargaMin:null,fuentes:new Set()
+        asignacionMin:null,primeraCargaMin:null,tamIngresoMin:null,tamSalidaMin:null,fuentes:new Set()
       });
     }
     const d=map.get(key);d.fuentes.add(source);
@@ -2190,6 +2241,13 @@ function getHistoricalDailyIndex(){
       if(d.citacionMin===null||r.citacionMin<d.citacionMin)d.citacionMin=r.citacionMin;
       if(!d.planta&&r.planta){d.planta=r.planta;d.zona=r.zona||inferZona(r.planta);}
     }
+
+    if(source==='tam'){
+      if(r.tamIngresoMin!==null&&r.tamIngresoMin!==undefined&&(d.tamIngresoMin===null||r.tamIngresoMin<d.tamIngresoMin))d.tamIngresoMin=r.tamIngresoMin;
+      if(r.tamSalidaMin!==null&&r.tamSalidaMin!==undefined&&(d.tamSalidaMin===null||r.tamSalidaMin>d.tamSalidaMin))d.tamSalidaMin=r.tamSalidaMin;
+      // TAM no asigna planta. Planta proviene de Turnos/Status y diccionario.
+    }
+
     if(source==='status'){
       // v3.6: Status ya viene consolidado por operador/día.
       if(r.loginMin!==null&&r.loginMin!==undefined&&(d.loginMin===null||r.loginMin<d.loginMin))d.loginMin=r.loginMin;
@@ -2250,7 +2308,7 @@ function histMetricsForMode(rows,cfg,mode='logeo'){
 }
 function histMetrics(rows,cfg){
   let tvcN=0,tvcOk=0,tvaN=0,tvaOk=0,atN=0,atOk=0,acN=0,acOk=0;
-  const dead=[],delayCit=[],delayTurn=[];
+  const dead=[],delayCit=[],delayTurn=[],tamVsTurno=[],tamVsLogeo=[],tamVsAsignacion=[];
   for(const r of rows){
     if(r.turnoMin!==null&&r.citacionMin!==null){tvcN++;const d=histMinutesDiff(r.citacionMin,r.turnoMin);if(d!==null&&Math.abs(d)<=cfg.tolTurnCitation)tvcOk++;}
     if(r.turnoMin!==null&&r.asignacionMin!==null){tvaN++;const d=histMinutesDiff(r.asignacionMin,r.turnoMin);if(d!==null&&Math.abs(d)<=cfg.tolAssignment)tvaOk++;}
@@ -2258,6 +2316,9 @@ function histMetrics(rows,cfg){
     if(r.citacionMin!==null&&r.loginMin!==null){acN++;const d=histMinutesDiff(r.loginMin,r.citacionMin);if(d!==null&&Math.abs(d)<=cfg.tolCitation)acOk++;if(d!==null)delayCit.push(Math.max(0,d));}
     const start=cfg.sourceStart==='citacion'?r.citacionMin:r.loginMin;
     if(start!==null&&r.asignacionMin!==null){const d=histMinutesDiff(r.asignacionMin,start);if(d!==null&&d>=0&&d<=720)dead.push(d);}
+    if(r.tamIngresoMin!==null&&r.turnoMin!==null){const d=histMinutesDiff(r.tamIngresoMin,r.turnoMin);if(d!==null)tamVsTurno.push(d);}
+    if(r.tamIngresoMin!==null&&r.loginMin!==null){const d=histMinutesDiff(r.loginMin,r.tamIngresoMin);if(d!==null)tamVsLogeo.push(d);}
+    if(r.tamIngresoMin!==null&&r.asignacionMin!==null){const d=histMinutesDiff(r.asignacionMin,r.tamIngresoMin);if(d!==null&&d>=0&&d<=720)tamVsAsignacion.push(d);}
   }
   const values=[histMetricPct(tvcOk,tvcN),histMetricPct(tvaOk,tvaN),histMetricPct(atOk,atN),histMetricPct(acOk,acN)].filter(v=>v!==null);
   const general=values.length?round1(values.reduce((a,b)=>a+b,0)/values.length):null;
@@ -2271,6 +2332,9 @@ function histMetrics(rows,cfg){
     tiempoMuerto:histStats(dead),
     atrasoCitacion:{...histStats(delayCit),porcentaje:acN?round1(citLate.length/acN*100):null},
     atrasoTurno:{...histStats(delayTurn),porcentaje:atN?round1(turnLate.length/atN*100):null},
+    tamVsTurno:histStats(tamVsTurno),
+    tamVsLogeo:histStats(tamVsLogeo),
+    tamVsAsignacion:histStats(tamVsAsignacion),
     registros:rows.length,
     operadores:new Set(rows.map(r=>r.operadorKey)).size,
     plantas:new Set(rows.map(r=>r.planta).filter(p=>p&&p!=='Sin planta')).size,
@@ -2482,7 +2546,7 @@ app.get('/api/historico/errores/:diagId.xlsx',requireAuth,async(req,res)=>{
 
 function historicalSourceDateSets(){
   const records=Array.isArray(historicalWarehouse?.records)?historicalWarehouse.records:[];
-  const sets={turnos:new Set(),citaciones:new Set(),status:new Set()};
+  const sets={turnos:new Set(),citaciones:new Set(),status:new Set(),tam:new Set()};
   for(const r of records){
     const source=r?.source||r?.fuente;
     if(sets[source]&&r?.fecha)sets[source].add(r.fecha);
@@ -2544,27 +2608,32 @@ function historicalCoverage(query={}){
   const idx=getHistoricalDailyIndex();
   const rows=idx.rows.filter(r=>(!from||r.fecha>=from)&&(!to||r.fecha<=to)&&(!zones.length||zones.includes(r.zona))&&(!plants.length||plants.includes(r.planta))&&(!operators.length||operators.includes(r.operadorKey)));
   const raw=(historicalWarehouse.records||[]).filter(r=>(!from||r.fecha>=from)&&(!to||r.fecha<=to));
-  const sourceRows={turnos:0,citaciones:0,status:0};
+  const sourceRows={turnos:0,citaciones:0,status:0,tam:0};
   for(const r of raw){const s=r.source||r.fuente;if(sourceRows[s]!==undefined)sourceRows[s]++;}
   const withTurn=r=>r.turnoMin!==null&&r.turnoMin!==undefined;
   const withCit=r=>r.citacionMin!==null&&r.citacionMin!==undefined;
   const withLogin=r=>r.loginMin!==null&&r.loginMin!==undefined;
   const withAssign=r=>r.asignacionMin!==null&&r.asignacionMin!==undefined;
+  const withTam=r=>r.tamIngresoMin!==null&&r.tamIngresoMin!==undefined;
   const withStatus=r=>withLogin(r)||withAssign(r)||(r.primeraCargaMin!==null&&r.primeraCargaMin!==undefined);
 
-  const turnDays=rows.filter(withTurn).length,citDays=rows.filter(withCit).length,statusDays=rows.filter(withStatus).length;
+  const turnDays=rows.filter(withTurn).length,citDays=rows.filter(withCit).length,statusDays=rows.filter(withStatus).length,tamDays=rows.filter(withTam).length;
   const turnoCit=rows.filter(r=>withTurn(r)&&withCit(r)).length;
   const turnoStatus=rows.filter(r=>withTurn(r)&&withStatus(r)).length;
   const turnoLogin=rows.filter(r=>withTurn(r)&&withLogin(r)).length;
   const turnoAsign=rows.filter(r=>withTurn(r)&&withAssign(r)).length;
   const citLogin=rows.filter(r=>withCit(r)&&withLogin(r)).length;
   const allThree=rows.filter(r=>withTurn(r)&&withCit(r)&&withStatus(r)).length;
+  const turnoTam=rows.filter(r=>withTurn(r)&&withTam(r)).length;
+  const tamLogin=rows.filter(r=>withTam(r)&&withLogin(r)).length;
+  const tamStatus=rows.filter(r=>withTam(r)&&withStatus(r)).length;
+  const allFour=rows.filter(r=>withTurn(r)&&withCit(r)&&withStatus(r)&&withTam(r)).length;
 
   return {
     from,to,
     sourceRows,
-    operatorDays:{turnos:turnDays,citaciones:citDays,status:statusDays},
-    crosses:{turnoCitacion:turnoCit,turnoStatus,turnoLogin,turnoAsignacion:turnoAsign,citacionLogin:citLogin,tresFuentes:allThree},
+    operatorDays:{turnos:turnDays,citaciones:citDays,status:statusDays,tam:tamDays},
+    crosses:{turnoCitacion:turnoCit,turnoStatus,turnoLogin,turnoAsignacion:turnoAsign,citacionLogin:citLogin,tresFuentes:allThree,turnoTam,tamLogin,tamStatus,cuatroFuentes:allFour},
     unmatched:{
       turnoSinCitacion:Math.max(0,turnDays-turnoCit),
       turnoSinStatus:Math.max(0,turnDays-turnoStatus),
@@ -2574,7 +2643,8 @@ function historicalCoverage(query={}){
       total:new Set(rows.map(r=>r.operadorKey)).size,
       conTurno:new Set(rows.filter(withTurn).map(r=>r.operadorKey)).size,
       conCitacion:new Set(rows.filter(withCit).map(r=>r.operadorKey)).size,
-      conStatus:new Set(rows.filter(withStatus).map(r=>r.operadorKey)).size
+      conStatus:new Set(rows.filter(withStatus).map(r=>r.operadorKey)).size,
+      conTam:new Set(rows.filter(withTam).map(r=>r.operadorKey)).size
     },
     rows:rows.length
   };
@@ -2584,6 +2654,7 @@ function histCrossLabel(r){
   if(r.turnoMin!==null&&r.turnoMin!==undefined)p.push('Turno');
   if(r.citacionMin!==null&&r.citacionMin!==undefined)p.push('Citación');
   if(r.loginMin!==null&&r.loginMin!==undefined||r.asignacionMin!==null&&r.asignacionMin!==undefined||r.primeraCargaMin!==null&&r.primeraCargaMin!==undefined)p.push('Status');
+  if(r.tamIngresoMin!==null&&r.tamIngresoMin!==undefined||r.tamSalidaMin!==null&&r.tamSalidaMin!==undefined)p.push('TAM');
   return p.join(' + ')||'Sin fuente';
 }
 
@@ -3090,7 +3161,7 @@ app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 if (require.main === module && process.env.CCO_TEST_MODE !== '1') {
   server.listen(PORT, () => {
-    console.log(`[CCO][startup] CCO Intelligence v3.9.3 activo en puerto ${PORT}`);
+    console.log(`[CCO][startup] CCO Intelligence v4.0.0 activo en puerto ${PORT}`);
     console.log(`[CCO][startup] Diccionario plantas: ${PLANT_DICTIONARY.plants.length} plantas, ${PLANT_DICTIONARY_LOOKUP.size} alias resolubles, ${Object.keys(PLANT_DICTIONARY.conflicts||{}).length} alias ambiguos`);
     if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producción.');
   });
