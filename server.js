@@ -1513,7 +1513,9 @@ const HIST_JOBS = new Map();
 const HIST_ERROR_REPORTS = new Map();
 const HIST_VALIDATION_TIMEOUT_MS = 10_000; // 10 s sin progreso, no 10 s totales
 const HIST_VALIDATION_STARTUP_TIMEOUT_MS = 60_000; // margen para abrir XLSX grandes
-const HIST_BATCH_SIZE = 100;
+// Lote lógico de procesamiento. 1.000 reduce ~90% de los cambios de contexto
+// frente a la versión anterior (100) sin bloquear el event loop.
+const HIST_BATCH_SIZE = 1000;
 const HIST_QUEUES = {
   turnos:{busy:false,items:[]},
   citaciones:{busy:false,items:[]},
@@ -1831,7 +1833,12 @@ async function etlProcessNonXlsx(filePath,ext,source,archivo,job,diag){
     const meta=etlLooksMeta(vals,headers);if(meta.skip){etlReason(diag,i+1,meta.code,meta.field,meta.reason,'filtered');continue;}
     const recs=etlNormalizeRow(source,etlObject(headers,vals),archivo,i+1,diag,statusAcc);
     for(const rec of recs){const dk=etlDedupeKey(rec);if(existing.has(dk)){diag.duplicates++;continue;}existing.add(dk);if(rec.quality==='parcial')diag.rowsPartial++;staged.push(rec);}
-    if(diag.rowsFound%HIST_BATCH_SIZE===0){diag.blocksProcessed++;etlUpdateJob(job,Math.min(94,55+diag.blocksProcessed),`Procesando bloque ${diag.blocksProcessed} · ${diag.rowsFound} filas`,diag);await yieldEventLoop();}
+    if(diag.rowsFound%HIST_BATCH_SIZE===0){
+      diag.blocksProcessed++;
+      const p=Math.min(94,55+Math.floor(Math.log10(Math.max(diag.rowsFound,10))*10));
+      etlUpdateJob(job,p,`Procesando bloque ${diag.blocksProcessed.toLocaleString('es-CL')} · ${diag.rowsFound.toLocaleString('es-CL')} filas`,diag);
+      await yieldEventLoop();
+    }
   }
   if(source==='status')for(const rec of statusAcc.values()){const dk=etlDedupeKey(rec);if(existing.has(dk)){diag.duplicates++;continue;}existing.add(dk);staged.push(rec);}
   diag.rowsStored=staged.length;historicalWarehouse.records.push(...staged);return staged;
@@ -2482,6 +2489,35 @@ function historicalSourceDateSets(){
   }
   return sets;
 }
+
+function historicalAvailableWeeks(){
+  const idx=getHistoricalDailyIndex(),by=new Map();
+  for(const r of idx.rows){
+    if(!r?.fecha)continue;
+    const key=historicalPeriodKey(r.fecha,'week'); // YYYY-Wxx
+    if(!by.has(key))by.set(key,{
+      key,from:null,to:null,operatorDays:0,operators:new Set(),
+      turnos:0,citaciones:0,status:0,turnoCitacion:0,turnoStatus:0,citacionLogin:0
+    });
+    const x=by.get(key);x.operatorDays++;x.operators.add(r.operadorKey);
+    if(!x.from||r.fecha<x.from)x.from=r.fecha;if(!x.to||r.fecha>x.to)x.to=r.fecha;
+    const hasTurn=r.turnoMin!==null&&r.turnoMin!==undefined;
+    const hasCit=r.citacionMin!==null&&r.citacionMin!==undefined;
+    const hasLogin=r.loginMin!==null&&r.loginMin!==undefined;
+    const hasStatus=hasLogin||(r.asignacionMin!==null&&r.asignacionMin!==undefined)||(r.primeraCargaMin!==null&&r.primeraCargaMin!==undefined);
+    if(hasTurn)x.turnos++;if(hasCit)x.citaciones++;if(hasStatus)x.status++;
+    if(hasTurn&&hasCit)x.turnoCitacion++;
+    if(hasTurn&&hasStatus)x.turnoStatus++;
+    if(hasCit&&hasLogin)x.citacionLogin++;
+  }
+  return [...by.values()].map(x=>({
+    key:x.key,from:x.from,to:x.to,operatorDays:x.operatorDays,operators:x.operators.size,
+    turnos:x.turnos,citaciones:x.citaciones,status:x.status,
+    turnoCitacion:x.turnoCitacion,turnoStatus:x.turnoStatus,citacionLogin:x.citacionLogin,
+    complete:x.turnoCitacion>0||x.turnoStatus>0||x.citacionLogin>0
+  })).sort((a,b)=>a.key.localeCompare(b.key));
+}
+
 function latestCommonHistoricalDate(){
   const sets=historicalSourceDateSets();
   const loaded=Object.entries(sets).filter(([,s])=>s.size>0);
@@ -2564,6 +2600,7 @@ app.get('/api/historico/fuentes',requireAuth,(req,res)=>{
     diagnostics:(historicalWarehouse.diagnostics||[]).slice(0,100),
     recommendedDate:latestCommonHistoricalDate(),
     sourceRanges:historicalSourceRanges(),
+    availableWeeks:historicalAvailableWeeks(),
     plantDictionary:{
       loaded:true,
       source:'config/plant-dictionary.json',
@@ -2584,6 +2621,23 @@ app.get('/api/historico/dashboard-enterprise',requireAuth,(req,res)=>{
     const plants=histGroupMetrics(rows,'planta',cfg,prevRows,mode).sort((a,b)=>(b[primaryMetric]??-1)-(a[primaryMetric]??-1));
     const zones=histGroupMetrics(rows,'zona',cfg,prevRows,mode).sort((a,b)=>(b[primaryMetric]??-1)-(a[primaryMetric]??-1));
     const uniqueOperators=[...new Map(operators.map(o=>[o.key,o])).values()];
+    const rankingMetric=mode==='citacion'?'adherenciaCitacion':'adherenciaTurno';
+    const rankedBase=uniqueOperators.filter(o=>Number.isFinite(Number(o?.[rankingMetric])));
+    const rankedDesc=[...rankedBase].sort((a,b)=>Number(b[rankingMetric])-Number(a[rankingMetric]));
+    const rankedAsc=[...rankedBase].sort((a,b)=>Number(a[rankingMetric])-Number(b[rankingMetric]));
+    const rankingTop=rankedDesc.slice(0,10);
+    const topKeys=new Set(rankingTop.map(x=>x.key));
+    const rankingCritical=rankedAsc.filter(x=>!topKeys.has(x.key)).slice(0,10);
+    const operatorRanking={
+      metric:rankingMetric,
+      label:mode==='citacion'?'Adherencia a Citación':'Adherencia al Turno',
+      totalEligible:rankedBase.length,
+      top:rankingTop,
+      critical:rankingCritical,
+      reason:rankedBase.length?'':(mode==='citacion'
+        ?'No existen operadores con Citación + LOGIN suficientes para calcular adherencia a citación.'
+        :'No existen operadores con Turno + LOGIN suficientes para calcular adherencia al turno.')
+    };
     const rankings={
       mejorTurno:histRank(uniqueOperators,'adherenciaTurno','desc'),mejorCitacion:histRank(uniqueOperators,'adherenciaCitacion','desc'),
       menorTiempoMuerto:histRank(uniqueOperators,'tiempoMuerto.promedio','asc'),menorAtrasoCitacion:histRank(uniqueOperators,'atrasoCitacion.promedio','asc'),menorAtrasoTurno:histRank(uniqueOperators,'atrasoTurno.promedio','asc'),
@@ -2603,7 +2657,7 @@ app.get('/api/historico/dashboard-enterprise',requireAuth,(req,res)=>{
     return res.json({
       ok:true,source:'historicalWarehouse:file-attachments-only',from,to,previousRange:prevRange,granularity,cfg,mode,empty:rows.length===0,
       mensaje:rows.length?'':'NO SE ENCONTRARON DATOS PARA EL PERÍODO SELECCIONADO',
-      metrics,trend,rankings,plants,zones,byPlant,heatmap,findings,coverage,
+      metrics,trend,rankings,operatorRanking,plants,zones,byPlant,heatmap,findings,coverage,
       recommendedDate:latestCommonHistoricalDate(),
       sourceRanges:historicalSourceRanges(),
       detailed:rows.slice(0,5000).map(r=>({...r,crossLabel:histCrossLabel(r)})),totalDetailed:rows.length,
@@ -3036,7 +3090,7 @@ app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 if (require.main === module && process.env.CCO_TEST_MODE !== '1') {
   server.listen(PORT, () => {
-    console.log(`[CCO][startup] CCO Intelligence v3.9.1 activo en puerto ${PORT}`);
+    console.log(`[CCO][startup] CCO Intelligence v3.9.3 activo en puerto ${PORT}`);
     console.log(`[CCO][startup] Diccionario plantas: ${PLANT_DICTIONARY.plants.length} plantas, ${PLANT_DICTIONARY_LOOKUP.size} alias resolubles, ${Object.keys(PLANT_DICTIONARY.conflicts||{}).length} alias ambiguos`);
     if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producción.');
   });
