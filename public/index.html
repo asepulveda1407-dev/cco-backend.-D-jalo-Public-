@@ -274,6 +274,9 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 .hist-cross-good{border-left:4px solid #21a66b}.hist-cross-warn{border-left:4px solid #e2a126}.hist-cross-bad{border-left:4px solid #dc4c5a}
 @media(max-width:1100px){.hist-coverage-grid{grid-template-columns:repeat(3,1fr)}}@media(max-width:700px){.hist-coverage-grid{grid-template-columns:1fr 1fr}}
 
+
+/* v3.9 */
+.hist-ms{position:relative}.hist-ms-btn{width:100%;min-height:38px;border:1px solid #cddff0;background:#fff;border-radius:8px;padding:8px 34px 8px 10px;text-align:left;font-size:10px;color:#244764;position:relative}.hist-ms-btn:after{content:"▾";position:absolute;right:11px;top:10px}.hist-ms.open .hist-ms-btn:after{content:"▴"}.hist-ms-menu{display:none;position:absolute;z-index:50;top:42px;left:0;right:0;background:#fff;border:1px solid #cddff0;border-radius:10px;box-shadow:0 10px 28px rgba(35,74,111,.14);padding:8px;max-height:300px;overflow:auto}.hist-ms.open .hist-ms-menu{display:block}.hist-ms-search{width:100%;margin-bottom:6px}.hist-ms-actions{display:flex;gap:6px;margin-bottom:6px}.hist-ms-actions button{flex:1;padding:6px!important;font-size:9px!important}.hist-ms-option{display:flex;align-items:center;gap:7px;padding:5px;border-radius:6px;font-size:10px}.hist-ms-option:hover{background:#f4f8fc}.hist-ms-option input{width:auto}.hist-mode-segment{display:grid;grid-template-columns:1fr 1fr;border:1px solid #cddff0;border-radius:9px;overflow:hidden;background:#fff}.hist-mode-segment button{border:0!important;border-radius:0!important;background:#fff!important;color:#31516f!important;box-shadow:none!important;padding:10px!important}.hist-mode-segment button.active{background:#2f80ed!important;color:#fff!important}.history-table{table-layout:auto}.history-table td,.history-table th{white-space:normal;overflow-wrap:anywhere;vertical-align:top}.hist-two-col{align-items:start}.hist-two-col>div{min-width:0}.history-table-wrap{overflow-x:auto}.hist-ranking-name{min-width:210px}.hist-ranking-plant{min-width:120px}.hist-ranking-value{min-width:72px}.hist-ranking-delta{min-width:86px}@media(max-width:900px){.hist-two-col{grid-template-columns:1fr}.hist-ranking-name{min-width:180px}}
 </style>
 </head>
 <body>
@@ -313,11 +316,11 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v3.8</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v3.9.1</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
     <div id="opDateControl" class="pill" style="margin:0">Operación de hoy · <b id="scopeFechaLabel">—</b><input id="scopeFecha" type="hidden"></div>
-    <span id="appVersion" class="pill">v3.8</span><span id="connPill" class="pill">Conectando…</span>
+    <span id="appVersion" class="pill">v3.9.1</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
 <div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
@@ -458,12 +461,12 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
     <div class="rep-header"><span class="rep-titulo">Filtros de análisis</span><span class="rep-meta">Nacional → Zona → Planta → Operador</span></div>
     <div class="hist-filter-grid">
-      <div><label>Zona</label><select id="histZona"><option value="">Nacional</option><option value="Norte">Norte</option><option value="Centro">Centro</option><option value="Sur">Sur</option></select></div>
-      <div><label>Planta</label><select id="histPlanta"><option value="">Todas las plantas</option></select></div>
-      <div><label>Operador</label><select id="histOperador"><option value="">Todos los operadores</option></select></div>
+      <div><label>Zona</label><div class="hist-ms" id="histZonaMs"></div></div>
+      <div><label>Planta</label><div class="hist-ms" id="histPlantaMs"></div></div>
+      <div><label>Operador</label><div class="hist-ms" id="histOperadorMs"></div></div>
       <div><label>Período</label><select id="histPeriodoTipo"><option value="day">Día</option><option value="week" selected>Semana</option><option value="month">Mes</option><option value="quarter">Trimestre</option><option value="year">Año</option><option value="custom">Personalizado</option></select></div>
       <div id="histPeriodoControls" class="hist-period-controls"></div>
-      <div><label>Calcular tiempo muerto desde</label><select id="histSourceStart"><option value="logeo" selected>Logeo</option><option value="citacion">Citación</option></select></div>
+      <div><label>Modo de análisis</label><div class="hist-mode-segment" id="histModeSegment"><button type="button" data-mode="logeo" class="active">LOGEO</button><button type="button" data-mode="citacion">CITACIÓN</button></div></div>
     </div>
 
     <details class="hist-params">
@@ -493,7 +496,7 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
     <div class="history-kpis hist-kpi-row" id="histKpiRow2"></div>
 
     <div class="hist-dashboard-grid">
-      <div class="hist-chart-card"><h3>Turno vs Citación</h3><canvas id="histGaugeTurnCitation"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
+      
       <div class="hist-chart-card hist-wide"><h3>Tendencia histórica de adherencia</h3><canvas id="histTrendAdherencia"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
       <div class="hist-chart-card"><h3>Comparativo de Plantas</h3><canvas id="histPlantCompare"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
       <div class="hist-chart-card"><h3>Comparativo Zonal</h3><canvas id="histZoneCompare"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
@@ -505,7 +508,7 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
     <div class="hist-ranking-controls">
       <label>Métrica
         <select id="histRankingMetric">
-          <option value="general">Adherencia General</option>
+          
           <option value="turno">Adherencia al Turno</option>
           <option value="citacion">Adherencia a Citación</option>
           <option value="tiempoMuerto">Tiempo Muerto</option>
@@ -521,7 +524,7 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
     <div class="rep-header"><span class="rep-titulo">Ranking por Planta</span></div>
     <div class="hist-two-col">
-      <div class="history-table-wrap"><table class="history-table"><thead><tr><th>Planta</th><th>Zona</th><th>Índice General</th><th>Turno</th><th>Citación</th><th>Tiempo muerto</th></tr></thead><tbody id="histPlantRanking"></tbody></table></div>
+      <div class="history-table-wrap"><table class="history-table"><thead><tr><th>Planta</th><th>Zona</th><th>Adherencia principal</th><th>Turno</th><th>Citación</th><th>Tiempo muerto</th></tr></thead><tbody id="histPlantRanking"></tbody></table></div>
       <div>
         <label>Detalle de planta</label><select id="histPlantDetail"><option value="">Seleccione planta</option></select>
         <div class="hist-plant-detail" id="histPlantDetailContent"><div class="history-empty">Seleccione una planta.</div></div>
@@ -2784,51 +2787,29 @@ function renderHistFileLists(){
   });
 }
 
+const histSelections={zonas:new Set(),plantas:new Set(),operadores:new Set()};
+function createHistMultiSelect(rootId,items,selected,onChange,placeholder){
+  const root=document.getElementById(rootId);if(!root)return;const list=(items||[]).map(x=>typeof x==='string'?{value:x,label:x}:x),selectedSet=selected||new Set();
+  root.innerHTML=`<button type="button" class="hist-ms-btn">${placeholder}</button><div class="hist-ms-menu"><input class="hist-ms-search" placeholder="Buscar..."><div class="hist-ms-actions"><button type="button" data-act="all" class="secondary">Seleccionar todo</button><button type="button" data-act="clear" class="secondary">Limpiar</button></div><div class="hist-ms-options"></div></div>`;
+  const btn=root.querySelector('.hist-ms-btn'),options=root.querySelector('.hist-ms-options'),search=root.querySelector('.hist-ms-search');
+  const label=()=>btn.textContent=selectedSet.size?`${selectedSet.size} seleccionado(s)`:placeholder;
+  const draw=()=>{const q=(search.value||'').toLowerCase();options.innerHTML=list.filter(x=>String(x.label).toLowerCase().includes(q)).map(x=>`<label class="hist-ms-option"><input type="checkbox" value="${escapeHtml(x.value)}" ${selectedSet.has(x.value)?'checked':''}><span>${escapeHtml(x.label)}</span></label>`).join('');options.querySelectorAll('input').forEach(cb=>cb.onchange=()=>{cb.checked?selectedSet.add(cb.value):selectedSet.delete(cb.value);label();onChange?.();});};
+  btn.onclick=e=>{e.stopPropagation();document.querySelectorAll('.hist-ms.open').forEach(x=>{if(x!==root)x.classList.remove('open')});root.classList.toggle('open')};
+  root.querySelector('[data-act="all"]').onclick=()=>{list.forEach(x=>selectedSet.add(x.value));draw();label();onChange?.()};root.querySelector('[data-act="clear"]').onclick=()=>{selectedSet.clear();draw();label();onChange?.()};search.oninput=draw;draw();label();
+}
+document.addEventListener('click',e=>{if(!e.target.closest('.hist-ms'))document.querySelectorAll('.hist-ms.open').forEach(x=>x.classList.remove('open'))});
+function currentHistMode(){return document.querySelector('#histModeSegment button.active')?.dataset.mode||'logeo';}
+
 function poblarFiltrosHistoricos(){
-  const zona=document.getElementById('histZona')?.value||'',plantSel=document.getElementById('histPlanta'),opSel=document.getElementById('histOperador');
-  const currentPlant=plantSel?.value||'',currentOp=opSel?.value||'';
-  const catalog=histCatalogo.plantCatalog||[];
-  const plants=catalog.filter(x=>!zona||x.zona===zona).map(x=>x.planta).sort((a,b)=>a.localeCompare(b,'es'));
-  if(plantSel){
-    plantSel.innerHTML='<option value="">Todas las plantas</option>'+plants.map(p=>`<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
-    plantSel.value=plants.includes(currentPlant)?currentPlant:'';
-  }
-  const plant=plantSel?.value||'';
-  const ops=(histCatalogo.operators||[]).filter(o=>(!zona||(o.zonas||[]).includes(zona))&&(!plant||(o.plantas||[]).includes(plant)));
-  if(opSel){
-    opSel.innerHTML='<option value="">Todos los operadores</option>'+ops.map(o=>`<option value="${escapeHtml(o.key)}">${escapeHtml(o.nombre||o.id||o.key)}</option>`).join('');
-    opSel.value=ops.some(o=>o.key===currentOp)?currentOp:'';
-  }
+  const catalog=histCatalogo.plantCatalog||[], zoneItems=[...new Set((histCatalogo.zones||[]).filter(Boolean))].sort().map(x=>({value:x,label:x}));
+  const plantItems=catalog.filter(x=>!histSelections.zonas.size||histSelections.zonas.has(x.zona)).map(x=>({value:x.planta,label:x.planta}));
+  const validPlants=new Set(plantItems.map(x=>x.value));for(const p of [...histSelections.plantas])if(!validPlants.has(p))histSelections.plantas.delete(p);
+  const ops=(histCatalogo.operators||[]).filter(o=>(!histSelections.zonas.size||(o.zonas||[]).some(z=>histSelections.zonas.has(z)))&&(!histSelections.plantas.size||(o.plantas||[]).some(p=>histSelections.plantas.has(p)))).map(o=>({value:o.key,label:o.nombre||o.id||o.key}));
+  const validOps=new Set(ops.map(x=>x.value));for(const o of [...histSelections.operadores])if(!validOps.has(o))histSelections.operadores.delete(o);
+  createHistMultiSelect('histZonaMs',zoneItems,histSelections.zonas,()=>{poblarFiltrosHistoricos();cargarHistorico()},'Nacional');
+  createHistMultiSelect('histPlantaMs',plantItems,histSelections.plantas,()=>{poblarFiltrosHistoricos();cargarHistorico()},'Todas las plantas');
+  createHistMultiSelect('histOperadorMs',ops,histSelections.operadores,()=>cargarHistorico(),'Todos los operadores');
 }
-
-function dateKeyLocal(value){
-  const d=value instanceof Date?value:new Date(value);
-  if(!d || Number.isNaN(d.getTime())) return '';
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
-function isoWeekNumber(value){
-  const d=value instanceof Date?new Date(value):new Date(value);
-  if(Number.isNaN(d.getTime())) return null;
-  const x=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
-  const day=x.getUTCDay()||7;
-  x.setUTCDate(x.getUTCDate()+4-day);
-  const yearStart=new Date(Date.UTC(x.getUTCFullYear(),0,1));
-  return Math.ceil((((x-yearStart)/86400000)+1)/7);
-}
-function isoWeekStart(year,week){
-  const jan4=new Date(year,0,4,12,0,0);
-  const dow=jan4.getDay()||7;
-  const monday=new Date(jan4);
-  monday.setDate(jan4.getDate()-dow+1+(Number(week)-1)*7);
-  monday.setHours(12,0,0,0);
-  return monday;
-}
-function isoWeekEnd(year,week){
-  const d=isoWeekStart(year,week);
-  d.setDate(d.getDate()+6);
-  return d;
-}
-
 function histPeriodRange(){
   const type=document.getElementById('histPeriodoTipo')?.value||'week',today=new Date(),min=histCatalogo.minDate||dateKeyLocal(today),max=histCatalogo.recommendedDate||histCatalogo.maxDate||dateKeyLocal(today);
   const q=id=>document.getElementById(id)?.value||'';
@@ -2852,12 +2833,7 @@ function renderHistPeriodControls(keep=false){
   box.querySelectorAll('input,select').forEach(el=>el.addEventListener('change',cargarHistorico));
 }
 function histParams(){
-  const range=histPeriodRange(),p=new URLSearchParams(range);
-  const zona=document.getElementById('histZona')?.value||'',plant=document.getElementById('histPlanta')?.value||'',operator=document.getElementById('histOperador')?.value||'';
-  if(zona)p.set('zona',zona);if(plant)p.set('plantas',plant);if(operator)p.set('operator',operator);
-  p.set('sourceStart',document.getElementById('histSourceStart')?.value||'logeo');
-  [['tolTurnCitation','histTolTurnCitation'],['tolAssignment','histTolAssignment'],['tolTurn','histTolTurn'],['tolCitation','histTolCitation'],['atrasoLeve','histAtrasoLeve'],['atrasoModerado','histAtrasoModerado']].forEach(([k,id])=>p.set(k,document.getElementById(id)?.value||''));
-  return p;
+  const range=histPeriodRange(),p=new URLSearchParams(range);if(histSelections.zonas.size)p.set('zonas',[...histSelections.zonas].join(','));if(histSelections.plantas.size)p.set('plantas',[...histSelections.plantas].join(','));if(histSelections.operadores.size)p.set('operators',[...histSelections.operadores].join(','));p.set('mode',currentHistMode());p.set('sourceStart',currentHistMode()==='citacion'?'citacion':'logeo');[['tolTurnCitation','histTolTurnCitation'],['tolAssignment','histTolAssignment'],['tolTurn','histTolTurn'],['tolCitation','histTolCitation'],['atrasoLeve','histAtrasoLeve'],['atrasoModerado','histAtrasoModerado']].forEach(([k,id])=>p.set(k,document.getElementById(id)?.value||''));return p;
 }
 function hfmt(v,s=''){return v===null||v===undefined||Number.isNaN(Number(v))?'—':`${Number(v).toLocaleString('es-CL',{maximumFractionDigits:1})}${s}`;}
 function htime(min){if(min===null||min===undefined)return '—';const m=((Math.round(min)%1440)+1440)%1440;return `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;}
@@ -2921,75 +2897,93 @@ async function cargarHistorico(){
     renderHistoricoDashboard(data);
   }catch(err){document.getElementById('histDiagnostico').textContent='Error de trazabilidad: '+(err.message||err);}
 }
+function validarDashboardHistorico(data){
+  const issues=[];if(!data)issues.push('Respuesta vacía');if(!data?.metrics)issues.push('KPI no calculados');if(!Array.isArray(data?.trend))issues.push('Tendencia no generada');if(!data?.coverage)issues.push('Cruces no disponibles');
+  const dup=arr=>{const s=new Set();for(const x of arr||[]){if(!x?.key)continue;if(s.has(x.key))return true;s.add(x.key)}return false};
+  for(const [k,v] of Object.entries(data?.rankings||{}))if(Array.isArray(v)&&dup(v))issues.push(`Ranking ${k} contiene duplicados`);
+  for(const p of (data?.byPlant||[])){if(dup(p.mejores)||dup(p.criticos))issues.push(`Ranking de ${p.planta} contiene duplicados internos`);const a=new Set((p.mejores||[]).map(x=>x.key).filter(Boolean));if((p.criticos||[]).some(x=>x?.key&&a.has(x.key)))issues.push(`Operadores repetidos entre Top y Críticos en ${p.planta}`);}
+  return issues;
+}
 function renderHistoricoDashboard(data){
-  const m=data.metrics||{},tm=m.tiempoMuerto||{},ac=m.atrasoCitacion||{},at=m.atrasoTurno||{};
-  document.getElementById('histGeneralClass').textContent=`Índice General: ${hfmt(m.adherenciaGeneral,'%')} · ${m.clasificacionGeneral||'Sin datos'}`;
-  document.getElementById('histKpiRow1').innerHTML=[
-    histMetricCard('Turno vs Citación',hfmt(m.turnVsCitation,'%'),m.turnVsCitation!==null?`${m.turnVsCitationN||0} comparaciones`:histNoDataReason(data,'turnVsCitation')),
-    histMetricCard('Turno vs Asignación',hfmt(m.turnVsAssignment,'%'),m.turnVsAssignment!==null?`${m.turnVsAssignmentN||0} comparaciones`:histNoDataReason(data,'turnVsAssignment')),
-    histMetricCard('Adherencia al Turno',hfmt(m.adherenciaTurno,'%'),m.adherenciaTurno!==null?`${m.adherenciaTurnoN||0} con ingreso real`:histNoDataReason(data,'adherenciaTurno')),
-    histMetricCard('Adherencia a Citación',hfmt(m.adherenciaCitacion,'%'),m.adherenciaCitacion!==null?`${m.adherenciaCitacionN||0} con citación + ingreso`:histNoDataReason(data,'adherenciaCitacion')),
-    histMetricCard('Adherencia General',hfmt(m.adherenciaGeneral,'%'),m.adherenciaGeneral!==null?(m.clasificacionGeneral||''):'Requiere al menos un KPI de adherencia calculable')
-  ].join('');
-  document.getElementById('histKpiRow2').innerHTML=[
-    histMetricCard('Tiempo Muerto',hfmt(tm.promedio,' min'),tm.promedio!==null?`Mediana ${hfmt(tm.mediana,' min')} · P90 ${hfmt(tm.p90,' min')}`:histNoDataReason(data,'tiempoMuerto')),
-    histMetricCard('Atraso Citación',hfmt(ac.promedio,' min'),ac.promedio!==null?`${hfmt(ac.porcentaje,'%')} con atraso`:histNoDataReason(data,'atrasoCitacion')),
-    histMetricCard('Atraso Turno',hfmt(at.promedio,' min'),at.promedio!==null?`${hfmt(at.porcentaje,'%')} con atraso`:histNoDataReason(data,'atrasoTurno')),
-    histMetricCard('Operadores',hfmt(m.operadores),`${m.registros||0} operador/día`),
-    histMetricCard('Plantas',hfmt(m.plantas),'Detectadas automáticamente')
-  ].join('');
-  renderHistChartsV34(data);renderRankingOperacional();renderPlantRanking(data);renderFindings(data);renderDetail(data);
+  const issues=validarDashboardHistorico(data),diag=document.getElementById('histDiagnostico');if(issues.length&&diag)diag.innerHTML=`⚠ <b>Validación:</b> ${issues.map(escapeHtml).join(' · ')}`;
+  const m=data.metrics||{},tm=m.tiempoMuerto||{},ac=m.atrasoCitacion||{},at=m.atrasoTurno||{},mode=data.mode||'logeo';document.getElementById('histGeneralClass').textContent=mode==='citacion'?'Modo CITACIÓN':'Modo LOGEO';
+  if(mode==='logeo')document.getElementById('histKpiRow1').innerHTML=[histMetricCard('Adherencia al Turno',hfmt(m.adherenciaTurno,'%'),m.adherenciaTurno!==null?`${m.adherenciaTurnoN||0} con ingreso real`:histNoDataReason(data,'adherenciaTurno')),histMetricCard('Turno vs Asignación',hfmt(m.turnVsAssignment,'%'),m.turnVsAssignment!==null?`${m.turnVsAssignmentN||0} comparaciones`:histNoDataReason(data,'turnVsAssignment')),histMetricCard('Tiempo Muerto',hfmt(tm.promedio,' min'),tm.promedio!==null?`Mediana ${hfmt(tm.mediana,' min')} · P90 ${hfmt(tm.p90,' min')}`:histNoDataReason(data,'tiempoMuerto')),histMetricCard('Atraso Turno',hfmt(at.promedio,' min'),at.promedio!==null?`${hfmt(at.porcentaje,'%')} con atraso`:histNoDataReason(data,'atrasoTurno')),histMetricCard('Operadores',hfmt(m.operadores),`${m.registros||0} operador/día`)].join('');
+  else document.getElementById('histKpiRow1').innerHTML=[histMetricCard('Adherencia a Citación',hfmt(m.adherenciaCitacion,'%'),m.adherenciaCitacion!==null?`${m.adherenciaCitacionN||0} con citación + ingreso`:histNoDataReason(data,'adherenciaCitacion')),histMetricCard('Turno vs Citación',hfmt(m.turnVsCitation,'%'),m.turnVsCitation!==null?`${m.turnVsCitationN||0} comparaciones`:histNoDataReason(data,'turnVsCitation')),histMetricCard('Atraso Citación',hfmt(ac.promedio,' min'),ac.promedio!==null?`${hfmt(ac.porcentaje,'%')} con atraso`:histNoDataReason(data,'atrasoCitacion')),histMetricCard('Operadores',hfmt(m.operadores),`${m.registros||0} operador/día`),histMetricCard('Plantas',hfmt(m.plantas),'Detectadas automáticamente')].join('');
+  document.getElementById('histKpiRow2').innerHTML='';renderHistChartsV34(data);renderRankingOperacional();renderPlantRanking(data);renderFindings(data);renderDetail(data);
 }
 function destroyHistChart(id){if(histCharts[id]){histCharts[id].destroy();delete histCharts[id];}}
 function histChartEmpty(id,empty){
   const c=document.getElementById(id);if(!c)return false;const e=c.closest('.hist-chart-card')?.querySelector('.chart-empty');
   c.style.display=empty?'none':'block';if(e)e.style.display=empty?'flex':'none';if(empty)destroyHistChart(id);return empty;
 }
+const histValueLabelPlugin={id:'histValueLabels',afterDatasetsDraw(chart){
+  const ctx=chart.ctx,area=chart.chartArea,placed=[];ctx.save();ctx.font='10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+  chart.data.datasets.forEach((ds,di)=>{
+    const meta=chart.getDatasetMeta(di);if(meta.hidden)return;
+    meta.data.forEach((el,i)=>{
+      const raw=ds.data?.[i];if(raw===null||raw===undefined||!Number.isFinite(Number(raw)))return;
+      const text=`${Number(raw).toFixed(1)}${ds.unit||'%'}`,p=el.tooltipPosition(),w=ctx.measureText(text).width+6,h=14;
+      let x=Math.max(area.left+w/2,Math.min(area.right-w/2,p.x)),y=Math.max(area.top+h/2,Math.min(area.bottom-h/2,p.y-12));
+      let box={l:x-w/2,r:x+w/2,t:y-h/2,b:y+h/2},tries=0;
+      while(placed.some(b=>!(box.r<b.l||box.l>b.r||box.b<b.t||box.t>b.b))&&tries<5){y=Math.min(area.bottom-h/2,y+14);box={l:x-w/2,r:x+w/2,t:y-h/2,b:y+h/2};tries++;}
+      placed.push(box);ctx.fillText(text,x,y);
+    });
+  });ctx.restore();
+}};
 function renderHistChartsV34(data){
   const m=data.metrics||{};
-  const gauge=document.getElementById('histGaugeTurnCitation');if(gauge){const v=m.turnVsCitation;if(histChartEmpty('histGaugeTurnCitation',v===null||v===undefined)){}else{destroyHistChart('histGaugeTurnCitation');histCharts.histGaugeTurnCitation=new Chart(gauge,{type:'doughnut',data:{labels:['Cumplimiento','Brecha'],datasets:[{data:[v,100-v],borderWidth:0}]},options:{cutout:'72%',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${c.label}: ${c.raw.toFixed(1)}%`}}}}});}}
   const tr=data.trend||[],labels=tr.map(x=>x.periodo);
-  function line(id,datasets){const valid=datasets.some(ds=>ds.data.some(v=>v!==null&&v!==undefined));if(histChartEmpty(id,!valid))return;destroyHistChart(id);histCharts[id]=new Chart(document.getElementById(id),{type:'line',data:{labels,datasets:datasets.map(ds=>({...ds,borderWidth:2,tension:.2,spanGaps:true}))},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},scales:{y:{beginAtZero:true}},plugins:{tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${hfmt(c.parsed.y,c.dataset.unit||'')}`}}}}});}
-  line('histTrendAdherencia',[
-    {label:'Turno vs Citación',data:tr.map(x=>x.turnVsCitation),unit:'%'},{label:'Turno vs Asignación',data:tr.map(x=>x.turnVsAssignment),unit:'%'},
-    {label:'Adherencia Turno',data:tr.map(x=>x.adherenciaTurno),unit:'%'},{label:'Adherencia Citación',data:tr.map(x=>x.adherenciaCitacion),unit:'%'},{label:'Índice General',data:tr.map(x=>x.adherenciaGeneral),unit:'%'}
-  ]);
-  line('histDelayTrend',[{label:'Tiempo muerto',data:tr.map(x=>x.tiempoMuerto?.promedio),unit:' min'},{label:'Atraso Citación',data:tr.map(x=>x.atrasoCitacion?.promedio),unit:' min'},{label:'Atraso Turno',data:tr.map(x=>x.atrasoTurno?.promedio),unit:' min'}]);
-  function bars(id,rows,label){if(histChartEmpty(id,!rows.length))return;destroyHistChart(id);histCharts[id]=new Chart(document.getElementById(id),{type:'bar',data:{labels:rows.map(x=>x.name),datasets:[{label,data:rows.map(x=>x.adherenciaGeneral)}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',scales:{x:{beginAtZero:true,max:100}},plugins:{tooltip:{callbacks:{label:c=>`${label}: ${hfmt(c.parsed.x,'%')}`}}}}});}
-  bars('histPlantCompare',(data.plants||[]).filter(x=>x.adherenciaGeneral!==null).slice(0,15),'Índice General');
-  bars('histZoneCompare',(data.zones||[]).filter(x=>x.adherenciaGeneral!==null),'Índice General');
-  renderHeatmapV34(data.heatmap||[]);
+  function line(id,datasets){const valid=datasets.some(ds=>ds.data.some(v=>v!==null&&v!==undefined));if(histChartEmpty(id,!valid))return;destroyHistChart(id);histCharts[id]=new Chart(document.getElementById(id),{type:'line',data:{labels,datasets:datasets.map(ds=>({...ds,borderWidth:2,tension:.2,spanGaps:true}))},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},scales:{y:{beginAtZero:true}},plugins:{tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${hfmt(c.parsed.y,c.dataset.unit||'')}`}}}},plugins:[histValueLabelPlugin]});}
+  const mode=data.mode||'logeo';
+  const trendTitle=document.querySelector('#histTrendAdherencia')?.closest('.hist-chart-card')?.querySelector('h3');if(trendTitle)trendTitle.textContent=mode==='citacion'?'Tendencia histórica · Adherencia a la Citación':'Tendencia histórica · Adherencia al Turno';
+  const plantTitle=document.querySelector('#histPlantCompare')?.closest('.hist-chart-card')?.querySelector('h3');if(plantTitle)plantTitle.textContent=mode==='citacion'?'Comparativo de Plantas · Adherencia a la Citación':'Comparativo de Plantas · Adherencia al Turno';
+  const zoneTitle=document.querySelector('#histZoneCompare')?.closest('.hist-chart-card')?.querySelector('h3');if(zoneTitle)zoneTitle.textContent=mode==='citacion'?'Comparativo Zonal · Adherencia a la Citación':'Comparativo Zonal · Adherencia al Turno';
+  line('histTrendAdherencia',mode==='citacion'?[{label:'Adherencia a la Citación',data:tr.map(x=>x.adherenciaCitacion),unit:'%'}]:[{label:'Adherencia al Turno',data:tr.map(x=>x.adherenciaTurno),unit:'%'}]);
+  if(mode==='logeo')line('histDelayTrend',[{label:'Tiempo muerto',data:tr.map(x=>x.tiempoMuerto?.promedio),unit:' min'},{label:'Atraso Turno',data:tr.map(x=>x.atrasoTurno?.promedio),unit:' min'}]);else line('histDelayTrend',[{label:'Atraso Citación',data:tr.map(x=>x.atrasoCitacion?.promedio),unit:' min'}]);
+  function bars(id,rows,label,field){if(histChartEmpty(id,!rows.length))return;destroyHistChart(id);histCharts[id]=new Chart(document.getElementById(id),{type:'bar',data:{labels:rows.map(x=>x.name),datasets:[{label,data:rows.map(x=>x[field])}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',scales:{x:{beginAtZero:true,max:100}},plugins:{tooltip:{callbacks:{label:c=>`${label}: ${hfmt(c.parsed.x,'%')}`}}}},plugins:[histValueLabelPlugin]});}
+  const field=mode==='citacion'?'adherenciaCitacion':'adherenciaTurno',label=mode==='citacion'?'Adherencia a la Citación':'Adherencia al Turno';
+  bars('histPlantCompare',(data.plants||[]).filter(x=>x[field]!==null).slice(0,15),label,field);bars('histZoneCompare',(data.zones||[]).filter(x=>x[field]!==null),label,field);
+  if(mode==='logeo')renderHeatmapV34(data.heatmap||[]); else{const box=document.getElementById('histHeatmap');if(box)box.innerHTML='<div class="history-empty">Oculto en modo CITACIÓN para evitar mezclar métricas de Logeo/Turno.</div>';}
 }
 function renderHeatmapV34(rows){
   const box=document.getElementById('histHeatmap');if(!box)return;if(!rows.length){box.innerHTML='<div class="history-empty">Sin datos</div>';return;}
   const dates=[...new Set(rows.map(r=>r.fecha))].sort().slice(-24),plants=[...new Set(rows.map(r=>r.planta))].sort().slice(0,24),map=new Map(rows.map(r=>[r.planta+'|'+r.fecha,Number(r.valor)||0])),max=Math.max(1,...map.values());
   box.innerHTML='<table><thead><tr><th>Planta</th>'+dates.map(d=>`<th>${d.slice(5)}</th>`).join('')+'</tr></thead><tbody>'+plants.map(p=>'<tr><th>'+escapeHtml(p)+'</th>'+dates.map(d=>{const v=map.get(p+'|'+d);if(v===undefined)return '<td></td>';const op=.12+.78*(v/max);return `<td title="${escapeHtml(p)} · ${d} · atraso ${v} min" style="background:rgba(47,128,237,${op})">${Math.round(v)}</td>`;}).join('')+'</tr>').join('')+'</tbody></table>';
 }
-function rankingArrays(metric){
-  const r=historicoUltimo?.rankings||{};
-  const map={general:['mejorGeneral','critGeneral','adherenciaGeneral','%'],turno:['mejorTurno','critAdherenciaTurno','adherenciaTurno','%'],citacion:['mejorCitacion','critAdherenciaCitacion','adherenciaCitacion','%'],tiempoMuerto:['menorTiempoMuerto','critTiempoMuerto','tiempoMuerto.promedio',' min'],atrasoCitacion:['menorAtrasoCitacion','critAtrasoCitacion','atrasoCitacion.promedio',' min'],atrasoTurno:['menorAtrasoTurno','critAtrasoTurno','atrasoTurno.promedio',' min']};
-  return map[metric]||map.general;
-}
-function nested(o,path){return path.split('.').reduce((v,p)=>v?.[p],o);}
+function rankingArrays(metric){const mode=historicoUltimo?.mode||'logeo',logeo={turno:['mejorTurno','critAdherenciaTurno','adherenciaTurno','%'],tiempoMuerto:['menorTiempoMuerto','critTiempoMuerto','tiempoMuerto.promedio',' min'],atrasoTurno:['menorAtrasoTurno','critAtrasoTurno','atrasoTurno.promedio',' min']},cit={citacion:['mejorCitacion','critAdherenciaCitacion','adherenciaCitacion','%'],atrasoCitacion:['menorAtrasoCitacion','critAtrasoCitacion','atrasoCitacion.promedio',' min']},map=mode==='citacion'?cit:logeo;return map[metric]||Object.values(map)[0];}
 function renderRankingRows(rows,path,suffix){
   if(!rows?.length)return '<tr><td colspan="5" class="history-empty">No hay operadores con datos completos para esta métrica.</td></tr>';
-  return rows.map((x,i)=>`<tr><td>${i+1}</td><td><b>${escapeHtml(x.operador)}</b><div class="small">${escapeHtml(x.operadorId||'')}</div></td><td>${escapeHtml(x.planta||'—')}</td><td>${hfmt(nested(x,path),suffix)}</td><td>${x.variacionGeneral===null?'—':`${x.variacionGeneral>0?'+':''}${x.variacionGeneral} pp`}</td></tr>`).join('');
+  return rows.map((x,i)=>`<tr><td>${i+1}</td><td class="hist-ranking-name"><b>${escapeHtml(x.operador)}</b><div class="small">${escapeHtml(x.operadorId||'')}</div></td><td class="hist-ranking-plant">${escapeHtml(x.planta||'—')}</td><td class="hist-ranking-value">${hfmt(nested(x,path),suffix)}</td><td class="hist-ranking-delta">${x.variacionGeneral===null?'—':`${x.variacionGeneral>0?'+':''}${x.variacionGeneral} pp`}</td></tr>`).join('');
 }
+function syncRankingMetricOptions(){const sel=document.getElementById('histRankingMetric');if(!sel)return;const mode=historicoUltimo?.mode||currentHistMode(),opts=mode==='citacion'?[['citacion','Adherencia a Citación'],['atrasoCitacion','Atraso Citación']]:[['turno','Adherencia al Turno'],['tiempoMuerto','Tiempo Muerto'],['atrasoTurno','Atraso Turno']],cur=sel.value;sel.innerHTML=opts.map(([v,t])=>`<option value="${v}">${t}</option>`).join('');if(opts.some(x=>x[0]===cur))sel.value=cur;}
 function renderRankingOperacional(){
-  const metric=document.getElementById('histRankingMetric')?.value||'general',[best,worst,path,suffix]=rankingArrays(metric),r=historicoUltimo?.rankings||{};
-  document.getElementById('histTopOps').innerHTML=renderRankingRows(r[best],path,suffix);
-  document.getElementById('histCriticalOps').innerHTML=renderRankingRows(r[worst],path,suffix);
+  syncRankingMetricOptions();
+  const metric=document.getElementById('histRankingMetric')?.value||(historicoUltimo?.mode==='citacion'?'citacion':'turno');
+  const [best,worst,path,suffix]=rankingArrays(metric),r=historicoUltimo?.rankings||{};
+  const used=new Set(),top=[];
+  for(const x of (r[best]||[])){if(!x?.key||used.has(x.key))continue;used.add(x.key);top.push(x);if(top.length>=10)break;}
+  const critical=[];
+  for(const x of (r[worst]||[])){if(!x?.key||used.has(x.key))continue;used.add(x.key);critical.push(x);if(critical.length>=10)break;}
+  document.getElementById('histTopOps').innerHTML=renderRankingRows(top,path,suffix);
+  document.getElementById('histCriticalOps').innerHTML=renderRankingRows(critical,path,suffix);
 }
 function renderPlantRanking(data){
-  const rows=(data.plants||[]).filter(x=>x.adherenciaGeneral!==null||x.adherenciaTurno!==null||x.adherenciaCitacion!==null||x.tiempoMuerto?.promedio!==null);
-  document.getElementById('histPlantRanking').innerHTML=rows.length?rows.map(x=>`<tr><td><b>${escapeHtml(x.name)}</b></td><td>${escapeHtml((data.byPlant||[]).find(p=>p.planta===x.name)?.zona||'')}</td><td>${hfmt(x.adherenciaGeneral,'%')}</td><td>${hfmt(x.adherenciaTurno,'%')}</td><td>${hfmt(x.adherenciaCitacion,'%')}</td><td>${hfmt(x.tiempoMuerto?.promedio,' min')}</td></tr>`).join(''):'<tr><td colspan="6" class="history-empty">No existen cruces suficientes por planta para calcular rankings en este período.</td></tr>';
-  const sel=document.getElementById('histPlantDetail'),current=sel.value;sel.innerHTML='<option value="">Seleccione planta</option>'+(data.byPlant||[]).map(x=>`<option value="${escapeHtml(x.planta)}">${escapeHtml(x.planta)}</option>`).join('');if([...sel.options].some(o=>o.value===current))sel.value=current;renderPlantDetail();
+  const mode=data.mode||'logeo',field=mode==='citacion'?'adherenciaCitacion':'adherenciaTurno',label=mode==='citacion'?'Adherencia Citación':'Adherencia Turno';
+  const rows=(data.plants||[]).filter(x=>x[field]!==null&&x[field]!==undefined);
+  const table=document.getElementById('histPlantRanking')?.closest('table');
+  if(table)table.querySelector('thead').innerHTML=`<tr><th>Planta</th><th>Zona</th><th>${label}</th><th>Operadores</th></tr>`;
+  document.getElementById('histPlantRanking').innerHTML=rows.length
+    ? rows.map(x=>`<tr><td><b>${escapeHtml(x.name)}</b></td><td>${escapeHtml((data.byPlant||[]).find(p=>p.planta===x.name)?.zona||'')}</td><td>${hfmt(x[field],'%')}</td><td>${Number(x.operadores||0).toLocaleString('es-CL')}</td></tr>`).join('')
+    : '<tr><td colspan="4" class="history-empty">No existen cruces suficientes por planta para calcular el ranking en este período.</td></tr>';
+  const sel=document.getElementById('histPlantDetail'),current=sel.value;
+  sel.innerHTML='<option value="">Seleccione planta</option>'+(data.byPlant||[]).map(x=>`<option value="${escapeHtml(x.planta)}">${escapeHtml(x.planta)}</option>`).join('');
+  if([...sel.options].some(o=>o.value===current))sel.value=current;
+  renderPlantDetail();
 }
 function renderPlantDetail(){
   const p=document.getElementById('histPlantDetail')?.value||'',box=document.getElementById('histPlantDetailContent');if(!p){box.innerHTML='<div class="history-empty">Seleccione una planta.</div>';return;}
   const d=(historicoUltimo?.byPlant||[]).find(x=>x.planta===p);if(!d){box.innerHTML='<div class="history-empty">Sin datos</div>';return;}
-  const list=(arr,title)=>`<h4>${title}</h4>`+(arr?.length?`<ol>${arr.map(x=>`<li>${escapeHtml(x.operador)} · ${hfmt(x.adherenciaGeneral,'%')}</li>`).join('')}</ol>`:'<div class="small">Sin operadores con datos completos.</div>');
-  box.innerHTML=list(d.mejores,'Top 10 mejores')+list(d.criticos,'Top 10 críticos');
+  const metric=d.rankMetric||((historicoUltimo?.mode||'logeo')==='citacion'?'adherenciaCitacion':'adherenciaTurno'),used=new Set(),best=[],crit=[];for(const x of d.mejores||[]){if(used.has(x.key))continue;used.add(x.key);best.push(x);if(best.length>=10)break}for(const x of d.criticos||[]){if(used.has(x.key))continue;used.add(x.key);crit.push(x);if(crit.length>=10)break}const list=(arr,title)=>`<h4>${title}</h4>`+(arr?.length?`<ol>${arr.map(x=>`<li>${escapeHtml(x.operador)} · ${hfmt(x[metric],'%')}</li>`).join('')}</ol>`:'<div class="small">Sin operadores con datos completos.</div>');box.innerHTML=list(best,'Top 10 mejores')+list(crit,'Top 10 críticos');
 }
 function renderFindings(data){
   document.getElementById('histInsights').innerHTML=(data.findings?.insights||[]).map(x=>`<li>${escapeHtml(x)}</li>`).join('');
@@ -3011,9 +3005,8 @@ function initHistIntelligence(){
   document.getElementById('histConsultar')?.addEventListener('click',cargarHistorico);
   document.getElementById('histExportar')?.addEventListener('click',exportarHistoricoCSV);
   document.getElementById('histPeriodoTipo')?.addEventListener('change',()=>{renderHistPeriodControls();cargarHistorico();});
-  document.getElementById('histZona')?.addEventListener('change',()=>{poblarFiltrosHistoricos();cargarHistorico();});
-  document.getElementById('histPlanta')?.addEventListener('change',()=>{poblarFiltrosHistoricos();cargarHistorico();});
-  ['histOperador','histSourceStart','histTolTurnCitation','histTolAssignment','histTolTurn','histTolCitation','histAtrasoLeve','histAtrasoModerado'].forEach(id=>document.getElementById(id)?.addEventListener('change',cargarHistorico));
+  document.querySelectorAll('#histModeSegment button').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('#histModeSegment button').forEach(x=>x.classList.toggle('active',x===btn));syncRankingMetricOptions();cargarHistorico();}));
+  ['histTolTurnCitation','histTolAssignment','histTolTurn','histTolCitation','histAtrasoLeve','histAtrasoModerado'].forEach(id=>document.getElementById(id)?.addEventListener('change',cargarHistorico));
   document.getElementById('histRankingMetric')?.addEventListener('change',renderRankingOperacional);
   document.getElementById('histPlantDetail')?.addEventListener('change',renderPlantDetail);
   renderHistPeriodControls();
