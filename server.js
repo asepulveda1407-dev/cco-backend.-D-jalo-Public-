@@ -1511,7 +1511,8 @@ const historicalUpload = multer({
 });
 const HIST_JOBS = new Map();
 const HIST_ERROR_REPORTS = new Map();
-const HIST_VALIDATION_TIMEOUT_MS = 10_000;
+const HIST_VALIDATION_TIMEOUT_MS = 10_000; // 10 s sin progreso, no 10 s totales
+const HIST_VALIDATION_STARTUP_TIMEOUT_MS = 60_000; // margen para abrir XLSX grandes
 const HIST_BATCH_SIZE = 100;
 const HIST_QUEUES = {
   turnos:{busy:false,items:[]},
@@ -1646,8 +1647,15 @@ function etlNormalizeRow(source,row,archivo,rowNumber,diag,statusAccumulator=nul
     for(let i=0;i<7;i++){
       const fecha=histDateAdd(start,i);if(!fecha||(end&&fecha>end))break;
       const dow=new Date(`${fecha}T12:00:00`).getDay();if(dow===0||dow===6)continue;
-      const rec={...base,fecha,planta,zona:plant?inferZona(plant):'',operadorId:normalizeId(id),operadorNombre:name,operadorKey:key,turnoMin:shift};
-      if(shift===null){rec.quality='parcial';rec.qualityIssues.push('HORA_TURNO_NO_RECONOCIBLE');}
+      const rec={...base,fecha,planta:plant,zona:plant?inferZona(plant):'',operadorId:normalizeId(id),operadorNombre:name,operadorKey:key,turnoMin:shift};
+      if(shift===null){
+        rec.quality='parcial';rec.qualityIssues.push('HORA_TURNO_NO_RECONOCIBLE');
+        etlReason(diag,rowNumber,'HORA_TURNO_NO_RECONOCIBLE','HORA_TURNO','La hora de turno no pudo normalizarse; se conserva el registro parcial.','partial');
+      }
+      if(!plant){
+        rec.quality='parcial';rec.qualityIssues.push('PLANTA_NO_HOMOLOGADA');
+        etlReason(diag,rowNumber,'PLANTA_NO_HOMOLOGADA','PLANTA','La planta no pudo homologarse con el diccionario; se conserva para KPI nacional/operador.','partial');
+      }
       out.push(rec);
     }
     return out;
@@ -1659,9 +1667,13 @@ function etlNormalizeRow(source,row,archivo,rowNumber,diag,statusAccumulator=nul
     const plant=histResolvePlant(histPick(r,HIST_FIELD.citaciones.plant));
     if(!key){etlReason(diag,rowNumber,'OPERADOR_NO_IDENTIFICABLE','OPERADOR','No se encontró ID ni nombre de operador','rejected');return [];}
     if(!fecha){etlReason(diag,rowNumber,'FECHA_NO_RECONOCIBLE','FECHA','Formato de fecha no reconocible','rejected');return [];}
-    const rec={...base,fecha,planta,zona:plant?inferZona(plant):'',operadorId:normalizeId(id),operadorNombre:name,operadorKey:key,citacionMin:citation,camion:normalizePlate(histPick(r,HIST_FIELD.citaciones.truck))||safeText(histPick(r,HIST_FIELD.citaciones.truck))};
+    const rec={...base,fecha,planta:plant,zona:plant?inferZona(plant):'',operadorId:normalizeId(id),operadorNombre:name,operadorKey:key,citacionMin:citation,camion:normalizePlate(histPick(r,HIST_FIELD.citaciones.truck))||safeText(histPick(r,HIST_FIELD.citaciones.truck))};
     if(citation===null){rec.quality='parcial';rec.qualityIssues.push('HORA_CITACION_NO_RECONOCIBLE');}
-    if(!plant){rec.quality='parcial';rec.qualityIssues.push('PLANTA_NO_INFORMADA');}
+    if(!plant){
+      rec.quality='parcial';
+      rec.qualityIssues.push('PLANTA_NO_INFORMADA');
+      etlReason(diag,rowNumber,'PLANTA_NO_INFORMADA','PLANTA','El archivo no contiene planta para esta fila; se conserva para KPI nacional/operador.','partial');
+    }
     return [rec];
   }
 
@@ -1676,7 +1688,7 @@ function etlNormalizeRow(source,row,archivo,rowNumber,diag,statusAccumulator=nul
   if(eventMin===null){etlReason(diag,rowNumber,'HORA_EVENTO_NO_RECONOCIBLE','HORA_INICIO','No se pudo interpretar la hora del evento','rejected');return [];}
   const plant=histResolvePlant(histPick(r,HIST_FIELD.status.plant),histPick(r,HIST_FIELD.status.plantCode));
   const accKey=`${fecha}|${key}`;
-  if(!statusAccumulator.has(accKey))statusAccumulator.set(accKey,{...base,fecha,planta,zona:plant?inferZona(plant):'',operadorId:normalizeId(id),operadorNombre:name,operadorKey:key,camion:normalizePlate(histPick(r,HIST_FIELD.status.truck))||safeText(histPick(r,HIST_FIELD.status.truck))});
+  if(!statusAccumulator.has(accKey))statusAccumulator.set(accKey,{...base,fecha,planta:plant,zona:plant?inferZona(plant):'',operadorId:normalizeId(id),operadorNombre:name,operadorKey:key,camion:normalizePlate(histPick(r,HIST_FIELD.status.truck))||safeText(histPick(r,HIST_FIELD.status.truck))});
   const rec=statusAccumulator.get(accKey);
   if(!rec.planta&&plant){rec.planta=plant;rec.zona=inferZona(plant);}
   if(kind==='login'&&(rec.loginMin===null||eventMin<rec.loginMin))rec.loginMin=eventMin;
@@ -1703,20 +1715,21 @@ function etlChooseBest(candidates,source){
 }
 
 async function etlProcessXlsx(filePath,source,archivo,job,diag){
-  const validationDeadline=Date.now()+HIST_VALIDATION_TIMEOUT_MS;
+  const validationWatchdog=createValidationWatchdog();
   etlUpdateJob(job,25,'Detectando hoja y encabezado',diag);
   const existing=new Set((historicalWarehouse.records||[]).filter(r=>r.source===source).map(etlDedupeKey));
   const staged=[],partial=[],statusAcc=new Map();
   let selected=false;
   const reader=new ExcelJS.stream.xlsx.WorkbookReader(filePath,{entries:'emit',sharedStrings:'cache',styles:'ignore',hyperlinks:'ignore',worksheets:'emit'});
   for await(const ws of reader){
-    checkValidationDeadline(validationDeadline);
+    checkValidationWatchdog(validationWatchdog);
     const buffered=[];let bestHeader=null,rowNumber=0,headers=null;
     diag.sheetsDetected.push({name:ws.name,rows:0});
     for await(const row of ws){
       rowNumber++;
+      markValidationProgress(validationWatchdog,1);
       if(!selected && rowNumber<=100){
-        checkValidationDeadline(validationDeadline);
+        checkValidationWatchdog(validationWatchdog);
         const vals=etlRowValues(row);buffered.push({rowNumber,vals});
         if(!etlRowEmpty(vals)){
           const h=etlHeaderScore(vals,source),score=h.score-rowNumber*.2;
@@ -1793,7 +1806,7 @@ function etlSheetJsRows(filePath,source,diag){
   return {wb,best:etlChooseBest(candidates,source)};
 }
 async function etlProcessNonXlsx(filePath,ext,source,archivo,job,diag){
-  const validationDeadline=Date.now()+HIST_VALIDATION_TIMEOUT_MS;
+  const validationWatchdog=createValidationWatchdog();
   etlUpdateJob(job,25,'Detectando estructura',diag);
   let wb;
   if(ext==='csv'||ext==='txt'){
@@ -1806,7 +1819,8 @@ async function etlProcessNonXlsx(filePath,ext,source,archivo,job,diag){
     let bestHeader=null;for(let i=0;i<Math.min(matrix.length,100);i++){if(etlRowEmpty(matrix[i]||[]))continue;const h=etlHeaderScore(matrix[i],source),score=h.score-i*.2;if(!bestHeader||score>bestHeader.score)bestHeader={...h,score,rowNumber:i+1,values:matrix[i]};}
     candidates.push({sheetName:name,rows:matrix.length,bestHeader,matrix});diag.sheetsDetected.push({name,rows:matrix.length});
   }
-  checkValidationDeadline(validationDeadline);
+  markValidationProgress(validationWatchdog,1);
+  checkValidationWatchdog(validationWatchdog);
   const best=etlChooseBest(candidates,source);if(!best)throw new Error('No se encontró ninguna hoja/tabla con datos.');
   diag.sheet=best.sheetName;diag.headerRow=best.bestHeader.rowNumber;diag.columns=best.bestHeader.values.map(v=>safeText(v)).filter(Boolean);diag.columnCount=diag.columns.length;diag.missing=etlMissingHeaderGroups(best.bestHeader,source);
   etlUpdateJob(job,55,'Procesando registros',diag);
@@ -1855,8 +1869,23 @@ async function runHistoricalQueue(source){
   try{while(q.items.length){const job=q.items.shift();job.queuePosition=0;await processHistoricalUploadJob(job);}}
   finally{q.busy=false;}
 }
-function checkValidationDeadline(deadline){
-  if(Date.now()>deadline){const e=new Error('La validación excedió el tiempo permitido.');e.code='VALIDATION_TIMEOUT';throw e;}
+function createValidationWatchdog(){
+  return {startedAt:Date.now(),lastProgressAt:Date.now(),rowsSeen:0};
+}
+function markValidationProgress(watchdog,rows=1){
+  watchdog.lastProgressAt=Date.now();
+  watchdog.rowsSeen+=rows;
+}
+function checkValidationWatchdog(watchdog){
+  const now=Date.now();
+  const startupExceeded=watchdog.rowsSeen===0 && (now-watchdog.startedAt)>HIST_VALIDATION_STARTUP_TIMEOUT_MS;
+  const inactiveExceeded=watchdog.rowsSeen>0 && (now-watchdog.lastProgressAt)>HIST_VALIDATION_TIMEOUT_MS;
+  if(startupExceeded||inactiveExceeded){
+    const e=new Error(startupExceeded
+      ? 'El archivo demoró demasiado en abrirse. Se superó el límite de 60 segundos sin recibir filas.'
+      : 'La validación se detuvo por más de 10 segundos sin progreso.');
+    e.code='VALIDATION_TIMEOUT';throw e;
+  }
 }
 async function yieldEventLoop(){await new Promise(r=>setImmediate(r));}
 
@@ -1898,7 +1927,9 @@ async function processHistoricalUploadJob(job){
     etlUpdateJob(job,100,'Finalizado',diag);
   }catch(err){
     diag.status='error';
-    diag.reason=err?.code==='VALIDATION_TIMEOUT'?'La validación excedió el tiempo permitido. El proceso fue cancelado.':(err?.message||'El archivo no pudo ser procesado.');
+    diag.reason=err?.code==='VALIDATION_TIMEOUT'
+      ? `Timeout de lectura: ${err?.message||'el parser no reportó progreso'}. Este error ocurre antes de homologar plantas y no está relacionado con el diccionario de plantas.`
+      : (err?.message||'El archivo no pudo ser procesado.');
     diag.finishedAt=nowIso();etlLog(diag,`Error: ${err?.message||String(err)}`);finalizeDiagRuntime(diag);
     etlStoreDiagnostic(publicDiagnostic(diag));try{persistHistoricalWarehouse();}catch{}
     etlUpdateJob(job,100,'Error diagnosticado',diag);job.error=err?.message||String(err);
@@ -2032,7 +2063,7 @@ function historicalNormalizeMany(source,row,archivo='',rowIndex=0){
       if(dow===0||dow===6) continue;
       const rec=histBaseRecord(source,archivo,rowIndex);
       Object.assign(rec,{
-        fecha, planta, zona:plant?inferZona(plant):'', operadorId:normalizeId(id),
+        fecha, planta:plant, zona:plant?inferZona(plant):'', operadorId:normalizeId(id),
         operadorNombre:name, operadorKey:key, turnoMin:shift
       });
       days.push(rec);
@@ -2049,7 +2080,7 @@ function historicalNormalizeMany(source,row,archivo='',rowIndex=0){
     const plant=histResolvePlant(histPick(r,HIST_FIELD.citaciones.plant));
     const rec=histBaseRecord(source,archivo,rowIndex);
     Object.assign(rec,{
-      fecha, planta, zona:plant?inferZona(plant):'', operadorId:normalizeId(id),
+      fecha, planta:plant, zona:plant?inferZona(plant):'', operadorId:normalizeId(id),
       operadorNombre:name, operadorKey:key, citacionMin:citation,
       camion:safeText(histPick(r,HIST_FIELD.citaciones.truck))
     });
@@ -2072,7 +2103,7 @@ function historicalNormalizeMany(source,row,archivo='',rowIndex=0){
   const plant=histResolvePlant(histPick(r,HIST_FIELD.status.plant),histPick(r,HIST_FIELD.status.plantCode));
   const rec=histBaseRecord(source,archivo,rowIndex);
   Object.assign(rec,{
-    fecha, planta, zona:plant?inferZona(plant):'', operadorId:normalizeId(id),
+    fecha, planta:plant, zona:plant?inferZona(plant):'', operadorId:normalizeId(id),
     operadorNombre:name, operadorKey:key, camion:safeText(histPick(r,HIST_FIELD.status.truck)),
     eventoMin:eventMin, estado:state, eventoKind:kind, ticket:safeText(histPick(r,HIST_FIELD.status.ticket))
   });
@@ -2442,7 +2473,13 @@ app.get('/api/historico/fuentes',requireAuth,(req,res)=>{
     plants:idx.plants,
     plantCatalog:idx.plants.map(planta=>({planta,zona:(idx.rows.find(r=>r.planta===planta)?.zona)||inferZona(planta)})),
     zones:idx.zones,operators:idx.operators,
-    diagnostics:(historicalWarehouse.diagnostics||[]).slice(0,100)
+    diagnostics:(historicalWarehouse.diagnostics||[]).slice(0,100),
+    plantDictionary:{
+      loaded:true,
+      source:'config/plant-dictionary.json',
+      canonicalPlants:Array.isArray(PLANT_DICTIONARY?.plants)?PLANT_DICTIONARY.plants.length:Object.keys(PLANT_DICTIONARY?.plants||{}).length,
+      note:'La homologación de planta se ejecuta después de leer cada fila; un timeout de apertura XLSX ocurre antes de esta etapa.'
+    }
   });
 });
 app.get('/api/historico/dashboard-enterprise',requireAuth,(req,res)=>{
@@ -2903,7 +2940,7 @@ app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 if (require.main === module && process.env.CCO_TEST_MODE !== '1') {
   server.listen(PORT, () => {
-    console.log(`[CCO][startup] CCO Intelligence v3.7.0 activo en puerto ${PORT}`);
+    console.log(`[CCO][startup] CCO Intelligence v3.7.2 activo en puerto ${PORT}`);
     console.log(`[CCO][startup] Diccionario plantas: ${PLANT_DICTIONARY.plants.length} plantas, ${PLANT_DICTIONARY_LOOKUP.size} alias resolubles, ${Object.keys(PLANT_DICTIONARY.conflicts||{}).length} alias ambiguos`);
     if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producción.');
   });
