@@ -306,11 +306,11 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v3.7</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v3.7.2</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
     <div id="opDateControl" class="pill" style="margin:0">Operación de hoy · <b id="scopeFechaLabel">—</b><input id="scopeFecha" type="hidden"></div>
-    <span id="appVersion" class="pill">v3.7</span><span id="connPill" class="pill">Conectando…</span>
+    <span id="appVersion" class="pill">v3.7.2</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
 <div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
@@ -442,7 +442,7 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
     </div>
     <div class="history-note">También puedes <b>arrastrar y soltar</b> uno o varios archivos sobre cada tarjeta. XLSX/XLS/CSV/TXT participan en los cálculos. PDF se registra como <b>solo lectura</b> y no genera KPI si no contiene datos estructurados extraíbles.</div>
 
-    <div class="hist-audit-strip" id="histAuditStrip"></div>
+    <div class="hist-audit-strip" id="histAuditStrip"></div><div class="history-note" id="histPlantDictionaryState">Diccionario de plantas: se aplicará después de leer y normalizar cada archivo.</div>
     <div class="rep-header"><span class="rep-titulo">Diagnóstico de carga</span><span class="rep-meta">Cada archivo conserva estado, recuperación y causa</span></div>
     <div id="histLoadDiagnostics" class="hist-load-diagnostics">
       <div class="history-empty">Aún no se han seleccionado archivos de trazabilidad.</div>
@@ -2737,6 +2737,10 @@ async function cargarCatalogoHistorico(){
         histFileStatus(s.source,last?.status==='error'?'Archivo cargado con error diagnosticado · consulte el diagnóstico de carga':'Archivo cargado/procesado · sin registros KPI completos; revise diagnóstico',last?.status==='error'?'err':'warn');
       }
     });
+    const pd=document.getElementById('histPlantDictionaryState');
+    if(pd&&data.plantDictionary){
+      pd.textContent=`Diccionario de plantas activo · ${data.plantDictionary.canonicalPlants||0} plantas canónicas · homologación posterior a lectura/normalización.`;
+    }
     renderHistFileLists();
     poblarFiltrosHistoricos();
   }catch(err){document.getElementById('histDiagnostico').textContent='No fue posible leer la base histórica: '+(err.message||err);}
