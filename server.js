@@ -1694,14 +1694,28 @@ function etlNormalizeRow(source,row,archivo,rowNumber,diag,statusAccumulator=nul
 
     const rec={...base,fecha,operadorId,operadorNombre:'',operadorKey:key,tamIngresoMin:ingreso,tamSalidaMin:salida};
 
+    const rawIngreso=histPick(r,HIST_FIELD.tam.in);
+    const rawSalida=histPick(r,HIST_FIELD.tam.out);
+
     if(ingreso===null){
       rec.quality='parcial';
-      rec.qualityIssues.push('TAM_INGRESO_NO_RECONOCIBLE');
-      etlReason(diag,rowNumber,'TAM_INGRESO_NO_RECONOCIBLE','A.Hora Inicio','No se pudo interpretar el ingreso TAM; se conserva la fila parcial.','partial');
+      // Celda vacía no es error de parser: TAM puede traer marcajes de salida
+      // separados. La consolidación ID + Fecha recuperará el ingreso desde
+      // otra fila del mismo operador/día cuando exista.
+      if(rawIngreso===null||rawIngreso===undefined||String(rawIngreso).trim()===''){
+        rec.qualityIssues.push('TAM_INGRESO_AUSENTE_EN_FILA');
+      }else{
+        rec.qualityIssues.push('TAM_INGRESO_NO_RECONOCIBLE');
+        etlReason(diag,rowNumber,'TAM_INGRESO_NO_RECONOCIBLE','A.Hora Inicio','La celda contiene un valor, pero no pudo interpretarse como hora TAM.','partial');
+      }
     }
     if(salida===null){
       rec.quality='parcial';
-      rec.qualityIssues.push('TAM_SALIDA_NO_RECONOCIBLE');
+      if(rawSalida===null||rawSalida===undefined||String(rawSalida).trim()==='')rec.qualityIssues.push('TAM_SALIDA_AUSENTE_EN_FILA');
+      else{
+        rec.qualityIssues.push('TAM_SALIDA_NO_RECONOCIBLE');
+        etlReason(diag,rowNumber,'TAM_SALIDA_NO_RECONOCIBLE','A. Hora Fin','La celda contiene un valor, pero no pudo interpretarse como hora TAM.','partial');
+      }
     }
     return [rec];
   }
@@ -1741,6 +1755,45 @@ function etlNormalizeRow(source,row,archivo,rowNumber,diag,statusAccumulator=nul
   if(kind==='primera_carga'&&(rec.primeraCargaMin===null||eventMin<rec.primeraCargaMin))rec.primeraCargaMin=eventMin;
   return [];
 }
+
+function summarizeTamConsolidation(records,diag){
+  if(!Array.isArray(records)||!records.length)return;
+  const groups=new Map();
+  for(const r of records){
+    if(r.source!=='tam'||!r.operadorKey||!r.fecha)continue;
+    const key=`${r.operadorKey}|${r.fecha}`;
+    if(!groups.has(key))groups.set(key,{rows:[],ingresos:[],salidas:[]});
+    const g=groups.get(key);g.rows.push(r);
+    if(r.tamIngresoMin!==null&&r.tamIngresoMin!==undefined)g.ingresos.push(r.tamIngresoMin);
+    if(r.tamSalidaMin!==null&&r.tamSalidaMin!==undefined)g.salidas.push(r.tamSalidaMin);
+  }
+  let recovered=0,missingIngreso=0,missingSalida=0;
+  for(const [key,g] of groups){
+    const blankIngresoRows=g.rows.filter(r=>(r.qualityIssues||[]).includes('TAM_INGRESO_AUSENTE_EN_FILA')).length;
+    const blankSalidaRows=g.rows.filter(r=>(r.qualityIssues||[]).includes('TAM_SALIDA_AUSENTE_EN_FILA')).length;
+    if(blankIngresoRows&&g.ingresos.length)recovered+=blankIngresoRows;
+    if(!g.ingresos.length){
+      missingIngreso++;
+      if(diag.samples.length<80){
+        const first=g.rows[0];
+        diag.samples.push({
+          row:first.rowIndex,code:'TAM_INGRESO_AUSENTE_DIA',field:'A.Hora Inicio',
+          reason:`Sin ingreso TAM recuperable para ID ${first.operadorId||first.operadorKey} en ${first.fecha}.`,
+          kind:'partial'
+        });
+      }
+    }
+    if(!g.salidas.length)missingSalida++;
+  }
+  diag.tamConsolidation={
+    operatorDays:groups.size,
+    blankIngresoRowsRecovered:recovered,
+    operatorDaysWithoutIngreso:missingIngreso,
+    operatorDaysWithoutSalida:missingSalida
+  };
+  etlLog(diag,`TAM consolidado por ID + Fecha · ${groups.size.toLocaleString('es-CL')} operador/día · ${recovered.toLocaleString('es-CL')} filas con ingreso vacío recuperadas desde otra fila del mismo día · ${missingIngreso.toLocaleString('es-CL')} operador/día sin ingreso TAM.`);
+}
+
 function etlDedupeKey(r){
   if(r.source==='turnos')return `T|${r.fecha}|${r.operadorKey}|${r.turnoMin??''}`;
   if(r.source==='citaciones')return `C|${r.fecha}|${r.operadorKey}|${r.citacionMin??''}`;
@@ -1833,6 +1886,7 @@ async function etlProcessXlsx(filePath,source,archivo,job,diag){
       staged.push(rec);
     }
   }
+  if(source==='tam')summarizeTamConsolidation(staged,diag);
   diag.rowsStored=staged.length;
   historicalWarehouse.records.push(...staged);
   if(partial.length){
@@ -3250,7 +3304,7 @@ app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 if (require.main === module && process.env.CCO_TEST_MODE !== '1') {
   server.listen(PORT, () => {
-    console.log(`[CCO][startup] CCO Intelligence v4.1.0 activo en puerto ${PORT}`);
+    console.log(`[CCO][startup] CCO Intelligence v4.1.1 activo en puerto ${PORT}`);
     console.log(`[CCO][startup] Diccionario plantas: ${PLANT_DICTIONARY.plants.length} plantas, ${PLANT_DICTIONARY_LOOKUP.size} alias resolubles, ${Object.keys(PLANT_DICTIONARY.conflicts||{}).length} alias ambiguos`);
     if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producción.');
   });
