@@ -1243,9 +1243,17 @@ function normalizeFleetRow(row, index){
   const sourceStatus=fleetPick(row,['Estado','Estado Flota','Estado Registro','Status']) || 'Sin estado';
   const activeFlag=fleetPick(row,['Activo / Inactivo','Activo/Inactivo','Activo','Condición','Condicion']) || 'Sin dato';
   const plantCode=fleetPick(row,['Código Planta','Codigo Planta','Cod Planta','Centro SAP','LOCAL CMD','Local CMD']);
-  const rawPlant=fleetPick(row,['Planta','Nombre Planta','Base','Centro','Ubicación','Ubicacion']);
+  // v3.3.2: la columna I del archivo Flota/Terceros es la fuente autoritativa
+  // para la planta asignada del camión. El frontend la envía como campo técnico.
+  const assignedPlantColI=fleetPick(row,['__assigned_plant_col_i']);
+  const rawPlant=assignedPlantColI || fleetPick(row,['Planta','Nombre Planta','Base','Centro','Ubicación','Ubicacion']);
   let plant='';
-  try{ plant=resolvePlantFromRow(row) || canonicalPlantName(rawPlant||plantCode||''); }catch{ plant=canonicalPlantName(rawPlant||''); }
+  try{
+    // Primero homologamos exactamente la planta de columna I con el diccionario.
+    plant=dictionaryCanonicalPlant(rawPlant) || canonicalPlantName(rawPlant||'');
+    // Solo si columna I viene vacía, permitimos resolver por otros identificadores/códigos.
+    if(!plant && !assignedPlantColI) plant=resolvePlantFromRow(row) || canonicalPlantName(plantCode||'');
+  }catch{ plant=canonicalPlantName(rawPlant||''); }
   if(!plant) plant=rawPlant || 'Sin planta asignada';
   let zone=canonicalZone(fleetPick(row,['Zona','Zone'])) || fleetPick(row,['Zona','Zone']);
   try{ const dz=dictionaryOperationalZone(rawPlant)||dictionaryOperationalZone(plantCode); if(dz) zone=dz; }catch{}
@@ -1461,9 +1469,20 @@ const HIST_ALIASES = {
 
 function historicalPick(row, aliases) {
   if (!row || typeof row !== 'object') return null;
+
+  // v3.3.3: la ingesta histórica puede recibir encabezados Excel crudos
+  // ("Número Funcionario", "Hora Inicio", "Descripción Planta", etc.)
+  // o filas ya normalizadas. Se aceptan ambas formas.
   for (const alias of aliases || []) {
-    const v=row?.[normalizeKey(alias)];
-    if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+    const normalizedAlias = normalizeKey(alias);
+
+    const direct = row?.[normalizedAlias];
+    if (direct !== undefined && direct !== null && String(direct).trim() !== '') return direct;
+
+    for (const [rawKey, rawValue] of Object.entries(row)) {
+      if (normalizeKey(rawKey) !== normalizedAlias) continue;
+      if (rawValue !== undefined && rawValue !== null && String(rawValue).trim() !== '') return rawValue;
+    }
   }
   return null;
 }
@@ -1481,9 +1500,14 @@ function historicalNumber(v, percent=false) {
 }
 function historicalDate(row, source='') {
   // Primero reutiliza el motor operacional, que también entiende Semana + Día para Turnos.
+  // v3.3.3: rowDateKey trabaja con claves normalizadas, por eso normalizamos aquí
+  // sin alterar la fila original ni perder __source_file.
   try {
     const mappedType = source==='status' ? 'logeo' : source;
-    const inferred = rowDateKey(row, mappedType);
+    const normalizedRow = normalizeRows([row || {}])[0] || {};
+    if (row?.__source_file) normalizedRow.__source_file = row.__source_file;
+    if (row?._source_file) normalizedRow._source_file = row._source_file;
+    const inferred = rowDateKey(normalizedRow, mappedType);
     if (inferred) return inferred;
   } catch {}
   const direct=parseDateKey(historicalPick(row,HIST_ALIASES.fecha));
@@ -1651,7 +1675,17 @@ app.post('/api/historico/ingesta', requireAuth, (req,res)=>{
     if(!Array.isArray(incoming)||!incoming.length) return res.status(400).json({error:'La carpeta/archivo no contiene filas para procesar'});
     const normalized=normalizeRows(incoming), valid=[], rejected=[], errors=[];
     normalized.forEach((row,i)=>{const rec=historicalNormalizeRecord(source,row,archivo), er=validateHistoricalRecord(source,rec);if(er.length){rejected.push(rec);errors.push({fila:i+1,archivo,errores:er});}else valid.push(rec);});
-    if(!valid.length) return res.status(422).json({error:`${HISTORICAL_SOURCES[source].label}: ninguna fila superó la validación`,errores:errors.slice(0,20)});
+    if(!valid.length) {
+      const resumen = {};
+      for (const e of errors) for (const msg of (e.errores || [])) resumen[msg]=(resumen[msg]||0)+1;
+      return res.status(422).json({
+        error:`${HISTORICAL_SOURCES[source].label}: ninguna fila superó la validación`,
+        detalle:Object.entries(resumen).map(([k,v])=>`${k}: ${v}`).join(' · ') || 'No se identificaron registros válidos',
+        archivo,
+        filas_recibidas:normalized.length,
+        errores:errors.slice(0,20)
+      });
+    }
     if(!Array.isArray(historicalWarehouse.records)) historicalWarehouse.records=[];
     if(modo==='replace'){historicalWarehouse.records=historicalWarehouse.records.filter(r=>r.fuente!==source);historicalWarehouse.sources[source]={};}
     historicalWarehouse.records.push(...valid);
@@ -2131,7 +2165,7 @@ app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 if (require.main === module && process.env.CCO_TEST_MODE !== '1') {
   server.listen(PORT, () => {
-    console.log(`[CCO][startup] CCO Intelligence v3.3.1 activo en puerto ${PORT}`);
+    console.log(`[CCO][startup] CCO Intelligence v3.3.3 activo en puerto ${PORT}`);
     console.log(`[CCO][startup] Diccionario plantas: ${PLANT_DICTIONARY.plants.length} plantas, ${PLANT_DICTIONARY_LOOKUP.size} alias resolubles, ${Object.keys(PLANT_DICTIONARY.conflicts||{}).length} alias ambiguos`);
     if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producción.');
   });
