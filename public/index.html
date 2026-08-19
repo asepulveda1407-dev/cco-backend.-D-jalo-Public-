@@ -306,11 +306,11 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v3.6</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v3.7</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
     <div id="opDateControl" class="pill" style="margin:0">Operación de hoy · <b id="scopeFechaLabel">—</b><input id="scopeFecha" type="hidden"></div>
-    <span id="appVersion" class="pill">v3.6</span><span id="connPill" class="pill">Conectando…</span>
+    <span id="appVersion" class="pill">v3.7</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
 <div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
@@ -2488,7 +2488,10 @@ function renderHistDiagnostics(){
         <div class="hist-diag-k">Registros encontrados</div><div class="hist-diag-v">${Number(d.rowsFound||0).toLocaleString('es-CL')}</div>
         <div class="hist-diag-k">Columnas detectadas</div><div class="hist-diag-v">${Number(d.columnCount||0)}</div>
         <div class="hist-diag-k">Filas válidas / recuperadas</div><div class="hist-diag-v">${Number(d.rowsStored||0).toLocaleString('es-CL')}</div>
-        <div class="hist-diag-k">Filas descartadas</div><div class="hist-diag-v">${Number(d.rowsDiscarded||0).toLocaleString('es-CL')}</div>
+        <div class="hist-diag-k">Filas rechazadas/filtradas</div><div class="hist-diag-v">${Number(d.rowsDiscarded||0).toLocaleString('es-CL')}</div>
+        <div class="hist-diag-k">Tiempo proceso</div><div class="hist-diag-v">${d.durationMs?`${(Number(d.durationMs)/1000).toFixed(1)} s`:'—'}</div>
+        <div class="hist-diag-k">Memoria servidor</div><div class="hist-diag-v">${d.memoryMb?`${Number(d.memoryMb).toFixed(1)} MB`:'—'}</div>
+        <div class="hist-diag-k">Cache MD5</div><div class="hist-diag-v">${d.fromCache?'✅ Reutilizada':(d.md5?escapeHtml(d.md5.slice(0,12))+'…':'—')}</div>
         <div class="hist-diag-k">Hoja utilizada</div><div class="hist-diag-v">${escapeHtml(d.sheet||'—')}</div>
         <div class="hist-diag-k hist-diag-wide">Campos no encontrados</div><div class="hist-diag-v hist-diag-wide">${escapeHtml(missing)}</div>
         <div class="hist-diag-k hist-diag-wide">Columnas</div><div class="hist-diag-v hist-diag-wide">${escapeHtml(cols)}</div>
@@ -2498,6 +2501,7 @@ function renderHistDiagnostics(){
         ${(d.log||[]).map(x=>`<div><b>${escapeHtml(x.at)}</b> · ${escapeHtml(x.msg)}</div>`).join('')||'<div>Sin eventos adicionales.</div>'}
         ${d.ruleCounts&&Object.keys(d.ruleCounts).length?`<div style="margin-top:7px"><b>Reglas aplicadas:</b> ${Object.entries(d.ruleCounts).map(([k,v])=>`${escapeHtml(k)}: ${Number(v).toLocaleString('es-CL')}`).join(' · ')}</div>`:''}
         ${Array.isArray(d.samples)&&d.samples.length?`<div style="margin-top:7px"><b>Muestras de filas:</b>${d.samples.slice(0,12).map(s=>`<div>Fila ${s.row} · Campo ${escapeHtml(s.field||'—')} · ${escapeHtml(s.reason||s.code||'')}</div>`).join('')}</div>`:''}
+        ${(d.rowsDiscarded||0)>0&&d.id?`<div style="margin-top:8px"><button type="button" class="secondary" onclick="descargarErroresHistoricos('${encodeURIComponent(d.id)}')">Descargar Excel errores</button></div>`:''}
       </details>
     </div>`;
   }).join('');
@@ -2596,10 +2600,41 @@ function histDiagFromServer(source,fileName,d){
     columns:Array.isArray(d?.columns)?d.columns:[],missing:Array.isArray(d?.missing)?d.missing:[],
     sheet:d?.sheet||null,reason:d?.reason||'Procesando archivo...',
     log:Array.isArray(d?.log)?d.log.map(x=>({at:x.at?new Date(x.at).toLocaleString('es-CL'):new Date().toLocaleString('es-CL'),msg:x.msg||''})):[],
-    ruleCounts:d?.ruleCounts||{},samples:d?.samples||[]
+    ruleCounts:d?.ruleCounts||{},samples:d?.samples||[],
+    durationMs:Number(d?.durationMs||0),memoryMb:Number(d?.memoryMb||0),md5:d?.md5||null,fromCache:d?.fromCache===true
   };
   return diag;
 }
+
+let histPreflightWorker=null;
+function getHistPreflightWorker(){
+  if(histPreflightWorker)return histPreflightWorker;
+  const code=`
+    self.onmessage=e=>{
+      const f=e.data||{},name=String(f.name||''),ext=(name.split('.').pop()||'').toLowerCase();
+      const allowed=['xlsx','xls','csv','txt','pdf'];
+      self.postMessage({ok:!!f.size&&allowed.includes(ext),ext,size:f.size||0,name,
+        error:!f.size?'El archivo está vacío.':(!allowed.includes(ext)?'Extensión no permitida.':'')});
+    };`;
+  histPreflightWorker=new Worker(URL.createObjectURL(new Blob([code],{type:'text/javascript'})));
+  return histPreflightWorker;
+}
+function histWorkerPreflight(file){
+  return new Promise((resolve,reject)=>{
+    const w=getHistPreflightWorker();
+    const handler=e=>{w.removeEventListener('message',handler);e.data?.ok?resolve(e.data):reject(new Error(e.data?.error||'Archivo inválido'));};
+    w.addEventListener('message',handler);w.postMessage({name:file.name,size:file.size,type:file.type});
+  });
+}
+async function descargarErroresHistoricos(encodedId){
+  const id=decodeURIComponent(encodedId||'');if(!id)return;
+  try{
+    const r=await fetch(API+'/api/historico/errores/'+encodeURIComponent(id)+'.xlsx',{headers:authHeaders()});
+    if(!r.ok)throw new Error('Reporte no disponible');
+    const b=await r.blob(),u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download='errores_trazabilidad.xlsx';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);
+  }catch(e){alert('No fue posible descargar el Excel de errores.');console.error(e);}
+}
+
 function histUploadOne(source,file){
   return new Promise((resolve,reject)=>{
     const fd=new FormData();fd.append('source',source);fd.append('file',file,file.name);
@@ -2626,7 +2661,8 @@ async function histPollJob(source,fileName,jobId,diag){
     const r=await fetch(API+'/api/historico/job/'+encodeURIComponent(jobId),{headers:authHeaders()});
     const data=await leerRespuestaApiSegura(r);
     const p=Math.max(20,Math.min(100,Number(data.progress||20)));
-    histProgress(source,p,data.stage||'Procesando archivo');
+    const stage=data.queuePosition?`En cola · posición ${data.queuePosition}`:(data.stage||'Procesando archivo');
+    histProgress(source,p,stage);
     if(data.diagnostic){
       diag=histDiagFromServer(source,fileName,data.diagnostic);histSetDiagnostic(source,diag);
       histFileStatus(source,`${fileName} · ${diag.rowsFound.toLocaleString('es-CL')} filas leídas · ${diag.rowsStored.toLocaleString('es-CL')} registros recuperados`,'busy');
@@ -2639,8 +2675,10 @@ async function histReadFile(source,file,diag){
   if(!file.size)throw new Error('El archivo está vacío.');
   const ext=(file.name.split('.').pop()||'').toLowerCase();
   if(!['xlsx','xls','csv','txt','pdf'].includes(ext))throw new Error(`Extensión .${ext||'?'} no permitida.`);
-  histProgress(source,0,'Leyendo archivo');
-  histAddLog(diag,`Archivo seleccionado · ${(file.size/1024/1024).toFixed(2)} MB · se procesará en servidor.`);
+  histProgress(source,0,'Validando archivo en Web Worker');
+  await histWorkerPreflight(file);
+  histProgress(source,2,'Archivo recibido');
+  histAddLog(diag,`Archivo recibido · ${(file.size/1024/1024).toFixed(2)} MB · prevalidación Web Worker correcta.`);
   histSetDiagnostic(source,diag);
   const accepted=await histUploadOne(source,file);
   histProgress(source,20,'Archivo recibido · iniciando ETL');
@@ -2655,8 +2693,8 @@ async function procesarArchivosHistoricos(source,files){
   histFileStatus(source,`Archivo(s) seleccionado(s): ${selected.length} · iniciando validación`,'busy');
   let ok=0,partial=0,errors=0,totalStored=0;
 
-  for(const file of selected){
-    const diag={id:`local-${Date.now()}-${Math.random()}`,file:file.name,source,sourceLabel:source==='turnos'?'Turnos':source==='citaciones'?'Citaciones':'StatusBreakdown',startedAt:new Date().toISOString(),status:'procesando',rowsFound:0,rowsStored:0,rowsDiscarded:0,columnCount:0,columns:[],missing:[],reason:'Preparando archivo...',log:[]};
+  const tasks=selected.map(async file=>{
+    const diag={id:`local-${Date.now()}-${Math.random()}`,file:file.name,source,sourceLabel:source==='turnos'?'Turnos':source==='citaciones'?'Citaciones':'StatusBreakdown',startedAt:new Date().toISOString(),status:'procesando',rowsFound:0,rowsStored:0,rowsDiscarded:0,columnCount:0,columns:[],missing:[],reason:'Archivo recibido · preparando cola...',log:[]};
     histSetDiagnostic(source,diag);
     try{
       const r=await histReadFile(source,file,diag),d=r.diagnostic||diag;
@@ -2665,10 +2703,11 @@ async function procesarArchivosHistoricos(source,files){
       histSetDiagnostic(source,d);
     }catch(err){
       errors++;console.error('[CCO][TRAZABILIDAD][ARCHIVO]',file.name,err);
-      diag.status='error';diag.reason='El archivo no pudo ser procesado. Revise formato, estructura o contenido.';
-      histAddLog(diag,`Error técnico: ${err.message||err}`);histSetDiagnostic(source,diag);histProgress(source,100,'Error diagnosticado');
+      diag.status='error';diag.reason=err?.message||'No fue posible procesar el archivo.';
+      histAddLog(diag,`Error: ${err.message||err}`);histSetDiagnostic(source,diag);histProgress(source,100,'Error diagnosticado');
     }
-  }
+  });
+  await Promise.allSettled(tasks);
 
   const kind=errors?'err':partial?'warn':'ok';
   histFileStatus(source,`${selected.length} archivo(s) procesado(s) · ${totalStored.toLocaleString('es-CL')} registros recuperados · ${ok} correctos · ${partial} parciales · ${errors} con error`,kind);
@@ -2695,7 +2734,7 @@ async function cargarCatalogoHistorico(){
       }else{
         // Regla QA: jamás volver a "Sin datos" si ya hubo selección.
         const last=(histLoadDiagnostics[s.source]||[])[0];
-        histFileStatus(s.source,last?.status==='error'?'Archivo cargado con error diagnosticado · revise detalle':'Archivo cargado/procesado · sin registros KPI completos; revise diagnóstico',last?.status==='error'?'err':'warn');
+        histFileStatus(s.source,last?.status==='error'?'Archivo cargado con error diagnosticado · consulte el diagnóstico de carga':'Archivo cargado/procesado · sin registros KPI completos; revise diagnóstico',last?.status==='error'?'err':'warn');
       }
     });
     renderHistFileLists();
