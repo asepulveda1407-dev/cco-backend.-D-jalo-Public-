@@ -59,12 +59,18 @@ let state = loadState();
 let historicalWarehouse = loadHistoricalWarehouse();
 
 function emptyHistoricalWarehouse() {
-  return { version: 1, revision: 0, loaded_at: null, sources: {}, records: [] };
+  return { version: 2, revision: 0, loaded_at: null, sources: {}, records: [] };
 }
 function loadHistoricalWarehouse() {
   try {
     if (!fs.existsSync(HISTORICAL_FILE)) return emptyHistoricalWarehouse();
     const parsed = JSON.parse(fs.readFileSync(HISTORICAL_FILE, 'utf8'));
+    // v3.4+ usa un modelo histórico distinto (operador/día + archivos adjuntos).
+    // No se mezclan registros heredados de la implementación por carpetas.
+    if (Number(parsed?.version || 0) !== 2) {
+      console.warn('[CCO][historico] Base histórica anterior detectada; se inicia modelo v2 independiente.');
+      return emptyHistoricalWarehouse();
+    }
     return {
       ...emptyHistoricalWarehouse(),
       ...(parsed && typeof parsed === 'object' ? parsed : {}),
@@ -271,6 +277,11 @@ function asDate(value) {
 function parseTimeMinutes(value) {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value === 'number') {
+    // Excel date+time serial (ej. 46139.3125): usa solo la fracción como hora.
+    if (value > 20_000 && value < 80_000) {
+      const fraction = value - Math.floor(value);
+      return Math.round(fraction * 1440) % 1440;
+    }
     if (value >= 0 && value < 1) return Math.round(value * 1440) % 1440;
     if (Number.isInteger(value) && value >= 0 && value <= 2359) {
       const h = Math.floor(value / 100), m = value % 100;
@@ -303,6 +314,10 @@ function diffMinutes(actual, planned) {
 
 function parseDateKey(value) {
   if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number' && value > 20_000 && value < 80_000) {
+    const d = new Date(Date.UTC(1899, 11, 30) + Math.floor(value) * 86400000);
+    return d.toISOString().slice(0,10);
+  }
   if (value instanceof Date && !isNaN(value)) {
     return `${value.getFullYear()}-${String(value.getMonth()+1).padStart(2,'0')}-${String(value.getDate()).padStart(2,'0')}`;
   }
@@ -1439,9 +1454,11 @@ app.get('/api/analisis-operadores', requireAuth, (req, res) => {
 });
 
 
+
 // ============================================================================
-// CCO INTELLIGENCE v3.0 — DATA WAREHOUSE HISTÓRICO INDEPENDIENTE
-// Nunca consulta datasets activos de Operación Nacional.
+// CCO INTELLIGENCE v3.4 — TRAZABILIDAD INTELLIGENCE
+// Base histórica independiente, construida EXCLUSIVAMENTE desde archivos
+// adjuntos en la pestaña Trazabilidad. No consulta Operación Nacional.
 // ============================================================================
 const HISTORICAL_SOURCES = {
   turnos: { label:'Turnos' },
@@ -1449,302 +1466,526 @@ const HISTORICAL_SOURCES = {
   status: { label:'Status Black / StatusBreakdown' },
 };
 
-const HIST_ALIASES = {
-  fecha: ['fecha','date','fecha evento','fecha_evento','timestamp','hora inicio','hora_inicio','inicio','fecha hora','fecha_hora','created at','created_at'],
-  planta: ['planta','nombre planta','nombre_planta','plant','site','local','centro','centro sap','centro_sap','local cmd','local_cmd','codigo command','codigo_command','shortname','local inventario','local_inventario'],
-  zona: ['zona','zone','region operacional','region_operacional'],
-  cliente: ['cliente','customer','nombre cliente','nombre_cliente'],
-  patente: ['patente','placa','matricula','license plate','license_plate'],
-  camion: ['camion','camión','equipo','equipment','numero equipo','número equipo','numero_equipo','id equipo','id_equipo','mixer','vehiculo','vehículo'],
-  operador: ['operador','nombre operador','nombre_operador','id operador','id_operador','cod_conductor','codigo conductor','código conductor','numero funcionario','número funcionario','numero_funcionario','employee','conductor','chofer'],
-  estado: ['estado','status','descripcion estado','descripción estado','descripcion_estado','meaning','estado equipo','estado_equipo'],
-  evento: ['evento','event','tipo evento','tipo_evento','status change type','status_change_type'],
-  tipoMantenimiento: ['tipo mantencion','tipo mantención','tipo mantenimiento','tipo_mantenimiento','maintenance type','maintenance_type'],
-  puntualidad: ['puntualidad','adherencia','otif','on time','on_time','cumplimiento','cumplimiento %','cumplimiento_pct'],
-  sobreestadia: ['sobreestadia','sobreestadía','sobre estadia','sobre estadía','overstay','demora obra','demora_obra','min sobreestadia','min_sobreestadia'],
-  disponibilidad: ['disponibilidad','availability','availability %','availability_pct','disp %','disp_pct'],
-  horasMantenimiento: ['horas mantencion','horas mantención','horas mantenimiento','horas_mantenimiento','maintenance hours','maintenance_hours','tiempo taller','tiempo_taller'],
-  causa: ['causa','motivo','reason','causa detencion','causa_detencion','falla','failure'],
+const HIST_FIELD = {
+  turnos: {
+    week:['anosemana','ano_semana','semana','semana_iso'],
+    start:['fecha_inicio_semana','fecha inicio semana','inicio_semana'],
+    end:['fecha_fin_semana','fecha fin semana','fin_semana'],
+    date:['fecha','date'],
+    plant:['planta','planta_original','nombre_planta','descripcion_planta'],
+    operatorId:['id_operador','id operador','numero_funcionario','número funcionario','id'],
+    operatorName:['conductor','operador','nombre_operador','nombre operador'],
+    shift:['hora_ingreso','hora ingreso','inicio_turno','turno','hora_turno'],
+  },
+  citaciones: {
+    date:['fecha','date','fecha_citacion','fecha citacion'],
+    plant:['planta','nombre_planta','descripcion_planta'],
+    operatorId:['id','id_operador','numero_funcionario','número funcionario'],
+    operatorName:['nombre_de_operador','nombre de operador','operador','conductor'],
+    citation:['hora_citacion','hora citacion','citación','citacion'],
+    truck:['n_camion','n° camion','número camion','numero camion','camion','mixer'],
+  },
+  status: {
+    datetime:['hora_inicio','hora inicio','timestamp','fecha_hora','fecha hora'],
+    date:['fecha','date'],
+    plant:['descripcion_planta','descripción planta','planta','nombre_planta'],
+    plantCode:['numero_planta','número planta','codigo_planta','código planta'],
+    operatorId:['numero_funcionario','número funcionario','id_operador','id operador'],
+    firstName:['primero_empleado','primero empleado','nombre'],
+    lastName:['ultimo_empleado','último empleado','apellido'],
+    state:['descripcion_estado','descripción estado','estado','status'],
+    truck:['numero_equipo','número equipo','equipo','camion','mixer'],
+    ticket:['n_de_tiquete','n° de tiquete','numero_tiquete','número de tiquete'],
+  }
 };
 
-function historicalPick(row, aliases) {
-  if (!row || typeof row !== 'object') return null;
-
-  // v3.3.3: la ingesta histórica puede recibir encabezados Excel crudos
-  // ("Número Funcionario", "Hora Inicio", "Descripción Planta", etc.)
-  // o filas ya normalizadas. Se aceptan ambas formas.
-  for (const alias of aliases || []) {
-    const normalizedAlias = normalizeKey(alias);
-
-    const direct = row?.[normalizedAlias];
-    if (direct !== undefined && direct !== null && String(direct).trim() !== '') return direct;
-
-    for (const [rawKey, rawValue] of Object.entries(row)) {
-      if (normalizeKey(rawKey) !== normalizedAlias) continue;
-      if (rawValue !== undefined && rawValue !== null && String(rawValue).trim() !== '') return rawValue;
-    }
+function histPick(row, aliases){
+  if(!row || typeof row!=='object') return null;
+  for(const alias of aliases||[]){
+    const k=normalizeKey(alias);
+    const v=row[k];
+    if(v!==undefined && v!==null && String(v).trim()!=='') return v;
   }
   return null;
 }
-function historicalNumber(v, percent=false) {
-  if (v === null || v === undefined || v === '') return null;
-  if (typeof v === 'number' && Number.isFinite(v)) {
-    if (percent && v >= 0 && v <= 1) return round1(v*100);
-    return round1(v);
+function histOperatorKey(id,name){
+  const nid=normalizeId(id);
+  if(nid) return `id:${nid}`;
+  const nn=normalizeName(name);
+  return nn ? `name:${nn}` : '';
+}
+function histDateAdd(dateKey,days){
+  const d=new Date(`${dateKey}T12:00:00`);
+  if(isNaN(d)) return null;
+  d.setDate(d.getDate()+days);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function histIsoWeekStart(weekText){
+  const m=String(weekText||'').match(/(\d{4}).*?S?(\d{1,2})$/i);
+  if(!m) return null;
+  const year=Number(m[1]),week=Number(m[2]);
+  if(week<1||week>53) return null;
+  const jan4=new Date(Date.UTC(year,0,4));
+  const dow=jan4.getUTCDay()||7;
+  const d=new Date(jan4);
+  d.setUTCDate(jan4.getUTCDate()-dow+1+(week-1)*7);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+}
+function histResolvePlant(rawPlant, rawCode=''){
+  for(const raw of [rawPlant,rawCode]){
+    if(raw===null||raw===undefined||String(raw).trim()==='') continue;
+    const d=dictionaryCanonicalPlant(raw);
+    if(d) return d;
+    const c=canonicalPlantName(raw);
+    if(c) return c;
   }
-  const s=String(v).trim().replace(/\s/g,'').replace('%','').replace(/\.(?=\d{3}(?:\D|$))/g,'').replace(',','.');
-  const n=Number(s);
-  if (!Number.isFinite(n)) return null;
-  if (percent && n >= 0 && n <= 1 && !String(v).includes('%')) return round1(n*100);
-  return round1(n);
+  return '';
 }
-function historicalDate(row, source='') {
-  // Primero reutiliza el motor operacional, que también entiende Semana + Día para Turnos.
-  // v3.3.3: rowDateKey trabaja con claves normalizadas, por eso normalizamos aquí
-  // sin alterar la fila original ni perder __source_file.
-  try {
-    const mappedType = source==='status' ? 'logeo' : source;
-    const normalizedRow = normalizeRows([row || {}])[0] || {};
-    if (row?.__source_file) normalizedRow.__source_file = row.__source_file;
-    if (row?._source_file) normalizedRow._source_file = row._source_file;
-    const inferred = rowDateKey(normalizedRow, mappedType);
-    if (inferred) return inferred;
-  } catch {}
-  const direct=parseDateKey(historicalPick(row,HIST_ALIASES.fecha));
-  if (direct) return direct;
-  for (const v of Object.values(row||{})) {
-    if (v instanceof Date) { const d=parseDateKey(v); if(d) return d; }
-  }
-  return null;
-}
-function historicalNormalizeRecord(source,row,archivo='') {
-  if (!HISTORICAL_SOURCES[source]) throw new Error(`Fuente histórica desconocida: ${source}`);
-  const fecha=historicalDate(row,source);
-  const plantaRaw=historicalPick(row,HIST_ALIASES.planta);
-  let planta='Sin planta';
-  if (plantaRaw !== null) {
-    const synthetic={}; synthetic[normalizeKey('planta')]=plantaRaw;
-    planta=resolvePlantFromRow(synthetic);
-    if (!planta || planta==='Sin planta') planta=canonicalPlantName(plantaRaw);
-  }
-  const zonaRaw=historicalPick(row,HIST_ALIASES.zona);
-  const zona=planta && planta!=='Sin planta' ? inferZona(planta,zonaRaw) : (canonicalZone(zonaRaw)||'Sin zona');
-  return {
-    id: crypto.randomUUID(),
-    fecha,
-    planta: safeText(planta||'Sin planta'),
-    zona: safeText(zona||'Sin zona'),
-    cliente: safeText(historicalPick(row,HIST_ALIASES.cliente)),
-    patente: safeText(historicalPick(row,HIST_ALIASES.patente)),
-    camion: safeText(historicalPick(row,HIST_ALIASES.camion)),
-    operador: safeText(historicalPick(row,HIST_ALIASES.operador)),
-    estado: safeText(historicalPick(row,HIST_ALIASES.estado)),
-    evento: safeText(historicalPick(row,HIST_ALIASES.evento)),
-    tipoMantenimiento: safeText(historicalPick(row,HIST_ALIASES.tipoMantenimiento)),
-    puntualidad: historicalNumber(historicalPick(row,HIST_ALIASES.puntualidad),true),
-    sobreestadia: historicalNumber(historicalPick(row,HIST_ALIASES.sobreestadia),false),
-    disponibilidad: historicalNumber(historicalPick(row,HIST_ALIASES.disponibilidad),true),
-    horasMantenimiento: historicalNumber(historicalPick(row,HIST_ALIASES.horasMantenimiento),false),
-    causa: safeText(historicalPick(row,HIST_ALIASES.causa)),
-    fuente: source,
-    archivo: safeText(row?.__source_file || archivo),
-  };
-}
-function validateHistoricalRecord(source,rec) {
-  const errors=[];
-  if (!rec?.fecha) errors.push('Falta fecha válida');
-  if (rec?.planta==='Sin planta' && !rec?.camion && !rec?.patente && !rec?.operador) errors.push('Falta identificador operacional (planta/camión/patente/operador)');
-  if (source==='status' && !rec?.estado && !rec?.evento) errors.push('Falta estado/evento');
-  if (source==='turnos' && !rec?.operador && rec?.planta==='Sin planta') errors.push('Turno sin operador ni planta identificable');
-  if (source==='citaciones' && !rec?.operador && rec?.planta==='Sin planta') errors.push('Citación sin operador ni planta identificable');
-  return errors;
-}
-function historicalSourceMeta(source) {
-  const s=historicalWarehouse?.sources?.[source];
-  return s && typeof s==='object' ? s : {source,label:HISTORICAL_SOURCES[source]?.label||source,status:'sin_datos',records:0,files:[],errors:[]};
-}
-function historicalPeriodKey(dateStr, granularity='week') {
-  if (granularity==='day') return dateStr;
-  if (granularity==='month') return String(dateStr).slice(0,7);
-  if (granularity==='quarter') {
-    const [y,m]=String(dateStr).split('-').map(Number); return `${y}-T${Math.floor((m-1)/3)+1}`;
-  }
-  if (granularity==='year') return String(dateStr).slice(0,4);
-  return isoWeekKey(dateStr);
-}
-let historicalRuntimeIndex={revision:-1,byDate:new Map(),dates:[],plantCatalog:[]};
-function getHistoricalRuntimeIndex() {
-  const revision=Number(historicalWarehouse?.revision||0);
-  if(historicalRuntimeIndex.revision===revision) return historicalRuntimeIndex;
-  const byDate=new Map(), plantMap=new Map();
-  for(const r of (Array.isArray(historicalWarehouse?.records)?historicalWarehouse.records:[]).filter(r=>HISTORICAL_SOURCES[r?.fuente])){
-    if(r?.fecha){if(!byDate.has(r.fecha))byDate.set(r.fecha,[]);byDate.get(r.fecha).push(r);}
-    const p=safeText(r?.planta),z=safeText(r?.zona);
-    if(p&&p!=='Sin planta'&&!plantMap.has(p))plantMap.set(p,{planta:p,zona:z||'Sin zona'});
-  }
-  historicalRuntimeIndex={revision,byDate,dates:[...byDate.keys()].sort(),plantCatalog:[...plantMap.values()].sort((a,b)=>a.planta.localeCompare(b.planta,'es'))};
-  return historicalRuntimeIndex;
-}
-function historicalFilterRecords(query={}) {
-  const idx=getHistoricalRuntimeIndex();
-  const from=safeText(query.from||''), to=safeText(query.to||''), zona=safeText(query.zona||'');
-  const plantas=String(query.plantas||'').split(',').map(safeText).filter(Boolean);
-  const sources=String(query.sources||'').split(',').map(safeText).filter(Boolean);
-  const selectedDates=idx.dates.filter(d=>(!from||d>=from)&&(!to||d<=to));
-  const candidate=selectedDates.flatMap(d=>idx.byDate.get(d)||[]);
-  return candidate.filter(r=>
-    (!zona||r.zona===zona)&&
-    (!plantas.length||plantas.includes(r.planta))&&
-    (!sources.length||sources.includes(r.fuente))
-  );
-}
-function historicalAvg(rows,key) {
-  const vals=rows.map(r=>Number(r?.[key])).filter(Number.isFinite);
-  return vals.length?round1(vals.reduce((a,b)=>a+b,0)/vals.length):null;
-}
-function historicalDistinct(rows, keys) {
-  const s=new Set();
-  for (const r of rows) {
-    for (const k of keys) { const v=safeText(r?.[k]); if(v){s.add(v);break;} }
-  }
-  return s.size;
-}
-function historicalStatusKind(r) {
-  const s=normalizeName(`${r?.estado||''} ${r?.evento||''}`);
-  if (/login|pre viaje/.test(s)) return 'login';
-  if (/asignado/.test(s)) return 'asignado';
-  if (/cargando|cargado/.test(s)) return 'primeraCarga';
+function histStatusKind(v){
+  const s=normalizeName(v);
+  if(!s) return 'otro';
+  if(s.includes('login')||s.includes('pre viaje')) return 'login';
+  if(s==='asignado'||s.includes('asignado')) return 'asignado';
+  if(s==='cargando'||s==='cargado'||s.includes('cargando')||s.includes('cargado')) return 'primera_carga';
   return 'otro';
 }
-function historicalUniqueOperatorDay(rows, source='') {
-  const set=new Set();
-  for(const r of rows){
-    if(source && r?.fuente!==source) continue;
-    const op=safeText(r?.operador), d=safeText(r?.fecha);
-    if(op&&d)set.add(`${d}|${normalizeId(op)}`);
-  }
-  return set.size;
+function histTime(v){ return parseTimeMinutes(v); }
+function histBaseRecord(source,archivo,rowIndex){
+  return {
+    source, archivo:safeText(archivo), rowIndex:Number(rowIndex||0),
+    fecha:null, planta:'', zona:'', operadorId:'', operadorNombre:'',
+    operadorKey:'', camion:'', turnoMin:null, citacionMin:null,
+    eventoMin:null, estado:'', eventoKind:'', ticket:''
+  };
 }
-function aggregateHistoricalEnterprise(rows, granularity='week') {
-  const groups=new Map();
-  for (const r of rows) {
-    const key=historicalPeriodKey(r.fecha,granularity);
-    if(!groups.has(key)) groups.set(key,[]);
-    groups.get(key).push(r);
+function historicalNormalizeMany(source,row,archivo='',rowIndex=0){
+  if(!HISTORICAL_SOURCES[source]) throw new Error(`Fuente histórica desconocida: ${source}`);
+  const r=normalizeRows([row||{}])[0]||{};
+  if(source==='turnos'){
+    const id=histPick(r,HIST_FIELD.turnos.operatorId);
+    const name=safeText(histPick(r,HIST_FIELD.turnos.operatorName));
+    const key=histOperatorKey(id,name);
+    const plant=histResolvePlant(histPick(r,HIST_FIELD.turnos.plant));
+    const shift=histTime(histPick(r,HIST_FIELD.turnos.shift));
+    let start=parseDateKey(histPick(r,HIST_FIELD.turnos.start)) || parseDateKey(histPick(r,HIST_FIELD.turnos.date));
+    if(!start) start=histIsoWeekStart(histPick(r,HIST_FIELD.turnos.week));
+    if(!key || !start || shift===null) return [];
+    const end=parseDateKey(histPick(r,HIST_FIELD.turnos.end));
+    const days=[];
+    for(let i=0;i<7;i++){
+      const fecha=histDateAdd(start,i);
+      if(!fecha || (end&&fecha>end)) break;
+      const dow=new Date(`${fecha}T12:00:00`).getDay();
+      if(dow===0||dow===6) continue;
+      const rec=histBaseRecord(source,archivo,rowIndex);
+      Object.assign(rec,{
+        fecha, planta, zona:plant?inferZona(plant):'', operadorId:normalizeId(id),
+        operadorNombre:name, operadorKey:key, turnoMin:shift
+      });
+      days.push(rec);
+    }
+    return days;
   }
-  return [...groups.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([periodo,items])=>{
-    const status=items.filter(r=>r.fuente==='status');
+  if(source==='citaciones'){
+    const id=histPick(r,HIST_FIELD.citaciones.operatorId);
+    const name=safeText(histPick(r,HIST_FIELD.citaciones.operatorName));
+    const key=histOperatorKey(id,name);
+    const fecha=parseDateKey(histPick(r,HIST_FIELD.citaciones.date));
+    const citation=histTime(histPick(r,HIST_FIELD.citaciones.citation));
+    if(!key || !fecha || citation===null) return [];
+    const plant=histResolvePlant(histPick(r,HIST_FIELD.citaciones.plant));
+    const rec=histBaseRecord(source,archivo,rowIndex);
+    Object.assign(rec,{
+      fecha, planta, zona:plant?inferZona(plant):'', operadorId:normalizeId(id),
+      operadorNombre:name, operadorKey:key, citacionMin:citation,
+      camion:safeText(histPick(r,HIST_FIELD.citaciones.truck))
+    });
+    return [rec];
+  }
+  const dt=histPick(r,HIST_FIELD.status.datetime);
+  const fecha=parseDateKey(dt)||parseDateKey(histPick(r,HIST_FIELD.status.date));
+  const eventMin=histTime(dt);
+  const state=safeText(histPick(r,HIST_FIELD.status.state));
+  const kind=histStatusKind(state);
+  // Para este modelo histórico se conserva únicamente lo necesario para
+  // LOGIN, ASIGNADO y primera carga. Reduce drásticamente el volumen Status.
+  if(kind==='otro') return [];
+  const id=histPick(r,HIST_FIELD.status.operatorId);
+  const first=safeText(histPick(r,HIST_FIELD.status.firstName));
+  const last=safeText(histPick(r,HIST_FIELD.status.lastName));
+  const name=[first,last].filter(Boolean).join(' ').trim();
+  const key=histOperatorKey(id,name);
+  if(!key || !fecha || eventMin===null) return [];
+  const plant=histResolvePlant(histPick(r,HIST_FIELD.status.plant),histPick(r,HIST_FIELD.status.plantCode));
+  const rec=histBaseRecord(source,archivo,rowIndex);
+  Object.assign(rec,{
+    fecha, planta, zona:plant?inferZona(plant):'', operadorId:normalizeId(id),
+    operadorNombre:name, operadorKey:key, camion:safeText(histPick(r,HIST_FIELD.status.truck)),
+    eventoMin:eventMin, estado:state, eventoKind:kind, ticket:safeText(histPick(r,HIST_FIELD.status.ticket))
+  });
+  return [rec];
+}
+function historicalNormalizeRecord(source,row,archivo=''){
+  return historicalNormalizeMany(source,row,archivo,0)[0] || null;
+}
+function validateHistoricalRecord(source,rec){
+  const errors=[];
+  if(!rec) errors.push('Registro no utilizable para este modelo');
+  else{
+    if(!rec.fecha) errors.push('Falta fecha válida');
+    if(!rec.operadorKey) errors.push('Falta operador identificable');
+    if(source==='turnos' && rec.turnoMin===null) errors.push('Falta hora de turno');
+    if(source==='citaciones' && rec.citacionMin===null) errors.push('Falta hora de citación');
+    if(source==='status' && (!rec.eventoKind||rec.eventoMin===null)) errors.push('Falta evento histórico utilizable');
+  }
+  return errors;
+}
+function histDedupeKey(r){
+  if(r.source==='turnos') return `T|${r.fecha}|${r.operadorKey}|${r.turnoMin}`;
+  if(r.source==='citaciones') return `C|${r.fecha}|${r.operadorKey}|${r.citacionMin}`;
+  return `S|${r.fecha}|${r.operadorKey}|${r.eventoKind}|${r.eventoMin}|${r.camion||''}`;
+}
+function historicalSourceMeta(source){
+  const s=historicalWarehouse?.sources?.[source];
+  return s&&typeof s==='object' ? s : {source,label:HISTORICAL_SOURCES[source]?.label||source,status:'sin_datos',records:0,files:[],errors:[]};
+}
+function histMinutesDiff(actual,planned){
+  if(actual===null||planned===null||actual===undefined||planned===undefined) return null;
+  let d=Number(actual)-Number(planned);
+  if(d>720)d-=1440;
+  if(d<-720)d+=1440;
+  return Number.isFinite(d)?d:null;
+}
+function historicalPeriodKey(dateStr,granularity='week'){
+  if(granularity==='day') return dateStr;
+  if(granularity==='month') return String(dateStr).slice(0,7);
+  if(granularity==='quarter'){const [y,m]=String(dateStr).split('-').map(Number);return `${y}-T${Math.floor((m-1)/3)+1}`;}
+  if(granularity==='year') return String(dateStr).slice(0,4);
+  return isoWeekKey(dateStr);
+}
+
+let historicalDailyCache={revision:-1,rows:[],byDate:new Map(),plants:[],zones:[],operators:[]};
+function getHistoricalDailyIndex(){
+  const revision=Number(historicalWarehouse?.revision||0);
+  if(historicalDailyCache.revision===revision) return historicalDailyCache;
+  const records=Array.isArray(historicalWarehouse?.records)?historicalWarehouse.records:[];
+  const map=new Map();
+  for(const r of records){
+    if(!HISTORICAL_SOURCES[r?.source] && !HISTORICAL_SOURCES[r?.fuente]) continue;
+    const source=r.source||r.fuente;
+    const key=`${r.fecha}|${r.operadorKey||histOperatorKey(r.operadorId,r.operadorNombre||r.operador)}`;
+    if(!r.fecha||key.endsWith('|')) continue;
+    if(!map.has(key)){
+      map.set(key,{
+        fecha:r.fecha,operadorKey:r.operadorKey||histOperatorKey(r.operadorId,r.operadorNombre||r.operador),
+        operadorId:r.operadorId||'',operadorNombre:r.operadorNombre||r.operador||'',
+        planta:'',zona:'',camion:'',turnoMin:null,citacionMin:null,loginMin:null,
+        asignacionMin:null,primeraCargaMin:null,fuentes:new Set()
+      });
+    }
+    const d=map.get(key);d.fuentes.add(source);
+    if(r.operadorId&&!d.operadorId)d.operadorId=r.operadorId;
+    if(r.operadorNombre&&!d.operadorNombre)d.operadorNombre=r.operadorNombre;
+    if(r.camion&&!d.camion)d.camion=r.camion;
+    if(r.planta){
+      // Status tiene prioridad para ubicación real del día; después Turnos.
+      if(source==='status'||!d.planta){d.planta=r.planta;d.zona=r.zona||inferZona(r.planta);}
+    }
+    if(source==='turnos'&&r.turnoMin!==null){
+      if(d.turnoMin===null)d.turnoMin=r.turnoMin;
+      if(!d.planta&&r.planta){d.planta=r.planta;d.zona=r.zona||inferZona(r.planta);}
+    }
+    if(source==='citaciones'&&r.citacionMin!==null){
+      if(d.citacionMin===null||r.citacionMin<d.citacionMin)d.citacionMin=r.citacionMin;
+      if(!d.planta&&r.planta){d.planta=r.planta;d.zona=r.zona||inferZona(r.planta);}
+    }
+    if(source==='status'){
+      if(r.eventoKind==='login'&&(d.loginMin===null||r.eventoMin<d.loginMin))d.loginMin=r.eventoMin;
+      if(r.eventoKind==='asignado'&&(d.asignacionMin===null||r.eventoMin<d.asignacionMin))d.asignacionMin=r.eventoMin;
+      if(r.eventoKind==='primera_carga'&&(d.primeraCargaMin===null||r.eventoMin<d.primeraCargaMin))d.primeraCargaMin=r.eventoMin;
+    }
+  }
+  const rows=[...map.values()].map(d=>({...d,fuentes:[...d.fuentes],planta:d.planta||'Sin planta',zona:d.zona|| (d.planta&&d.planta!=='Sin planta'?inferZona(d.planta):'Sin zona')}));
+  rows.sort((a,b)=>a.fecha.localeCompare(b.fecha)||a.operadorKey.localeCompare(b.operadorKey));
+  const byDate=new Map();for(const r of rows){if(!byDate.has(r.fecha))byDate.set(r.fecha,[]);byDate.get(r.fecha).push(r);}
+  const plants=[...new Set(rows.map(r=>r.planta).filter(p=>p&&p!=='Sin planta'))].sort((a,b)=>a.localeCompare(b,'es'));
+  const zones=[...new Set(rows.map(r=>r.zona).filter(z=>z&&z!=='Sin zona'))].sort((a,b)=>a.localeCompare(b,'es'));
+  const opMap=new Map();
+  for(const r of rows){
+    if(!opMap.has(r.operadorKey))opMap.set(r.operadorKey,{key:r.operadorKey,id:r.operadorId||'',nombre:r.operadorNombre||r.operadorId||r.operadorKey,plantas:new Set(),zonas:new Set()});
+    const o=opMap.get(r.operadorKey);
+    if(r.planta&&r.planta!=='Sin planta')o.plantas.add(r.planta);
+    if(r.zona&&r.zona!=='Sin zona')o.zonas.add(r.zona);
+  }
+  const operators=[...opMap.values()].map(o=>({...o,plantas:[...o.plantas].sort(),zonas:[...o.zonas].sort()})).sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
+  historicalDailyCache={revision,rows,byDate,plants,zones,operators};
+  return historicalDailyCache;
+}
+function getHistoricalRuntimeIndex(){ return getHistoricalDailyIndex(); }
+
+function histCfg(query={}){
+  const num=(v,d,min=0,max=240)=>{const n=Number(v);return Number.isFinite(n)?Math.max(min,Math.min(max,n)):d;};
+  return {
+    sourceStart:String(query.sourceStart||'logeo')==='citacion'?'citacion':'logeo',
+    tolTurnCitation:num(query.tolTurnCitation,30,0,120),
+    tolAssignment:num(query.tolAssignment,30,0,180),
+    tolTurn:num(query.tolTurn,10,0,120),
+    tolCitation:num(query.tolCitation,10,0,120),
+    atrasoLeve:num(query.atrasoLeve,10,1,120),
+    atrasoModerado:num(query.atrasoModerado,20,2,180),
+  };
+}
+function histStats(values){
+  const v=values.filter(Number.isFinite).sort((a,b)=>a-b);
+  if(!v.length)return {n:0,promedio:null,mediana:null,min:null,max:null,p90:null};
+  const avg=v.reduce((a,b)=>a+b,0)/v.length;
+  const med=v.length%2?v[(v.length-1)/2]:(v[v.length/2-1]+v[v.length/2])/2;
+  const p90=v[Math.min(v.length-1,Math.ceil(v.length*.9)-1)];
+  return {n:v.length,promedio:round1(avg),mediana:round1(med),min:round1(v[0]),max:round1(v.at(-1)),p90:round1(p90)};
+}
+function histMetricPct(ok,total){return total?round1(ok/total*100):null;}
+function histClassGeneral(v){if(v===null)return 'Sin datos';if(v>=90)return 'Excelente';if(v>=80)return 'Buena';if(v>=70)return 'Regular';return 'Crítica';}
+function histMetrics(rows,cfg){
+  let tvcN=0,tvcOk=0,tvaN=0,tvaOk=0,atN=0,atOk=0,acN=0,acOk=0;
+  const dead=[],delayCit=[],delayTurn=[];
+  for(const r of rows){
+    if(r.turnoMin!==null&&r.citacionMin!==null){tvcN++;const d=histMinutesDiff(r.citacionMin,r.turnoMin);if(d!==null&&Math.abs(d)<=cfg.tolTurnCitation)tvcOk++;}
+    if(r.turnoMin!==null&&r.asignacionMin!==null){tvaN++;const d=histMinutesDiff(r.asignacionMin,r.turnoMin);if(d!==null&&Math.abs(d)<=cfg.tolAssignment)tvaOk++;}
+    if(r.turnoMin!==null&&r.loginMin!==null){atN++;const d=histMinutesDiff(r.loginMin,r.turnoMin);if(d!==null&&Math.abs(d)<=cfg.tolTurn)atOk++;if(d!==null)delayTurn.push(Math.max(0,d));}
+    if(r.citacionMin!==null&&r.loginMin!==null){acN++;const d=histMinutesDiff(r.loginMin,r.citacionMin);if(d!==null&&Math.abs(d)<=cfg.tolCitation)acOk++;if(d!==null)delayCit.push(Math.max(0,d));}
+    const start=cfg.sourceStart==='citacion'?r.citacionMin:r.loginMin;
+    if(start!==null&&r.asignacionMin!==null){const d=histMinutesDiff(r.asignacionMin,start);if(d!==null&&d>=0&&d<=720)dead.push(d);}
+  }
+  const values=[histMetricPct(tvcOk,tvcN),histMetricPct(tvaOk,tvaN),histMetricPct(atOk,atN),histMetricPct(acOk,acN)].filter(v=>v!==null);
+  const general=values.length?round1(values.reduce((a,b)=>a+b,0)/values.length):null;
+  const citLate=delayCit.filter(x=>x>0),turnLate=delayTurn.filter(x=>x>0);
+  return {
+    turnVsCitation:histMetricPct(tvcOk,tvcN),turnVsCitationN:tvcN,
+    turnVsAssignment:histMetricPct(tvaOk,tvaN),turnVsAssignmentN:tvaN,
+    adherenciaTurno:histMetricPct(atOk,atN),adherenciaTurnoN:atN,
+    adherenciaCitacion:histMetricPct(acOk,acN),adherenciaCitacionN:acN,
+    adherenciaGeneral:general,clasificacionGeneral:histClassGeneral(general),
+    tiempoMuerto:histStats(dead),
+    atrasoCitacion:{...histStats(delayCit),porcentaje:acN?round1(citLate.length/acN*100):null},
+    atrasoTurno:{...histStats(delayTurn),porcentaje:atN?round1(turnLate.length/atN*100):null},
+    registros:rows.length,
+    operadores:new Set(rows.map(r=>r.operadorKey)).size,
+    plantas:new Set(rows.map(r=>r.planta).filter(p=>p&&p!=='Sin planta')).size,
+  };
+}
+function histFilterBase(query={},rangeOverride=null){
+  const idx=getHistoricalDailyIndex();
+  const from=rangeOverride?.from||safeText(query.from),to=rangeOverride?.to||safeText(query.to);
+  const zona=safeText(query.zona),plants=String(query.plantas||'').split(',').map(safeText).filter(Boolean),operator=safeText(query.operator);
+  return idx.rows.filter(r=>(!from||r.fecha>=from)&&(!to||r.fecha<=to)&&(!zona||r.zona===zona)&&(!plants.length||plants.includes(r.planta))&&(!operator||r.operadorKey===operator));
+}
+function histPreviousRange(from,to){
+  if(!from||!to)return null;
+  const a=new Date(`${from}T12:00:00`),b=new Date(`${to}T12:00:00`);
+  if(isNaN(a)||isNaN(b))return null;
+  const days=Math.round((b-a)/86400000)+1;
+  const pTo=new Date(a);pTo.setDate(pTo.getDate()-1);
+  const pFrom=new Date(pTo);pFrom.setDate(pFrom.getDate()-days+1);
+  const fmt=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  return {from:fmt(pFrom),to:fmt(pTo)};
+}
+function histGroupMetrics(rows,key,cfg,previousRows=[]){
+  const prevMap=new Map();
+  for(const r of previousRows){const k=r[key];if(!prevMap.has(k))prevMap.set(k,[]);prevMap.get(k).push(r);}
+  const m=new Map();for(const r of rows){const k=r[key];if(!k||k==='Sin planta'||k==='Sin zona')continue;if(!m.has(k))m.set(k,[]);m.get(k).push(r);}
+  return [...m.entries()].map(([name,items])=>{
+    const met=histMetrics(items,cfg),prev=histMetrics(prevMap.get(name)||[],cfg);
+    return {name,...met,variacionGeneral:met.adherenciaGeneral!==null&&prev.adherenciaGeneral!==null?round1(met.adherenciaGeneral-prev.adherenciaGeneral):null,variacionTurno:met.adherenciaTurno!==null&&prev.adherenciaTurno!==null?round1(met.adherenciaTurno-prev.adherenciaTurno):null};
+  });
+}
+function histOperatorGroups(rows,cfg,previousRows=[]){
+  const prev=new Map();for(const r of previousRows){if(!prev.has(r.operadorKey))prev.set(r.operadorKey,[]);prev.get(r.operadorKey).push(r);}
+  const m=new Map();for(const r of rows){if(!m.has(r.operadorKey))m.set(r.operadorKey,[]);m.get(r.operadorKey).push(r);}
+  return [...m.entries()].map(([key,items])=>{
+    const first=items[0],met=histMetrics(items,cfg),pm=histMetrics(prev.get(key)||[],cfg);
     return {
-      periodo,
-      registros:items.length,
-      turnos:items.filter(r=>r.fuente==='turnos').length,
-      citaciones:items.filter(r=>r.fuente==='citaciones').length,
-      statusEventos:status.length,
-      logins:status.filter(r=>historicalStatusKind(r)==='login').length,
-      asignados:status.filter(r=>historicalStatusKind(r)==='asignado').length,
-      primeraCarga:status.filter(r=>historicalStatusKind(r)==='primeraCarga').length,
+      key,operador:first.operadorNombre||first.operadorId||key,operadorId:first.operadorId||'',planta:first.planta||'Sin planta',zona:first.zona||'Sin zona',
+      dias:new Set(items.map(x=>x.fecha)).size,...met,
+      variacionGeneral:met.adherenciaGeneral!==null&&pm.adherenciaGeneral!==null?round1(met.adherenciaGeneral-pm.adherenciaGeneral):null,
+      variacionTurno:met.adherenciaTurno!==null&&pm.adherenciaTurno!==null?round1(met.adherenciaTurno-pm.adherenciaTurno):null
     };
   });
 }
-function rankHistorical(rows,key='planta') {
-  const map=new Map();
-  for(const r of rows){const k=safeText(r?.[key])||`Sin ${key}`;if(!map.has(k))map.set(k,[]);map.get(k).push(r);}
-  return [...map.entries()].map(([nombre,items])=>({
-    nombre,
-    registros:items.length,
-    turnos:items.filter(r=>r.fuente==='turnos').length,
-    citaciones:items.filter(r=>r.fuente==='citaciones').length,
-    status:items.filter(r=>r.fuente==='status').length,
-  })).sort((a,b)=>b.registros-a.registros||a.nombre.localeCompare(b.nombre,'es'));
+function histRank(arr,metric,direction='desc',limit=10){
+  return arr.filter(x=>{
+    const parts=metric.split('.');
+    let v=x;for(const p of parts)v=v?.[p];
+    return v!==null&&v!==undefined&&Number.isFinite(Number(v));
+  }).sort((a,b)=>{
+    const get=o=>metric.split('.').reduce((v,p)=>v?.[p],o);
+    const av=Number(get(a)),bv=Number(get(b));
+    return direction==='asc'?av-bv:bv-av;
+  }).slice(0,limit);
 }
-function paretoHistorical(rows) {
-  const m=new Map();
-  for(const r of rows.filter(x=>x.fuente==='status')){const cause=safeText(r.estado||r.evento);if(cause)m.set(cause,(m.get(cause)||0)+1);}
-  return [...m.entries()].map(([causa,cantidad])=>({causa,cantidad})).sort((a,b)=>b.cantidad-a.cantidad).slice(0,20);
+function aggregateHistoricalEnterprise(rows,granularity='week',cfg=histCfg({})){
+  const g=new Map();for(const r of rows){const k=historicalPeriodKey(r.fecha,granularity);if(!g.has(k))g.set(k,[]);g.get(k).push(r);}
+  return [...g.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([periodo,items])=>({periodo,...histMetrics(items,cfg)}));
 }
-function heatmapHistorical(rows) {
-  const m=new Map();
-  for(const r of rows){if(!r.fecha)continue;const key=`${r.planta||'Sin planta'}|${r.fecha}`;m.set(key,(m.get(key)||0)+1);}
-  return [...m.entries()].map(([key,valor])=>{const [planta,fecha]=key.split('|');return {planta,fecha,valor};}).slice(0,5000);
+function historicalAvg(rows,field){const v=rows.map(r=>Number(r?.[field])).filter(Number.isFinite);return v.length?round1(v.reduce((a,b)=>a+b,0)/v.length):null;}
+function histInsights(metrics,plants,zones,ops){
+  const insights=[],alerts=[];
+  const validPlants=plants.filter(x=>x.adherenciaGeneral!==null).sort((a,b)=>b.adherenciaGeneral-a.adherenciaGeneral);
+  const validZones=zones.filter(x=>x.adherenciaGeneral!==null).sort((a,b)=>b.adherenciaGeneral-a.adherenciaGeneral);
+  if(validPlants[0])insights.push(`Mejor planta del período: ${validPlants[0].name} (${validPlants[0].adherenciaGeneral}% índice general).`);
+  if(validPlants.at(-1))insights.push(`Planta con mayor oportunidad de mejora: ${validPlants.at(-1).name} (${validPlants.at(-1).adherenciaGeneral}%).`);
+  if(validZones[0])insights.push(`Mejor zona: ${validZones[0].name} (${validZones[0].adherenciaGeneral}%).`);
+  const dead=histRank(ops,'tiempoMuerto.promedio','desc',3);if(dead.length)insights.push(`Mayor tiempo muerto promedio: ${dead.map(x=>`${x.operador} ${x.tiempoMuerto.promedio} min`).join(' · ')}.`);
+  const recurrent=ops.filter(x=>Number(x.atrasoTurno.porcentaje)>=50&&x.atrasoTurno.n>=2).sort((a,b)=>b.atrasoTurno.porcentaje-a.atrasoTurno.porcentaje).slice(0,5);
+  if(recurrent.length)alerts.push(`Reincidencia en atraso de turno: ${recurrent.map(x=>`${x.operador} (${x.atrasoTurno.porcentaje}%)`).join(' · ')}.`);
+  const deterioro=ops.filter(x=>x.variacionGeneral!==null&&x.variacionGeneral<=-10).sort((a,b)=>a.variacionGeneral-b.variacionGeneral).slice(0,5);
+  if(deterioro.length)alerts.push(`Deterioro vs período anterior: ${deterioro.map(x=>`${x.operador} (${x.variacionGeneral} pp)`).join(' · ')}.`);
+  if(metrics.adherenciaGeneral!==null&&metrics.adherenciaGeneral<70)alerts.push(`Índice general operacional crítico: ${metrics.adherenciaGeneral}%.`);
+  if(!insights.length)insights.push('No existen datos suficientes para generar hallazgos comparativos en el período seleccionado.');
+  if(!alerts.length)alerts.push('Sin alertas críticas con los umbrales actuales.');
+  return {insights,alerts};
 }
 
-app.post('/api/historico/ingesta', requireAuth, (req,res)=>{
+app.post('/api/historico/ingesta',requireAuth,(req,res)=>{
   try{
-    const source=safeText(req.body?.source||''), incoming=req.body?.datos, archivo=safeText(req.body?.archivo||'archivo'), modo=safeText(req.body?.modo||'append').toLowerCase();
-    if(!HISTORICAL_SOURCES[source]) return res.status(400).json({error:`Fuente histórica inválida: ${source}`});
-    if(!Array.isArray(incoming)||!incoming.length) return res.status(400).json({error:'La carpeta/archivo no contiene filas para procesar'});
-    const normalized=normalizeRows(incoming), valid=[], rejected=[], errors=[];
-    normalized.forEach((row,i)=>{const rec=historicalNormalizeRecord(source,row,archivo), er=validateHistoricalRecord(source,rec);if(er.length){rejected.push(rec);errors.push({fila:i+1,archivo,errores:er});}else valid.push(rec);});
-    if(!valid.length) {
-      const resumen = {};
-      for (const e of errors) for (const msg of (e.errores || [])) resumen[msg]=(resumen[msg]||0)+1;
-      return res.status(422).json({
-        error:`${HISTORICAL_SOURCES[source].label}: ninguna fila superó la validación`,
-        detalle:Object.entries(resumen).map(([k,v])=>`${k}: ${v}`).join(' · ') || 'No se identificaron registros válidos',
-        archivo,
-        filas_recibidas:normalized.length,
-        errores:errors.slice(0,20)
-      });
-    }
-    if(!Array.isArray(historicalWarehouse.records)) historicalWarehouse.records=[];
-    if(modo==='replace'){historicalWarehouse.records=historicalWarehouse.records.filter(r=>r.fuente!==source);historicalWarehouse.sources[source]={};}
+    const source=safeText(req.body?.source),incoming=req.body?.datos,archivo=safeText(req.body?.archivo||'archivo'),modo=safeText(req.body?.modo||'append').toLowerCase(),finalizar=req.body?.finalizar===true;
+    if(!HISTORICAL_SOURCES[source])return res.status(400).json({error:`Fuente histórica inválida: ${source}`});
+    if(!Array.isArray(incoming)||!incoming.length)return res.status(400).json({error:'El archivo no contiene filas para procesar'});
+    if(!Array.isArray(historicalWarehouse.records))historicalWarehouse.records=[];
+    if(modo==='replace'){historicalWarehouse.records=historicalWarehouse.records.filter(r=>(r.source||r.fuente)!==source);historicalWarehouse.sources[source]={};}
+    const existing=new Set(historicalWarehouse.records.filter(r=>(r.source||r.fuente)===source).map(histDedupeKey));
+    const valid=[],errors=[];let ignored=0,duplicates=0,expanded=0;
+    const normalized=normalizeRows(incoming);
+    normalized.forEach((row,i)=>{
+      const many=historicalNormalizeMany(source,row,archivo,i+1);expanded+=many.length;
+      if(!many.length){ignored++;return;}
+      for(const rec of many){
+        const er=validateHistoricalRecord(source,rec);
+        if(er.length){errors.push({fila:i+1,archivo,errores:er});continue;}
+        const dk=histDedupeKey(rec);if(existing.has(dk)){duplicates++;continue;}existing.add(dk);valid.push(rec);
+      }
+    });
     historicalWarehouse.records.push(...valid);
-    const prev=historicalSourceMeta(source), files=[...new Set([...(Array.isArray(prev.files)?prev.files:[]),archivo].filter(Boolean))], sourceRows=historicalWarehouse.records.filter(r=>r.fuente===source), dates=sourceRows.map(r=>r.fecha).filter(Boolean).sort();
-    historicalWarehouse.sources[source]={source,label:HISTORICAL_SOURCES[source].label,status:'cargado',records:sourceRows.length,files,minDate:dates[0]||null,maxDate:dates.at(-1)||null,lastLoadedAt:nowIso(),loadedBy:req.user?.nombre||'Sistema',rejected:Number(prev.rejected||0)+rejected.length,errors:[...(Array.isArray(prev.errors)?prev.errors:[]),...errors].slice(-100)};
-    historicalWarehouse.revision=Number(historicalWarehouse.revision||0)+1;historicalWarehouse.loaded_at=nowIso();historicalRuntimeIndex.revision=-1;persistHistoricalWarehouse();
-    return res.json({ok:true,source,cantidad:sourceRows.length,cantidad_lote:valid.length,rechazadas:rejected.length,meta:historicalWarehouse.sources[source]});
+    const prev=historicalSourceMeta(source);
+    const sourceRows=historicalWarehouse.records.filter(r=>(r.source||r.fuente)===source);
+    const dates=sourceRows.map(r=>r.fecha).filter(Boolean).sort();
+    historicalWarehouse.sources[source]={
+      source,label:HISTORICAL_SOURCES[source].label,status:sourceRows.length?'cargado':'sin_datos',
+      records:sourceRows.length,files:[...new Set([...(prev.files||[]),archivo].filter(Boolean))],
+      minDate:dates[0]||null,maxDate:dates.at(-1)||null,lastLoadedAt:nowIso(),loadedBy:req.user?.nombre||'Sistema',
+      received:Number(prev.received||0)+normalized.length,stored:sourceRows.length,
+      ignored:Number(prev.ignored||0)+ignored,rejected:Number(prev.rejected||0)+errors.length,duplicates:Number(prev.duplicates||0)+duplicates,
+      errors:[...(prev.errors||[]),...errors].slice(-100)
+    };
+    historicalWarehouse.revision=Number(historicalWarehouse.revision||0)+1;
+    historicalWarehouse.loaded_at=nowIso();
+    historicalDailyCache.revision=-1;
+    // Para cargas grandes se persiste al finalizar archivo/lote final, evitando reescribir
+    // todo el warehouse por cada bloque.
+    if(finalizar)persistHistoricalWarehouse();
+    return res.json({ok:true,source,archivo,loteRecibido:normalized.length,loteGuardado:valid.length,expandidos:expanded,ignorados:ignored,duplicados:duplicates,rechazados:errors.length,meta:historicalWarehouse.sources[source]});
   }catch(err){
     registrarErrorDetallado({modulo:'historico',funcion:'POST /api/historico/ingesta',error:err?.message||String(err),stack:err?.stack});
-    return res.status(422).json({error:'No fue posible consolidar la carpeta histórica',detalle:err?.message||String(err)});
+    return res.status(422).json({error:'No fue posible consolidar el archivo histórico',detalle:err?.message||String(err)});
   }
 });
-
-app.get('/api/historico/fuentes', requireAuth, (req,res)=>{
-  const records=(Array.isArray(historicalWarehouse?.records)?historicalWarehouse.records:[]).filter(r=>HISTORICAL_SOURCES[r?.fuente]);
-  const idx=getHistoricalRuntimeIndex();
-  const plants=idx.plantCatalog.map(x=>x.planta);
-  const zones=[...new Set(idx.plantCatalog.map(x=>x.zona).filter(z=>z&&z!=='Sin zona'))].sort((a,b)=>a.localeCompare(b,'es'));
-  return res.json({ok:true,revision:Number(historicalWarehouse?.revision||0),totalRecords:records.length,loadedAt:historicalWarehouse?.loaded_at||null,sources:Object.keys(HISTORICAL_SOURCES).map(k=>({source:k,label:HISTORICAL_SOURCES[k].label,...historicalSourceMeta(k)})),plants,zones,plantCatalog:idx.plantCatalog});
+app.post('/api/historico/finalizar',requireAuth,(req,res)=>{try{persistHistoricalWarehouse();return res.json({ok:true,revision:Number(historicalWarehouse?.revision||0)});}catch(err){return res.status(500).json({error:'No se pudo persistir la base histórica',detalle:err?.message||String(err)});}});
+app.delete('/api/historico/fuente/:source',requireAuth,(req,res)=>{
+  const source=safeText(req.params.source);if(!HISTORICAL_SOURCES[source])return res.status(400).json({error:'Fuente inválida'});
+  historicalWarehouse.records=(historicalWarehouse.records||[]).filter(r=>(r.source||r.fuente)!==source);
+  historicalWarehouse.sources[source]={};historicalWarehouse.revision=Number(historicalWarehouse.revision||0)+1;historicalDailyCache.revision=-1;persistHistoricalWarehouse();
+  return res.json({ok:true,source});
 });
 
-app.get('/api/historico/dashboard-enterprise', requireAuth, (req,res)=>{
+function historicalFileDetails(source){
+  const rows=(historicalWarehouse?.records||[]).filter(r=>(r.source||r.fuente)===source);
+  const by=new Map();
+  for(const r of rows){
+    const archivo=safeText(r.archivo||'Archivo sin nombre');
+    if(!by.has(archivo))by.set(archivo,{archivo,records:0,minDate:null,maxDate:null,operators:new Set(),plants:new Set()});
+    const x=by.get(archivo);x.records++;
+    if(r.fecha){if(!x.minDate||r.fecha<x.minDate)x.minDate=r.fecha;if(!x.maxDate||r.fecha>x.maxDate)x.maxDate=r.fecha;}
+    if(r.operadorKey)x.operators.add(r.operadorKey);
+    if(r.planta)x.plants.add(r.planta);
+  }
+  return [...by.values()].map(x=>({archivo:x.archivo,records:x.records,minDate:x.minDate,maxDate:x.maxDate,operators:x.operators.size,plants:x.plants.size})).sort((a,b)=>a.archivo.localeCompare(b.archivo,'es'));
+}
+function recomputeHistoricalSourceMeta(source){
+  const sourceRows=(historicalWarehouse?.records||[]).filter(r=>(r.source||r.fuente)===source);
+  const dates=sourceRows.map(r=>r.fecha).filter(Boolean).sort();
+  const previous=historicalWarehouse.sources?.[source]||{};
+  historicalWarehouse.sources[source]={
+    ...previous,source,label:HISTORICAL_SOURCES[source]?.label||source,
+    status:sourceRows.length?'cargado':'sin_datos',records:sourceRows.length,
+    files:historicalFileDetails(source).map(x=>x.archivo),
+    minDate:dates[0]||null,maxDate:dates.at(-1)||null,lastLoadedAt:previous.lastLoadedAt||null,loadedBy:previous.loadedBy||null
+  };
+  return historicalWarehouse.sources[source];
+}
+app.delete('/api/historico/archivo',requireAuth,(req,res)=>{
   try{
+    const source=safeText(req.query.source),archivo=safeText(req.query.archivo);
+    if(!HISTORICAL_SOURCES[source])return res.status(400).json({error:'Fuente histórica inválida'});
+    if(!archivo)return res.status(400).json({error:'Debe indicar el archivo a eliminar'});
+    const before=(historicalWarehouse.records||[]).length;
+    historicalWarehouse.records=(historicalWarehouse.records||[]).filter(r=>!((r.source||r.fuente)===source&&safeText(r.archivo)===archivo));
+    const removed=before-historicalWarehouse.records.length;
+    recomputeHistoricalSourceMeta(source);
+    historicalWarehouse.revision=Number(historicalWarehouse.revision||0)+1;
+    historicalWarehouse.loaded_at=nowIso();historicalDailyCache.revision=-1;persistHistoricalWarehouse();
+    return res.json({ok:true,source,archivo,removed,meta:historicalWarehouse.sources[source]});
+  }catch(err){return res.status(422).json({error:'No fue posible eliminar el archivo histórico',detalle:err?.message||String(err)});}
+});
+
+app.get('/api/historico/fuentes',requireAuth,(req,res)=>{
+  const idx=getHistoricalDailyIndex(),records=Array.isArray(historicalWarehouse?.records)?historicalWarehouse.records:[];
+  const dates=idx.rows.map(r=>r.fecha).filter(Boolean).sort();
+  return res.json({
+    ok:true,revision:Number(historicalWarehouse?.revision||0),totalRecords:records.length,totalDays:idx.rows.length,loadedAt:historicalWarehouse?.loaded_at||null,
+    minDate:dates[0]||null,maxDate:dates.at(-1)||null,
+    sources:Object.keys(HISTORICAL_SOURCES).map(k=>({source:k,label:HISTORICAL_SOURCES[k].label,...historicalSourceMeta(k),fileDetails:historicalFileDetails(k)})),
+    plants:idx.plants,
+    plantCatalog:idx.plants.map(planta=>({planta,zona:(idx.rows.find(r=>r.planta===planta)?.zona)||inferZona(planta)})),
+    zones:idx.zones,operators:idx.operators
+  });
+});
+app.get('/api/historico/dashboard-enterprise',requireAuth,(req,res)=>{
+  try{
+    const cfg=histCfg(req.query),rows=histFilterBase(req.query),from=safeText(req.query.from),to=safeText(req.query.to);
+    const prevRange=histPreviousRange(from,to),prevRows=prevRange?histFilterBase(req.query,prevRange):[];
     const granularity=['day','week','month','quarter','year'].includes(String(req.query.granularity))?String(req.query.granularity):'week';
-    const rows=historicalFilterRecords(req.query).filter(r=>HISTORICAL_SOURCES[r?.fuente]);
-    const all=(Array.isArray(historicalWarehouse?.records)?historicalWarehouse.records:[]).filter(r=>HISTORICAL_SOURCES[r?.fuente]);
-    const dates=rows.map(r=>r.fecha).filter(Boolean).sort();
-    const statusRows=rows.filter(r=>r.fuente==='status');
-    const kpis={
-      totalRegistros:rows.length,
-      turnosHistoricos:rows.filter(r=>r.fuente==='turnos').length,
-      citacionesHistoricas:rows.filter(r=>r.fuente==='citaciones').length,
-      eventosStatus:statusRows.length,
-      totalOperadores:historicalDistinct(rows,['operador']),
-      totalPlantas:new Set(rows.map(r=>r.planta).filter(p=>p&&p!=='Sin planta')).size,
-      diasDisponibles:new Set(rows.map(r=>r.fecha).filter(Boolean)).size,
-      loginsDetectados:statusRows.filter(r=>historicalStatusKind(r)==='login').length,
-      asignadosDetectados:statusRows.filter(r=>historicalStatusKind(r)==='asignado').length,
-      primeraCargaDetectada:statusRows.filter(r=>historicalStatusKind(r)==='primeraCarga').length,
-      operadoresTurnoDia:historicalUniqueOperatorDay(rows,'turnos'),
-      operadoresStatusDia:historicalUniqueOperatorDay(rows,'status'),
+    const metrics=histMetrics(rows,cfg),operators=histOperatorGroups(rows,cfg,prevRows);
+    const plants=histGroupMetrics(rows,'planta',cfg,prevRows).sort((a,b)=>(b.adherenciaGeneral??-1)-(a.adherenciaGeneral??-1));
+    const zones=histGroupMetrics(rows,'zona',cfg,prevRows).sort((a,b)=>(b.adherenciaGeneral??-1)-(a.adherenciaGeneral??-1));
+    const rankings={
+      mejorTurno:histRank(operators,'adherenciaTurno','desc'),mejorCitacion:histRank(operators,'adherenciaCitacion','desc'),
+      mejorGeneral:histRank(operators,'adherenciaGeneral','desc'),menorTiempoMuerto:histRank(operators,'tiempoMuerto.promedio','asc'),
+      menorAtrasoCitacion:histRank(operators,'atrasoCitacion.promedio','asc'),menorAtrasoTurno:histRank(operators,'atrasoTurno.promedio','asc'),
+      critTiempoMuerto:histRank(operators,'tiempoMuerto.promedio','desc'),critAtrasoCitacion:histRank(operators,'atrasoCitacion.promedio','desc'),
+      critAtrasoTurno:histRank(operators,'atrasoTurno.promedio','desc'),critAdherenciaTurno:histRank(operators,'adherenciaTurno','asc'),
+      critAdherenciaCitacion:histRank(operators,'adherenciaCitacion','asc'),critGeneral:histRank(operators,'adherenciaGeneral','asc')
     };
-    const series=aggregateHistoricalEnterprise(rows,granularity), plantRank=rankHistorical(rows,'planta'), zoneRank=rankHistorical(rows,'zona');
-    const equipMap=new Map(), opMap=new Map();
-    for(const r of statusRows){const eq=safeText(r.camion||r.patente);if(eq)equipMap.set(eq,(equipMap.get(eq)||0)+1);const op=safeText(r.operador);if(op)opMap.set(op,(opMap.get(op)||0)+1);}
+    const byPlant=plants.map(p=>{
+      const pr=rows.filter(r=>r.planta===p.name),ppr=prevRows.filter(r=>r.planta===p.name),ops=histOperatorGroups(pr,cfg,ppr);
+      return {planta:p.name,zona:pr[0]?.zona||'',metrics:p,mejores:histRank(ops,'adherenciaGeneral','desc'),criticos:histRank(ops,'adherenciaGeneral','asc')};
+    });
+    const trend=aggregateHistoricalEnterprise(rows,granularity,cfg);
+    const heatMap=new Map();for(const r of rows){if(r.planta==='Sin planta')continue;const d=r.turnoMin!==null&&r.loginMin!==null?Math.max(0,histMinutesDiff(r.loginMin,r.turnoMin)||0):null;if(d===null)continue;const k=`${r.planta}|${r.fecha}`;if(!heatMap.has(k))heatMap.set(k,[]);heatMap.get(k).push(d);}
+    const heatmap=[...heatMap.entries()].map(([k,v])=>{const [planta,fecha]=k.split('|');return {planta,fecha,valor:round1(v.reduce((a,b)=>a+b,0)/v.length)};});
+    const findings=histInsights(metrics,plants,zones,operators);
     return res.json({
-      ok:true,source:'historicalWarehouse:turnos+citaciones+status',granularity,from:req.query.from||null,to:req.query.to||null,totalBase:all.length,minDate:dates[0]||null,maxDate:dates.at(-1)||null,kpis,series,
-      rankings:{plantas:plantRank,zonas:zoneRank,equipos:[...equipMap.entries()].map(([equipo,eventos])=>({equipo,eventos})).sort((a,b)=>b.eventos-a.eventos).slice(0,20),operadores:[...opMap.entries()].map(([operador,eventos])=>({operador,asignaciones:eventos})).sort((a,b)=>b.asignaciones-a.asignaciones).slice(0,20)},
-      pareto:paretoHistorical(rows),heatmap:heatmapHistorical(rows),
-      plants:[...new Set(rows.map(r=>r.planta).filter(p=>p&&p!=='Sin planta'))].sort((a,b)=>a.localeCompare(b,'es')),
-      zones:[...new Set(rows.map(r=>r.zona).filter(z=>z&&z!=='Sin zona'))].sort((a,b)=>a.localeCompare(b,'es')),
-      sources:Object.keys(HISTORICAL_SOURCES).map(k=>({source:k,label:HISTORICAL_SOURCES[k].label,...historicalSourceMeta(k)})),
-      empty:rows.length===0,mensaje:rows.length?'':'NO SE ENCONTRARON DATOS PARA EL PERÍODO SELECCIONADO',
+      ok:true,source:'historicalWarehouse:file-attachments-only',from,to,previousRange:prevRange,granularity,cfg,empty:rows.length===0,
+      mensaje:rows.length?'':'NO SE ENCONTRARON DATOS PARA EL PERÍODO SELECCIONADO',
+      metrics,trend,rankings,plants,zones,byPlant,heatmap,findings,
+      detailed:rows.slice(0,5000),totalDetailed:rows.length,
+      catalog:{plants:getHistoricalDailyIndex().plants,zones:getHistoricalDailyIndex().zones,operators:getHistoricalDailyIndex().operators},
+      audit:{revision:Number(historicalWarehouse?.revision||0),records:(historicalWarehouse?.records||[]).length,sources:Object.keys(HISTORICAL_SOURCES).map(k=>({source:k,...historicalSourceMeta(k)}))}
     });
   }catch(err){
     registrarErrorDetallado({modulo:'historico',funcion:'GET /api/historico/dashboard-enterprise',error:err?.message||String(err),stack:err?.stack});
-    return res.status(422).json({error:'No fue posible construir el tablero histórico',detalle:err?.message||String(err)});
+    return res.status(422).json({error:'No fue posible construir Trazabilidad Intelligence',detalle:err?.message||String(err)});
   }
 });
+
 
 function historyScopeKey({ zona=null, region=null, planta=null, plantasFiltro=null } = {}) {
   if (planta) return `PLANTA:${planta}`;
@@ -2165,7 +2406,7 @@ app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 if (require.main === module && process.env.CCO_TEST_MODE !== '1') {
   server.listen(PORT, () => {
-    console.log(`[CCO][startup] CCO Intelligence v3.3.3 activo en puerto ${PORT}`);
+    console.log(`[CCO][startup] CCO Intelligence v3.4.1 activo en puerto ${PORT}`);
     console.log(`[CCO][startup] Diccionario plantas: ${PLANT_DICTIONARY.plants.length} plantas, ${PLANT_DICTIONARY_LOOKUP.size} alias resolubles, ${Object.keys(PLANT_DICTIONARY.conflicts||{}).length} alias ambiguos`);
     if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producción.');
   });
