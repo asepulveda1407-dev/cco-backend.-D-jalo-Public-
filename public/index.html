@@ -267,6 +267,13 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 @media(max-width:1050px){.hist-load-diagnostics{grid-template-columns:1fr 1fr}}
 @media(max-width:720px){.hist-load-diagnostics{grid-template-columns:1fr}}
 
+
+.hist-coverage-grid{display:grid;grid-template-columns:repeat(6,minmax(145px,1fr));gap:8px;margin:8px 0 12px}
+.hist-cov-card{border:1px solid #d9e7f4;border-radius:11px;background:#fff;padding:9px}
+.hist-cov-card .k{font-size:9px;color:#71879b;text-transform:uppercase}.hist-cov-card .v{font-size:20px;font-weight:800;color:#153f67;margin:3px 0}.hist-cov-card .s{font-size:9px;color:#60778c;line-height:1.35}
+.hist-cross-good{border-left:4px solid #21a66b}.hist-cross-warn{border-left:4px solid #e2a126}.hist-cross-bad{border-left:4px solid #dc4c5a}
+@media(max-width:1100px){.hist-coverage-grid{grid-template-columns:repeat(3,1fr)}}@media(max-width:700px){.hist-coverage-grid{grid-template-columns:1fr 1fr}}
+
 </style>
 </head>
 <body>
@@ -306,11 +313,11 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v3.7.2</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v3.8</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
     <div id="opDateControl" class="pill" style="margin:0">Operación de hoy · <b id="scopeFechaLabel">—</b><input id="scopeFecha" type="hidden"></div>
-    <span id="appVersion" class="pill">v3.7.2</span><span id="connPill" class="pill">Conectando…</span>
+    <span id="appVersion" class="pill">v3.8</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
 <div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
@@ -476,6 +483,10 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
       <span class="small" id="histAlcance"></span>
     </div>
     <div id="histDiagnostico" class="history-note"></div>
+    <div class="rep-header"><span class="rep-titulo">Cobertura y Cruce de Fuentes</span><span class="rep-meta">El KPI solo se calcula cuando existen fuentes compatibles en el mismo período</span></div>
+    <div id="histCoveragePanel" class="hist-coverage-grid"></div>
+    <div id="histCrossWarning" class="history-note"></div>
+
 
     <div class="rep-header"><span class="rep-titulo">Dashboard Ejecutivo</span><span class="rep-meta" id="histGeneralClass">Sin datos</span></div>
     <div class="history-kpis hist-kpi-row" id="histKpiRow1"></div>
@@ -525,7 +536,7 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
     <div class="rep-header"><span class="rep-titulo">Tabla Detallada Exportable</span><span class="rep-meta" id="histDetailCount"></span></div>
     <div class="history-table-wrap hist-detail-table"><table class="history-table">
-      <thead><tr><th>Fecha</th><th>Zona</th><th>Planta</th><th>Operador</th><th>Turno</th><th>Citación</th><th>Logeo</th><th>1ª Asignación</th><th>1ª Carga</th></tr></thead>
+      <thead><tr><th>Fecha</th><th>Zona</th><th>Planta</th><th>Operador</th><th>Turno</th><th>Citación</th><th>Logeo</th><th>1ª Asignación</th><th>1ª Carga</th><th>Cruce</th></tr></thead>
       <tbody id="histDetailBody"><tr><td colspan="9" class="history-empty">Cargue archivos históricos para comenzar.</td></tr></tbody>
     </table></div>
   </div>
@@ -2819,7 +2830,7 @@ function isoWeekEnd(year,week){
 }
 
 function histPeriodRange(){
-  const type=document.getElementById('histPeriodoTipo')?.value||'week',today=new Date(),min=histCatalogo.minDate||dateKeyLocal(today),max=histCatalogo.maxDate||dateKeyLocal(today);
+  const type=document.getElementById('histPeriodoTipo')?.value||'week',today=new Date(),min=histCatalogo.minDate||dateKeyLocal(today),max=histCatalogo.recommendedDate||histCatalogo.maxDate||dateKeyLocal(today);
   const q=id=>document.getElementById(id)?.value||'';
   if(type==='day'){const d=q('histDay')||max;return {from:d,to:d,granularity:'day'};}
   if(type==='week'){const v=q('histWeek');if(v){const m=v.match(/^(\d{4})-W(\d{2})$/);if(m){const s=isoWeekStart(Number(m[1]),Number(m[2])),e=isoWeekEnd(Number(m[1]),Number(m[2]));return {from:dateKeyLocal(s),to:dateKeyLocal(e),granularity:'day'};}}}
@@ -2831,7 +2842,7 @@ function histPeriodRange(){
 }
 function renderHistPeriodControls(keep=false){
   const box=document.getElementById('histPeriodoControls');if(!box)return;
-  const type=document.getElementById('histPeriodoTipo')?.value||'week',max=histCatalogo.maxDate||dateKeyLocal(new Date()),year=max.slice(0,4);
+  const type=document.getElementById('histPeriodoTipo')?.value||'week',max=histCatalogo.recommendedDate||histCatalogo.maxDate||dateKeyLocal(new Date()),year=max.slice(0,4);
   if(type==='day')box.innerHTML=`<div><label>Fecha</label><input id="histDay" type="date" value="${max}"></div>`;
   else if(type==='week'){const d=new Date(`${max}T12:00:00`),w=String(isoWeekNumber(d)).padStart(2,'0');box.innerHTML=`<div><label>Semana</label><input id="histWeek" type="week" value="${d.getFullYear()}-W${w}"></div>`;}
   else if(type==='month')box.innerHTML=`<div><label>Mes</label><input id="histMonth" type="month" value="${max.slice(0,7)}"></div>`;
@@ -2854,11 +2865,55 @@ function histMetricCard(title,value,sub){
   const noData=value==='—'||value===null||value===undefined;
   const shown=noData?'Sin datos':value;
   const cls=noData?'hist-no-kpi':(String(value).includes('%')&&Number(String(value).replace('%',''))<70?'hist-value-bad':'');
-  return `<div class="kpi-card"><div class="kpi-label">${title}</div><div class="kpi-valor ${cls}">${shown}</div><div class="kpi-sub">${noData?'No existen registros suficientes para calcular este KPI.':sub}</div></div>`;
+  return `<div class="kpi-card"><div class="kpi-label">${title}</div><div class="kpi-valor ${cls}">${shown}</div><div class="kpi-sub">${sub|| (noData?'No existen registros suficientes para calcular este KPI.':'')}</div></div>`;
 }
+
+function renderHistoricalCoverage(data){
+  const c=data?.coverage||{},sr=c.sourceRows||{},od=c.operatorDays||{},x=c.crosses||{},u=c.unmatched||{};
+  const cards=[
+    ['Turnos período',od.turnos||0,`${sr.turnos||0} registros fuente`,''],
+    ['Citaciones período',od.citaciones||0,`${sr.citaciones||0} registros fuente`,od.citaciones?'hist-cross-good':'hist-cross-bad'],
+    ['Status período',od.status||0,`${sr.status||0} registros consolidados`,od.status?'hist-cross-good':'hist-cross-bad'],
+    ['Cruce Turno ↔ Citación',x.turnoCitacion||0,`${u.turnoSinCitacion||0} turnos sin citación`,x.turnoCitacion?'hist-cross-good':'hist-cross-bad'],
+    ['Cruce Turno ↔ Status',x.turnoStatus||0,`${u.turnoSinStatus||0} turnos sin Status`,x.turnoStatus?'hist-cross-good':'hist-cross-bad'],
+    ['Cruce 3 fuentes',x.tresFuentes||0,`${x.citacionLogin||0} citación + login`,x.tresFuentes?'hist-cross-good':'hist-cross-warn']
+  ];
+  const box=document.getElementById('histCoveragePanel');
+  if(box)box.innerHTML=cards.map(([k,v,s,cl])=>`<div class="hist-cov-card ${cl}"><div class="k">${k}</div><div class="v">${Number(v).toLocaleString('es-CL')}</div><div class="s">${s}</div></div>`).join('');
+  const warn=document.getElementById('histCrossWarning');
+  if(!warn)return;
+  const ranges=data?.sourceRanges||{};
+  const absent=[];
+  if(!(od.citaciones>0))absent.push(`Citaciones: ${ranges.citaciones?.minDate||'—'} → ${ranges.citaciones?.maxDate||'—'}`);
+  if(!(od.status>0))absent.push(`Status: ${ranges.status?.minDate||'—'} → ${ranges.status?.maxDate||'—'}`);
+  if(!(od.turnos>0))absent.push(`Turnos: ${ranges.turnos?.minDate||'—'} → ${ranges.turnos?.maxDate||'—'}`);
+  if(absent.length){
+    warn.innerHTML=`⚠ <b>El período seleccionado no contiene todas las fuentes necesarias.</b> ${absent.join(' · ')}${data.recommendedDate?` · Última fecha común recomendada: <b>${data.recommendedDate}</b>.`:''}`;
+  }else if((x.turnoStatus||0)===0&&(x.turnoCitacion||0)===0){
+    warn.innerHTML='⚠ Las fuentes tienen registros en el período, pero no existen coincidencias por <b>operador + fecha</b>. Revise IDs y fechas en el diagnóstico.';
+  }else{
+    warn.innerHTML=`✅ Fuentes disponibles y cruce activo · Turno↔Citación: <b>${x.turnoCitacion||0}</b> · Turno↔Status: <b>${x.turnoStatus||0}</b> · Tres fuentes: <b>${x.tresFuentes||0}</b>.`;
+  }
+}
+function histNoDataReason(data,kpi){
+  const c=data?.coverage?.crosses||{};
+  const map={
+    turnVsCitation:['turnoCitacion','Requiere Turno + Citación del mismo operador y fecha'],
+    turnVsAssignment:['turnoAsignacion','Requiere Turno + primera ASIGNACIÓN de Status'],
+    adherenciaTurno:['turnoLogin','Requiere Turno + LOGIN de Status'],
+    adherenciaCitacion:['citacionLogin','Requiere Citación + LOGIN de Status'],
+    tiempoMuerto:[document.getElementById('histSourceStart')?.value==='citacion'?'citacionLogin':'turnoStatus','Requiere hora inicial y primera ASIGNACIÓN'],
+    atrasoCitacion:['citacionLogin','Requiere Citación + LOGIN'],
+    atrasoTurno:['turnoLogin','Requiere Turno + LOGIN']
+  };
+  const [key,msg]=map[kpi]||['', 'No existen registros suficientes'];
+  return `${msg}${key?` · cruces disponibles: ${Number(c[key]||0).toLocaleString('es-CL')}`:''}`;
+}
+
 async function cargarHistorico(){
   try{
     const p=histParams(),r=await fetch(API+'/api/historico/dashboard-enterprise?'+p.toString(),{headers:authHeaders()}),data=await leerRespuestaApiSegura(r);historicoUltimo=data;
+    renderHistoricalCoverage(data);
     const diag=document.getElementById('histDiagnostico');
     if(data.empty){diag.textContent=`NO SE ENCONTRARON DATOS PARA EL PERÍODO SELECCIONADO · ${data.from||'—'} → ${data.to||'—'} · Fuente: archivos adjuntos de Trazabilidad`;renderHistoricoDashboard(data);return;}
     diag.textContent=`Análisis ${data.from} → ${data.to} · ${data.metrics.registros} operador/día · ${data.metrics.operadores} operadores · ${data.metrics.plantas} plantas · cálculo tiempo muerto desde ${data.cfg.sourceStart}`;
@@ -2870,16 +2925,16 @@ function renderHistoricoDashboard(data){
   const m=data.metrics||{},tm=m.tiempoMuerto||{},ac=m.atrasoCitacion||{},at=m.atrasoTurno||{};
   document.getElementById('histGeneralClass').textContent=`Índice General: ${hfmt(m.adherenciaGeneral,'%')} · ${m.clasificacionGeneral||'Sin datos'}`;
   document.getElementById('histKpiRow1').innerHTML=[
-    histMetricCard('Turno vs Citación',hfmt(m.turnVsCitation,'%'),`${m.turnVsCitationN||0} comparaciones`),
-    histMetricCard('Turno vs Asignación',hfmt(m.turnVsAssignment,'%'),`${m.turnVsAssignmentN||0} comparaciones`),
-    histMetricCard('Adherencia al Turno',hfmt(m.adherenciaTurno,'%'),`${m.adherenciaTurnoN||0} con ingreso real`),
-    histMetricCard('Adherencia a Citación',hfmt(m.adherenciaCitacion,'%'),`${m.adherenciaCitacionN||0} con citación + ingreso`),
-    histMetricCard('Adherencia General',hfmt(m.adherenciaGeneral,'%'),m.clasificacionGeneral||'Sin datos')
+    histMetricCard('Turno vs Citación',hfmt(m.turnVsCitation,'%'),m.turnVsCitation!==null?`${m.turnVsCitationN||0} comparaciones`:histNoDataReason(data,'turnVsCitation')),
+    histMetricCard('Turno vs Asignación',hfmt(m.turnVsAssignment,'%'),m.turnVsAssignment!==null?`${m.turnVsAssignmentN||0} comparaciones`:histNoDataReason(data,'turnVsAssignment')),
+    histMetricCard('Adherencia al Turno',hfmt(m.adherenciaTurno,'%'),m.adherenciaTurno!==null?`${m.adherenciaTurnoN||0} con ingreso real`:histNoDataReason(data,'adherenciaTurno')),
+    histMetricCard('Adherencia a Citación',hfmt(m.adherenciaCitacion,'%'),m.adherenciaCitacion!==null?`${m.adherenciaCitacionN||0} con citación + ingreso`:histNoDataReason(data,'adherenciaCitacion')),
+    histMetricCard('Adherencia General',hfmt(m.adherenciaGeneral,'%'),m.adherenciaGeneral!==null?(m.clasificacionGeneral||''):'Requiere al menos un KPI de adherencia calculable')
   ].join('');
   document.getElementById('histKpiRow2').innerHTML=[
-    histMetricCard('Tiempo Muerto',hfmt(tm.promedio,' min'),`Mediana ${hfmt(tm.mediana,' min')} · P90 ${hfmt(tm.p90,' min')}`),
-    histMetricCard('Atraso Citación',hfmt(ac.promedio,' min'),`${hfmt(ac.porcentaje,'%')} con atraso`),
-    histMetricCard('Atraso Turno',hfmt(at.promedio,' min'),`${hfmt(at.porcentaje,'%')} con atraso`),
+    histMetricCard('Tiempo Muerto',hfmt(tm.promedio,' min'),tm.promedio!==null?`Mediana ${hfmt(tm.mediana,' min')} · P90 ${hfmt(tm.p90,' min')}`:histNoDataReason(data,'tiempoMuerto')),
+    histMetricCard('Atraso Citación',hfmt(ac.promedio,' min'),ac.promedio!==null?`${hfmt(ac.porcentaje,'%')} con atraso`:histNoDataReason(data,'atrasoCitacion')),
+    histMetricCard('Atraso Turno',hfmt(at.promedio,' min'),at.promedio!==null?`${hfmt(at.porcentaje,'%')} con atraso`:histNoDataReason(data,'atrasoTurno')),
     histMetricCard('Operadores',hfmt(m.operadores),`${m.registros||0} operador/día`),
     histMetricCard('Plantas',hfmt(m.plantas),'Detectadas automáticamente')
   ].join('');
@@ -2926,8 +2981,8 @@ function renderRankingOperacional(){
   document.getElementById('histCriticalOps').innerHTML=renderRankingRows(r[worst],path,suffix);
 }
 function renderPlantRanking(data){
-  const rows=data.plants||[];
-  document.getElementById('histPlantRanking').innerHTML=rows.length?rows.map(x=>`<tr><td><b>${escapeHtml(x.name)}</b></td><td>${escapeHtml((data.byPlant||[]).find(p=>p.planta===x.name)?.zona||'')}</td><td>${hfmt(x.adherenciaGeneral,'%')}</td><td>${hfmt(x.adherenciaTurno,'%')}</td><td>${hfmt(x.adherenciaCitacion,'%')}</td><td>${hfmt(x.tiempoMuerto?.promedio,' min')}</td></tr>`).join(''):'<tr><td colspan="6" class="history-empty">Sin datos</td></tr>';
+  const rows=(data.plants||[]).filter(x=>x.adherenciaGeneral!==null||x.adherenciaTurno!==null||x.adherenciaCitacion!==null||x.tiempoMuerto?.promedio!==null);
+  document.getElementById('histPlantRanking').innerHTML=rows.length?rows.map(x=>`<tr><td><b>${escapeHtml(x.name)}</b></td><td>${escapeHtml((data.byPlant||[]).find(p=>p.planta===x.name)?.zona||'')}</td><td>${hfmt(x.adherenciaGeneral,'%')}</td><td>${hfmt(x.adherenciaTurno,'%')}</td><td>${hfmt(x.adherenciaCitacion,'%')}</td><td>${hfmt(x.tiempoMuerto?.promedio,' min')}</td></tr>`).join(''):'<tr><td colspan="6" class="history-empty">No existen cruces suficientes por planta para calcular rankings en este período.</td></tr>';
   const sel=document.getElementById('histPlantDetail'),current=sel.value;sel.innerHTML='<option value="">Seleccione planta</option>'+(data.byPlant||[]).map(x=>`<option value="${escapeHtml(x.planta)}">${escapeHtml(x.planta)}</option>`).join('');if([...sel.options].some(o=>o.value===current))sel.value=current;renderPlantDetail();
 }
 function renderPlantDetail(){
@@ -2942,12 +2997,12 @@ function renderFindings(data){
 }
 function renderDetail(data){
   const rows=data.detailed||[];document.getElementById('histDetailCount').textContent=`Mostrando ${rows.length.toLocaleString('es-CL')} de ${Number(data.totalDetailed||0).toLocaleString('es-CL')} operador/día`;
-  document.getElementById('histDetailBody').innerHTML=rows.length?rows.map(r=>`<tr><td>${r.fecha}</td><td>${escapeHtml(r.zona||'')}</td><td>${escapeHtml(r.planta||'')}</td><td><b>${escapeHtml(r.operadorNombre||r.operadorId||'')}</b><div class="small">${escapeHtml(r.operadorId||'')}</div></td><td>${htime(r.turnoMin)}</td><td>${htime(r.citacionMin)}</td><td>${htime(r.loginMin)}</td><td>${htime(r.asignacionMin)}</td><td>${htime(r.primeraCargaMin)}</td></tr>`).join(''):'<tr><td colspan="9" class="history-empty">NO SE ENCONTRARON DATOS PARA EL PERÍODO SELECCIONADO</td></tr>';
+  document.getElementById('histDetailBody').innerHTML=rows.length?rows.map(r=>`<tr><td>${r.fecha}</td><td>${escapeHtml(r.zona||'')}</td><td>${escapeHtml(r.planta||'')}</td><td><b>${escapeHtml(r.operadorNombre||r.operadorId||'')}</b><div class="small">${escapeHtml(r.operadorId||'')}</div></td><td>${htime(r.turnoMin)}</td><td>${htime(r.citacionMin)}</td><td>${htime(r.loginMin)}</td><td>${htime(r.asignacionMin)}</td><td>${htime(r.primeraCargaMin)}</td><td>${escapeHtml(r.crossLabel||'')}</td></tr>`).join(''):'<tr><td colspan="10" class="history-empty">NO SE ENCONTRARON DATOS PARA EL PERÍODO SELECCIONADO</td></tr>';
 }
 function exportarHistoricoCSV(){
   const rows=historicoUltimo?.detailed||[];if(!rows.length){alert('No hay datos detallados para exportar.');return;}
-  const head=['Fecha','Zona','Planta','Operador','ID','Turno','Citacion','Logeo','Primera Asignacion','Primera Carga'];
-  const data=[head,...rows.map(r=>[r.fecha,r.zona,r.planta,r.operadorNombre,r.operadorId,htime(r.turnoMin),htime(r.citacionMin),htime(r.loginMin),htime(r.asignacionMin),htime(r.primeraCargaMin)])];
+  const head=['Fecha','Zona','Planta','Operador','ID','Turno','Citacion','Logeo','Primera Asignacion','Primera Carga','Cruce'];
+  const data=[head,...rows.map(r=>[r.fecha,r.zona,r.planta,r.operadorNombre,r.operadorId,htime(r.turnoMin),htime(r.citacionMin),htime(r.loginMin),htime(r.asignacionMin),htime(r.primeraCargaMin),r.crossLabel||''])];
   const csv=data.map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='trazabilidad_cco_intelligence.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),500);
 }
 function initHistIntelligence(){
