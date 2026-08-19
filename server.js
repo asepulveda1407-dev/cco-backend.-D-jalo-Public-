@@ -63,7 +63,7 @@ let state = loadState();
 let historicalWarehouse = loadHistoricalWarehouse();
 
 function emptyHistoricalWarehouse() {
-  return { version: 3, revision: 0, loaded_at: null, sources: {}, records: [], partialRecords: [], diagnostics: [] };
+  return { version: 3, revision: 0, loaded_at: null, sources: {}, records: [], partialRecords: [], diagnostics: [], fileCache: {} };
 }
 function loadHistoricalWarehouse() {
   try {
@@ -82,6 +82,7 @@ function loadHistoricalWarehouse() {
       records: Array.isArray(parsed?.records) ? parsed.records : [],
       partialRecords: Array.isArray(parsed?.partialRecords) ? parsed.partialRecords : [],
       diagnostics: Array.isArray(parsed?.diagnostics) ? parsed.diagnostics : [],
+      fileCache: parsed?.fileCache && typeof parsed.fileCache === 'object' ? parsed.fileCache : {},
     };
   } catch (err) {
     console.error('[CCO][historico] No se pudo leer base histórica:', err?.message || err);
@@ -1509,6 +1510,14 @@ const historicalUpload = multer({
   limits:{fileSize:160*1024*1024,files:1}
 });
 const HIST_JOBS = new Map();
+const HIST_ERROR_REPORTS = new Map();
+const HIST_VALIDATION_TIMEOUT_MS = 10_000;
+const HIST_BATCH_SIZE = 100;
+const HIST_QUEUES = {
+  turnos:{busy:false,items:[]},
+  citaciones:{busy:false,items:[]},
+  status:{busy:false,items:[]},
+};
 
 const HIST_ETL_HEADER_ALIASES = {
   operador:['operador','nombre operador','nombre_operador','conductor','chofer','nombre de operador','nombre_de_operador','primero empleado','primero_empleado'],
@@ -1581,18 +1590,24 @@ function etlLooksMeta(vals,headers){
 }
 function etlDiagBase(source,file){
   return {
-    source,file,status:'procesando',startedAt:nowIso(),finishedAt:null,
+    id:crypto.randomUUID(),source,file,status:'procesando',startedAt:nowIso(),finishedAt:null,
     sheet:null,headerRow:null,sheetsDetected:[],columns:[],columnCount:0,
     rowsFound:0,rowsStored:0,rowsPartial:0,rowsRejected:0,rowsFiltered:0,duplicates:0,
-    missing:[],reason:'Procesando archivo...',ruleCounts:{},samples:[],log:[]
+    missing:[],reason:'Procesando archivo...',ruleCounts:{},samples:[],log:[],
+    durationMs:0,memoryMb:0,md5:null,fromCache:false,blocksProcessed:0,_errorRows:[]
   };
 }
 function etlReason(diag,row,code,field,reason,kind='rejected'){
   diag.ruleCounts[code]=(diag.ruleCounts[code]||0)+1;
-  if(diag.samples.length<80)diag.samples.push({row,code,field,reason,kind});
-  if(kind==='rejected')diag.rowsRejected++;
-  else if(kind==='partial')diag.rowsPartial++;
-  else diag.rowsFiltered++;
+  const item={row,code,field,reason,kind};
+  if(diag.samples.length<80)diag.samples.push(item);
+  if(kind==='rejected'){
+    diag.rowsRejected++;
+    if(diag._errorRows.length<50_000)diag._errorRows.push(item);
+  }else if(kind==='partial'){
+    diag.rowsPartial++;
+    if(diag._errorRows.length<50_000)diag._errorRows.push(item);
+  }else diag.rowsFiltered++;
 }
 function etlLog(diag,msg){diag.log.push({at:nowIso(),msg});if(diag.log.length>50)diag.log.shift();}
 function etlUpdateJob(job,progress,stage,diag=null){
@@ -1686,63 +1701,69 @@ function etlChooseBest(candidates,source){
   });
   return usable[0];
 }
-async function etlScanXlsx(filePath,source,job,diag){
-  const candidates=[];
-  const reader=new ExcelJS.stream.xlsx.WorkbookReader(filePath,{entries:'emit',sharedStrings:'cache',styles:'ignore',hyperlinks:'ignore',worksheets:'emit'});
-  for await(const ws of reader){
-    let rows=0,bestHeader=null;
-    for await(const row of ws){
-      rows++;if(rows<=100){
-        const vals=etlRowValues(row);if(etlRowEmpty(vals))continue;
-        const h=etlHeaderScore(vals,source);const score=h.score-rows*.2;
-        if(!bestHeader||score>bestHeader.score)bestHeader={...h,score,rowNumber:rows,values:vals};
-      }
-    }
-    candidates.push({sheetName:ws.name,rows,bestHeader});
-    diag.sheetsDetected.push({name:ws.name,rows});
-  }
-  const best=etlChooseBest(candidates,source);
-  if(!best)throw new Error('No se encontró ninguna hoja con datos.');
-  return best;
-}
-async function etlProcessXlsx(filePath,source,archivo,job,diag){
-  etlUpdateJob(job,25,'Detectando hojas',diag);etlLog(diag,'Escaneando todas las hojas y buscando encabezados desplazados.');
-  const best=await etlScanXlsx(filePath,source,job,diag);
-  diag.sheet=best.sheetName;diag.headerRow=best.bestHeader.rowNumber;diag.columns=best.bestHeader.values.map(v=>safeText(v)).filter(Boolean);diag.columnCount=diag.columns.length;diag.missing=etlMissingHeaderGroups(best.bestHeader,source);
-  etlLog(diag,`Hoja principal: ${best.sheetName} · ${best.rows} filas · encabezado fila ${diag.headerRow}.`);
-  etlUpdateJob(job,45,'Analizando columnas',diag);
 
+async function etlProcessXlsx(filePath,source,archivo,job,diag){
+  const validationDeadline=Date.now()+HIST_VALIDATION_TIMEOUT_MS;
+  etlUpdateJob(job,25,'Detectando hoja y encabezado',diag);
   const existing=new Set((historicalWarehouse.records||[]).filter(r=>r.source===source).map(etlDedupeKey));
   const staged=[],partial=[],statusAcc=new Map();
+  let selected=false;
   const reader=new ExcelJS.stream.xlsx.WorkbookReader(filePath,{entries:'emit',sharedStrings:'cache',styles:'ignore',hyperlinks:'ignore',worksheets:'emit'});
   for await(const ws of reader){
-    if(ws.name!==best.sheetName)continue;
-    let headers=null,rowNumber=0,lastProgress=45;
+    checkValidationDeadline(validationDeadline);
+    const buffered=[];let bestHeader=null,rowNumber=0,headers=null;
+    diag.sheetsDetected.push({name:ws.name,rows:0});
     for await(const row of ws){
       rowNumber++;
-      if(rowNumber<diag.headerRow)continue;
-      const vals=etlRowValues(row);
-      if(rowNumber===diag.headerRow){headers=etlHeaders(vals);continue;}
-      diag.rowsFound++;
+      if(!selected && rowNumber<=100){
+        checkValidationDeadline(validationDeadline);
+        const vals=etlRowValues(row);buffered.push({rowNumber,vals});
+        if(!etlRowEmpty(vals)){
+          const h=etlHeaderScore(vals,source),score=h.score-rowNumber*.2;
+          if(!bestHeader||score>bestHeader.score)bestHeader={...h,score,rowNumber,values:vals};
+        }
+        if(bestHeader && bestHeader.requiredHits===bestHeader.requiredTotal && bestHeader.score>=250){
+          selected=true;diag.sheet=ws.name;diag.headerRow=bestHeader.rowNumber;
+          diag.columns=bestHeader.values.map(v=>safeText(v)).filter(Boolean);diag.columnCount=diag.columns.length;
+          diag.missing=etlMissingHeaderGroups(bestHeader,source);headers=etlHeaders(bestHeader.values);
+          etlLog(diag,`Hoja principal detectada: ${ws.name} · encabezado fila ${diag.headerRow}.`);
+          etlUpdateJob(job,35,'Estructura validada · procesando registros',diag);
+          for(const b of buffered){
+            if(b.rowNumber<=diag.headerRow)continue;
+            diag.rowsFound++;
+            const meta=etlLooksMeta(b.vals,headers);
+            if(meta.skip){etlReason(diag,b.rowNumber,meta.code,meta.field,meta.reason,'filtered');continue;}
+            const recs=etlNormalizeRow(source,etlObject(headers,b.vals),archivo,b.rowNumber,diag,statusAcc);
+            for(const rec of recs){
+              const dk=etlDedupeKey(rec);if(existing.has(dk)){diag.duplicates++;continue;}existing.add(dk);
+              if(rec.quality==='parcial')partial.push(rec);staged.push(rec);
+            }
+          }
+          continue;
+        }
+        continue;
+      }
+      if(!selected)continue;
+      if(ws.name!==diag.sheet)break;
+      const vals=etlRowValues(row);diag.rowsFound++;
       const meta=etlLooksMeta(vals,headers);
       if(meta.skip){etlReason(diag,rowNumber,meta.code,meta.field,meta.reason,'filtered');continue;}
-      const obj=etlObject(headers,vals);
-      const recs=etlNormalizeRow(source,obj,archivo,rowNumber,diag,statusAcc);
+      const recs=etlNormalizeRow(source,etlObject(headers,vals),archivo,rowNumber,diag,statusAcc);
       for(const rec of recs){
-        const dk=etlDedupeKey(rec);
-        if(existing.has(dk)){diag.duplicates++;continue;}
-        existing.add(dk);
-        if(rec.quality==='parcial'){partial.push(rec);diag.rowsPartial++;}
-        staged.push(rec);
+        const dk=etlDedupeKey(rec);if(existing.has(dk)){diag.duplicates++;continue;}existing.add(dk);
+        if(rec.quality==='parcial')partial.push(rec);staged.push(rec);
       }
-      if(rowNumber%5000===0){
-        const p=Math.min(88,45+Math.round((rowNumber/Math.max(best.rows,1))*43));
-        if(p>lastProgress){lastProgress=p;etlUpdateJob(job,p,`Procesando filas ${rowNumber.toLocaleString('es-CL')} / ${best.rows.toLocaleString('es-CL')}`,diag);}
-        await new Promise(r=>setImmediate(r));
+      if(diag.rowsFound%HIST_BATCH_SIZE===0){
+        diag.blocksProcessed++;
+        const p=Math.min(94,35+Math.floor(Math.log10(Math.max(diag.rowsFound,10))*12));
+        etlUpdateJob(job,p,`Procesando bloque ${diag.blocksProcessed.toLocaleString('es-CL')} · ${diag.rowsFound.toLocaleString('es-CL')} filas`,diag);
+        await yieldEventLoop();
       }
     }
-    break;
+    const entry=diag.sheetsDetected.find(x=>x.name===ws.name);if(entry)entry.rows=rowNumber;
+    if(selected)break;
   }
+  if(!selected)throw new Error('No se encontró una tabla con las columnas mínimas durante los primeros 10 segundos de validación.');
   if(source==='status'){
     for(const rec of statusAcc.values()){
       const dk=etlDedupeKey(rec);if(existing.has(dk)){diag.duplicates++;continue;}existing.add(dk);
@@ -1759,6 +1780,7 @@ async function etlProcessXlsx(filePath,source,archivo,job,diag){
   }
   return staged;
 }
+
 function etlSheetJsRows(filePath,source,diag){
   const wb=XLSXNode.readFile(filePath,{cellDates:true,cellNF:false,cellStyles:false});
   const candidates=[];
@@ -1771,6 +1793,7 @@ function etlSheetJsRows(filePath,source,diag){
   return {wb,best:etlChooseBest(candidates,source)};
 }
 async function etlProcessNonXlsx(filePath,ext,source,archivo,job,diag){
+  const validationDeadline=Date.now()+HIST_VALIDATION_TIMEOUT_MS;
   etlUpdateJob(job,25,'Detectando estructura',diag);
   let wb;
   if(ext==='csv'||ext==='txt'){
@@ -1783,6 +1806,7 @@ async function etlProcessNonXlsx(filePath,ext,source,archivo,job,diag){
     let bestHeader=null;for(let i=0;i<Math.min(matrix.length,100);i++){if(etlRowEmpty(matrix[i]||[]))continue;const h=etlHeaderScore(matrix[i],source),score=h.score-i*.2;if(!bestHeader||score>bestHeader.score)bestHeader={...h,score,rowNumber:i+1,values:matrix[i]};}
     candidates.push({sheetName:name,rows:matrix.length,bestHeader,matrix});diag.sheetsDetected.push({name,rows:matrix.length});
   }
+  checkValidationDeadline(validationDeadline);
   const best=etlChooseBest(candidates,source);if(!best)throw new Error('No se encontró ninguna hoja/tabla con datos.');
   diag.sheet=best.sheetName;diag.headerRow=best.bestHeader.rowNumber;diag.columns=best.bestHeader.values.map(v=>safeText(v)).filter(Boolean);diag.columnCount=diag.columns.length;diag.missing=etlMissingHeaderGroups(best.bestHeader,source);
   etlUpdateJob(job,55,'Procesando registros',diag);
@@ -1793,6 +1817,7 @@ async function etlProcessNonXlsx(filePath,ext,source,archivo,job,diag){
     const meta=etlLooksMeta(vals,headers);if(meta.skip){etlReason(diag,i+1,meta.code,meta.field,meta.reason,'filtered');continue;}
     const recs=etlNormalizeRow(source,etlObject(headers,vals),archivo,i+1,diag,statusAcc);
     for(const rec of recs){const dk=etlDedupeKey(rec);if(existing.has(dk)){diag.duplicates++;continue;}existing.add(dk);if(rec.quality==='parcial')diag.rowsPartial++;staged.push(rec);}
+    if(diag.rowsFound%HIST_BATCH_SIZE===0){diag.blocksProcessed++;etlUpdateJob(job,Math.min(94,55+diag.blocksProcessed),`Procesando bloque ${diag.blocksProcessed} · ${diag.rowsFound} filas`,diag);await yieldEventLoop();}
   }
   if(source==='status')for(const rec of statusAcc.values()){const dk=etlDedupeKey(rec);if(existing.has(dk)){diag.duplicates++;continue;}existing.add(dk);staged.push(rec);}
   diag.rowsStored=staged.length;historicalWarehouse.records.push(...staged);return staged;
@@ -1801,36 +1826,87 @@ function etlRefreshSourceMeta(source,archivo,diag,user){
   const rows=(historicalWarehouse.records||[]).filter(r=>r.source===source),dates=rows.map(r=>r.fecha).filter(Boolean).sort(),prev=historicalWarehouse.sources?.[source]||{};
   historicalWarehouse.sources[source]={...prev,source,label:HISTORICAL_SOURCES[source].label,status:rows.length?'cargado':'sin_datos',records:rows.length,files:[...new Set([...(prev.files||[]),archivo])],minDate:dates[0]||null,maxDate:dates.at(-1)||null,lastLoadedAt:nowIso(),loadedBy:user||'Sistema',lastDiagnostic:diag};
 }
+
+function hashFileMd5(filePath){
+  return new Promise((resolve,reject)=>{
+    const h=crypto.createHash('md5'),s=fs.createReadStream(filePath);
+    s.on('data',d=>h.update(d));s.on('error',reject);s.on('end',()=>resolve(h.digest('hex')));
+  });
+}
+function histCacheKey(source,md5){return `${source}:${md5}`;}
+function publicDiagnostic(diag){if(!diag)return null;const {_errorRows,...safe}=diag;return safe;}
+function finalizeDiagRuntime(diag){
+  const start=Date.parse(diag.startedAt||'')||Date.now();
+  diag.durationMs=Math.max(0,Date.now()-start);
+  diag.memoryMb=Math.round(process.memoryUsage().rss/1024/1024*10)/10;
+  if(diag._errorRows?.length){
+    HIST_ERROR_REPORTS.set(diag.id,{createdAt:Date.now(),file:diag.file,source:diag.source,rows:[...diag._errorRows]});
+    setTimeout(()=>HIST_ERROR_REPORTS.delete(diag.id),60*60*1000).unref?.();
+  }
+}
+function enqueueHistoricalJob(job){
+  const q=HIST_QUEUES[job.source];
+  q.items.push(job);job.queuePosition=q.items.length;job.stage=`En cola · posición ${job.queuePosition}`;
+  runHistoricalQueue(job.source);
+}
+async function runHistoricalQueue(source){
+  const q=HIST_QUEUES[source];if(!q||q.busy)return;
+  q.busy=true;
+  try{while(q.items.length){const job=q.items.shift();job.queuePosition=0;await processHistoricalUploadJob(job);}}
+  finally{q.busy=false;}
+}
+function checkValidationDeadline(deadline){
+  if(Date.now()>deadline){const e=new Error('La validación excedió el tiempo permitido.');e.code='VALIDATION_TIMEOUT';throw e;}
+}
+async function yieldEventLoop(){await new Promise(r=>setImmediate(r));}
+
 async function processHistoricalUploadJob(job){
   const {source,file}=job;const diag=etlDiagBase(source,file.originalname);job.diagnostic=diag;
   try{
-    etlUpdateJob(job,10,'Archivo recibido',diag);etlLog(diag,`Archivo recibido: ${(file.size/1024/1024).toFixed(2)} MB.`);
+    etlUpdateJob(job,8,'Etapa 1/4 · archivo recibido',diag);etlLog(diag,`Archivo recibido: ${(file.size/1024/1024).toFixed(2)} MB.`);
+    if(!file?.path||!fs.existsSync(file.path))throw new Error('El archivo no existe en el servidor de procesamiento.');
     const ext=path.extname(file.originalname||'').toLowerCase().replace('.','');
+    etlUpdateJob(job,12,'Etapa 2/4 · validando extensión',diag);
+    if(!['xlsx','xls','csv','txt','pdf'].includes(ext))throw new Error(`Extensión .${ext||'?'} no permitida.`);
+    etlUpdateJob(job,16,'Calculando hash MD5 y revisando caché',diag);
+    diag.md5=await hashFileMd5(file.path);
+    const cacheKey=histCacheKey(source,diag.md5),cached=historicalWarehouse.fileCache?.[cacheKey];
+    if(cached){
+      diag.status='correcto';diag.fromCache=true;diag.rowsFound=Number(cached.rowsFound||0);diag.rowsStored=Number(cached.rowsStored||0);
+      diag.columnCount=Number(cached.columnCount||0);diag.columns=cached.columns||[];diag.sheet=cached.sheet||null;
+      diag.reason=`Archivo ya procesado. Resultado recuperado desde caché MD5 (${diag.md5}).`;
+      diag.finishedAt=nowIso();finalizeDiagRuntime(diag);etlLog(diag,'No se reprocesó el archivo.');
+      etlStoreDiagnostic(publicDiagnostic(diag));etlUpdateJob(job,100,'Finalizado desde caché',diag);persistHistoricalWarehouse();return;
+    }
     if(ext==='pdf'){
       diag.status='parcial';diag.reason='PDF registrado como lectura informativa. No se usa para KPI estructurados.';diag.finishedAt=nowIso();
-      etlStoreDiagnostic(diag);etlUpdateJob(job,100,'PDF registrado',diag);persistHistoricalWarehouse();return;
+      finalizeDiagRuntime(diag);etlStoreDiagnostic(publicDiagnostic(diag));etlUpdateJob(job,100,'PDF registrado',diag);persistHistoricalWarehouse();return;
     }
-    if(!['xlsx','xls','csv','txt'].includes(ext))throw new Error(`Extensión .${ext||'?'} no permitida.`);
+    etlUpdateJob(job,20,'Etapa 3/4 · validando columnas',diag);
     if(ext==='xlsx')await etlProcessXlsx(file.path,source,file.originalname,job,diag);
     else await etlProcessNonXlsx(file.path,ext,source,file.originalname,job,diag);
-
+    etlUpdateJob(job,96,'Etapa 4/4 · consolidando resultados',diag);
     diag.status=diag.rowsStored>0?(diag.rowsPartial||diag.rowsRejected?'parcial':'correcto'):'parcial';
-    if(diag.rowsStored>0)diag.reason=`${diag.rowsStored.toLocaleString('es-CL')} registros recuperados. ${diag.rowsPartial?diag.rowsPartial.toLocaleString('es-CL')+' registros con cruce parcial. ':''}${diag.rowsRejected?diag.rowsRejected.toLocaleString('es-CL')+' filas rechazadas con causa explícita.':''}`;
-    else diag.reason=`Se leyó el archivo, pero no se generaron registros KPI completos. Rechazados: ${diag.rowsRejected}; filtrados por regla explícita: ${diag.rowsFiltered}.`;
-    diag.finishedAt=nowIso();
+    if(diag.rowsStored>0)diag.reason=`${diag.rowsStored.toLocaleString('es-CL')} registros recuperados. ${diag.rowsPartial?diag.rowsPartial.toLocaleString('es-CL')+' con cruce parcial. ':''}${diag.rowsRejected?diag.rowsRejected.toLocaleString('es-CL')+' rechazados con causa explícita.':''}`;
+    else diag.reason=`Archivo leído sin registros KPI completos. Rechazados: ${diag.rowsRejected}; filtrados por regla: ${diag.rowsFiltered}.`;
+    diag.finishedAt=nowIso();finalizeDiagRuntime(diag);
     etlRefreshSourceMeta(source,file.originalname,diag,job.user);
-    historicalWarehouse.revision=Number(historicalWarehouse.revision||0)+1;historicalWarehouse.loaded_at=nowIso();historicalDailyCache.revision=-1;etlStoreDiagnostic(diag);persistHistoricalWarehouse();
-    etlUpdateJob(job,100,'Carga finalizada',diag);
+    historicalWarehouse.revision=Number(historicalWarehouse.revision||0)+1;historicalWarehouse.loaded_at=nowIso();historicalDailyCache.revision=-1;
+    if(!historicalWarehouse.fileCache||typeof historicalWarehouse.fileCache!=='object')historicalWarehouse.fileCache={};
+    historicalWarehouse.fileCache[cacheKey]={source,md5:diag.md5,file:file.originalname,rowsFound:diag.rowsFound,rowsStored:diag.rowsStored,columnCount:diag.columnCount,columns:diag.columns,sheet:diag.sheet,createdAt:nowIso()};
+    etlStoreDiagnostic(publicDiagnostic(diag));persistHistoricalWarehouse();
+    etlUpdateJob(job,100,'Finalizado',diag);
   }catch(err){
-    diag.status='error';diag.reason='El archivo no pudo ser procesado. Revise el diagnóstico técnico.';diag.finishedAt=nowIso();etlLog(diag,`Error técnico: ${err?.message||String(err)}`);
-    etlStoreDiagnostic(diag);try{persistHistoricalWarehouse();}catch{}
+    diag.status='error';
+    diag.reason=err?.code==='VALIDATION_TIMEOUT'?'La validación excedió el tiempo permitido. El proceso fue cancelado.':(err?.message||'El archivo no pudo ser procesado.');
+    diag.finishedAt=nowIso();etlLog(diag,`Error: ${err?.message||String(err)}`);finalizeDiagRuntime(diag);
+    etlStoreDiagnostic(publicDiagnostic(diag));try{persistHistoricalWarehouse();}catch{}
     etlUpdateJob(job,100,'Error diagnosticado',diag);job.error=err?.message||String(err);
   }finally{
     try{fs.unlinkSync(file.path);}catch{}
     setTimeout(()=>HIST_JOBS.delete(job.id),30*60*1000).unref?.();
   }
 }
-
 
 // ============================================================================
 // CCO INTELLIGENCE v3.4 — TRAZABILIDAD INTELLIGENCE
@@ -2235,13 +2311,13 @@ app.post('/api/historico/upload',requireAuth,historicalUpload.single('file'),(re
     if(!req.file)return res.status(400).json({error:'No se recibió archivo'});
     const id=crypto.randomUUID(),job={id,source,file:req.file,user:req.user?.nombre||'Sistema',progress:5,stage:'Archivo recibido',createdAt:nowIso(),updatedAt:nowIso(),diagnostic:null,error:null};
     HIST_JOBS.set(id,job);
-    setImmediate(()=>processHistoricalUploadJob(job));
-    return res.status(202).json({ok:true,jobId:id,file:req.file.originalname,size:req.file.size});
+    enqueueHistoricalJob(job);
+    return res.status(202).json({ok:true,jobId:id,file:req.file.originalname,size:req.file.size,queuePosition:job.queuePosition});
   }catch(err){return res.status(422).json({error:'No fue posible recibir el archivo',detalle:err?.message||String(err)});}
 });
 app.get('/api/historico/job/:id',requireAuth,(req,res)=>{
   const job=HIST_JOBS.get(req.params.id);if(!job)return res.status(404).json({error:'Proceso no encontrado o ya expiró'});
-  return res.json({ok:true,id:job.id,source:job.source,progress:job.progress,stage:job.stage,diagnostic:job.diagnostic,error:job.error,done:job.progress>=100});
+  return res.json({ok:true,id:job.id,source:job.source,progress:job.progress,stage:job.stage,queuePosition:job.queuePosition||0,diagnostic:publicDiagnostic(job.diagnostic),error:job.error,done:job.progress>=100});
 });
 
 app.post('/api/historico/ingesta',requireAuth,(req,res)=>{
@@ -2328,11 +2404,32 @@ app.delete('/api/historico/archivo',requireAuth,(req,res)=>{
     const before=(historicalWarehouse.records||[]).length;
     historicalWarehouse.records=(historicalWarehouse.records||[]).filter(r=>!((r.source||r.fuente)===source&&safeText(r.archivo)===archivo));
     const removed=before-historicalWarehouse.records.length;
+    if(historicalWarehouse.fileCache&&typeof historicalWarehouse.fileCache==='object')
+      for(const [k,v] of Object.entries(historicalWarehouse.fileCache))
+        if(v?.source===source&&safeText(v?.file)===archivo)delete historicalWarehouse.fileCache[k];
     recomputeHistoricalSourceMeta(source);
     historicalWarehouse.revision=Number(historicalWarehouse.revision||0)+1;
     historicalWarehouse.loaded_at=nowIso();historicalDailyCache.revision=-1;persistHistoricalWarehouse();
     return res.json({ok:true,source,archivo,removed,meta:historicalWarehouse.sources[source]});
   }catch(err){return res.status(422).json({error:'No fue posible eliminar el archivo histórico',detalle:err?.message||String(err)});}
+});
+
+
+app.get('/api/historico/errores/:diagId.xlsx',requireAuth,async(req,res)=>{
+  try{
+    const rep=HIST_ERROR_REPORTS.get(req.params.diagId);
+    if(!rep)return res.status(404).json({error:'El detalle de errores ya expiró o no existe'});
+    const wb=new ExcelJS.Workbook(),ws=wb.addWorksheet('Errores');
+    ws.columns=[
+      {header:'Archivo',key:'file',width:32},{header:'Fuente',key:'source',width:18},{header:'Fila',key:'row',width:12},
+      {header:'Campo',key:'field',width:24},{header:'Código',key:'code',width:30},{header:'Motivo',key:'reason',width:70},{header:'Tipo',key:'kind',width:16}
+    ];
+    for(const x of rep.rows)ws.addRow({file:rep.file,source:rep.source,...x});
+    const buf=await wb.xlsx.writeBuffer();
+    res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition',`attachment; filename="errores_${safeText(rep.file).replace(/[^a-z0-9_.-]+/gi,'_')}.xlsx"`);
+    return res.send(Buffer.from(buf));
+  }catch(err){return res.status(422).json({error:'No fue posible generar el Excel de errores',detalle:err?.message||String(err)});}
 });
 
 app.get('/api/historico/fuentes',requireAuth,(req,res)=>{
@@ -2806,7 +2903,7 @@ app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 if (require.main === module && process.env.CCO_TEST_MODE !== '1') {
   server.listen(PORT, () => {
-    console.log(`[CCO][startup] CCO Intelligence v3.6.0 activo en puerto ${PORT}`);
+    console.log(`[CCO][startup] CCO Intelligence v3.7.0 activo en puerto ${PORT}`);
     console.log(`[CCO][startup] Diccionario plantas: ${PLANT_DICTIONARY.plants.length} plantas, ${PLANT_DICTIONARY_LOOKUP.size} alias resolubles, ${Object.keys(PLANT_DICTIONARY.conflicts||{}).length} alias ambiguos`);
     if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producción.');
   });
