@@ -221,7 +221,7 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 /* ===== v3.4 TRAZABILIDAD CCO INTELLIGENCE ===== */
 .hist-intelligence{overflow:hidden}.hist-title-row{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
-.hist-upload-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}
+.hist-upload-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0}
 .hist-drop-card{border:1.5px dashed #a9c9eb;border-radius:14px;background:#f8fbff;padding:14px;min-height:155px;display:flex;flex-direction:column;gap:6px;transition:.16s}
 .hist-drop-card.dragover{border-color:#2f80ed;background:#edf6ff;transform:translateY(-1px)}
 .hist-drop-icon{font-size:25px}.hist-file-btn{margin-top:auto}.hist-source-status{font-size:10.5px;line-height:1.35;min-height:28px}
@@ -339,11 +339,11 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v3.9.3</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v4.0</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
     <div id="opDateControl" class="pill" style="margin:0">Operación de hoy · <b id="scopeFechaLabel">—</b><input id="scopeFecha" type="hidden"></div>
-    <span id="appVersion" class="pill">v3.9.3</span><span id="connPill" class="pill">Conectando…</span>
+    <span id="appVersion" class="pill">v4.0</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
 <div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
@@ -472,6 +472,17 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
         </div>
         <div class="hist-source-status" id="histSource_status">Sin datos</div><div class="hist-file-list" id="histFileList_status"></div>
       </div>
+      <div class="hist-drop-card" data-source="tam" id="drop_tam">
+        <div class="hist-drop-icon">🪪</div><b>Marcaje TAM</b>
+        <div class="small">Cruce obligatorio por ID columna A + Fecha · ingreso y salida TAM</div>
+        <input type="file" id="histFiles_tam" multiple accept=".xlsx,.xls,.csv,.txt,.pdf" hidden>
+        <button type="button" class="secondary hist-file-btn" data-source="tam">Seleccionar archivos</button>
+        <div class="hist-progress" id="histProgress_tam" aria-label="Progreso de carga">
+          <div class="hist-progress-bar" id="histProgressBar_tam" style="width:0%"></div>
+          <span id="histProgressText_tam">0% · Esperando archivo</span>
+        </div>
+        <div class="hist-source-status" id="histSource_tam">Sin datos</div><div class="hist-file-list" id="histFileList_tam"></div>
+      </div>
     </div>
     <div class="history-note">También puedes <b>arrastrar y soltar</b> uno o varios archivos sobre cada tarjeta. XLSX/XLS/CSV/TXT participan en los cálculos. PDF se registra como <b>solo lectura</b> y no genera KPI si no contiene datos estructurados extraíbles.</div>
 
@@ -570,7 +581,7 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
     <div class="rep-header"><span class="rep-titulo">Tabla Detallada Exportable</span><span class="rep-meta" id="histDetailCount"></span></div>
     <div class="history-table-wrap hist-detail-table"><table class="history-table">
-      <thead><tr><th>Fecha</th><th>Zona</th><th>Planta</th><th>Operador</th><th>Turno</th><th>Citación</th><th>Logeo</th><th>1ª Asignación</th><th>1ª Carga</th><th>Cruce</th></tr></thead>
+      <thead><tr><th>Fecha</th><th>Zona</th><th>Planta</th><th>Operador</th><th>Turno</th><th>Citación</th><th>Logeo</th><th>1ª Asignación</th><th>1ª Carga</th><th>Ingreso TAM</th><th>Salida TAM</th><th>Cruce</th></tr></thead>
       <tbody id="histDetailBody"><tr><td colspan="9" class="history-empty">Cargue archivos históricos para comenzar.</td></tr></tbody>
     </table></div>
   </div>
@@ -2339,9 +2350,9 @@ window.towerDragStart=towerDragStart;window.towerDragOver=towerDragOver;window.t
 
 let historicoUltimo=null;
 let histCatalogo={plants:[],zones:[],operators:[],sources:[]};
-const HIST_SOURCE_KEYS=['turnos','citaciones','status'];
+const HIST_SOURCE_KEYS=['turnos','citaciones','status','tam'];
 const histCharts={};
-let histFilesReadOnly={turnos:[],citaciones:[],status:[]};
+let histFilesReadOnly={turnos:[],citaciones:[],status:[],tam:[]};
 
 let modulosInicializados=false;
 function enlazarBotonModulo(id, modulo, scrollTop=false){
@@ -2495,10 +2506,10 @@ function histRowsFromRange(ws,headers,start,end,range){
 
 
 const HIST_DIAG_STORAGE='cco_hist_load_diagnostics_v35';
-let histLoadDiagnostics={turnos:[],citaciones:[],status:[]};
+let histLoadDiagnostics={turnos:[],citaciones:[],status:[],tam:[]};
 try{
   const saved=JSON.parse(localStorage.getItem(HIST_DIAG_STORAGE)||'null');
-  if(saved&&typeof saved==='object')histLoadDiagnostics={turnos:saved.turnos||[],citaciones:saved.citaciones||[],status:saved.status||[]};
+  if(saved&&typeof saved==='object')histLoadDiagnostics={turnos:saved.turnos||[],citaciones:saved.citaciones||[],status:saved.status||[],tam:saved.tam||[]};
 }catch{}
 let histDiagSaveTimer=null,histDiagRenderQueued=false;
 function histSaveDiagnostics(){
@@ -2661,7 +2672,7 @@ async function histProcessWorkbook(source,file,wb,diag){
 function histDiagFromServer(source,fileName,d){
   const diag={
     id:`srv-${Date.now()}-${Math.random()}`,file:fileName,source,
-    sourceLabel:source==='turnos'?'Turnos':source==='citaciones'?'Citaciones':'StatusBreakdown',
+    sourceLabel:source==='turnos'?'Turnos':source==='citaciones'?'Citaciones':source==='tam'?'Marcaje TAM':'StatusBreakdown',
     startedAt:d?.startedAt||new Date().toISOString(),status:d?.status||'procesando',
     rowsFound:Number(d?.rowsFound||0),rowsStored:Number(d?.rowsStored||0),
     rowsDiscarded:Number(d?.rowsRejected||0)+Number(d?.rowsFiltered||0),
@@ -2768,7 +2779,7 @@ async function procesarArchivosHistoricos(source,files){
   let ok=0,partial=0,errors=0,totalStored=0;
 
   const tasks=selected.map(async file=>{
-    const diag={id:`local-${Date.now()}-${Math.random()}`,file:file.name,source,sourceLabel:source==='turnos'?'Turnos':source==='citaciones'?'Citaciones':'StatusBreakdown',startedAt:new Date().toISOString(),status:'procesando',rowsFound:0,rowsStored:0,rowsDiscarded:0,columnCount:0,columns:[],missing:[],reason:'Archivo recibido · preparando cola...',log:[]};
+    const diag={id:`local-${Date.now()}-${Math.random()}`,file:file.name,source,sourceLabel:source==='turnos'?'Turnos':source==='citaciones'?'Citaciones':source==='tam'?'Marcaje TAM':'StatusBreakdown',startedAt:new Date().toISOString(),status:'procesando',rowsFound:0,rowsStored:0,rowsDiscarded:0,columnCount:0,columns:[],missing:[],reason:'Archivo recibido · preparando cola...',log:[]};
     histSetDiagnostic(source,diag);
     try{
       const r=await histReadFile(source,file,diag),d=r.diagnostic||diag;
@@ -2916,6 +2927,7 @@ function renderHistoricalCoverage(data){
     ['Turnos período',od.turnos||0,`${sr.turnos||0} registros fuente`,''],
     ['Citaciones período',od.citaciones||0,`${sr.citaciones||0} registros fuente`,od.citaciones?'hist-cross-good':'hist-cross-bad'],
     ['Status período',od.status||0,`${sr.status||0} registros consolidados`,od.status?'hist-cross-good':'hist-cross-bad'],
+    ['TAM período',od.tam||0,`${sr.tam||0} registros TAM`,od.tam?'hist-cross-good':'hist-cross-warn'],
     ['Cruce Turno ↔ Citación',x.turnoCitacion||0,`${u.turnoSinCitacion||0} turnos sin citación`,x.turnoCitacion?'hist-cross-good':'hist-cross-bad'],
     ['Cruce Turno ↔ Status',x.turnoStatus||0,`${u.turnoSinStatus||0} turnos sin Status`,x.turnoStatus?'hist-cross-good':'hist-cross-bad'],
     ['Cruce 3 fuentes',x.tresFuentes||0,`${x.citacionLogin||0} citación + login`,x.tresFuentes?'hist-cross-good':'hist-cross-warn']
@@ -3070,12 +3082,12 @@ function renderFindings(data){
 }
 function renderDetail(data){
   const rows=data.detailed||[];document.getElementById('histDetailCount').textContent=`Mostrando ${rows.length.toLocaleString('es-CL')} de ${Number(data.totalDetailed||0).toLocaleString('es-CL')} operador/día`;
-  document.getElementById('histDetailBody').innerHTML=rows.length?rows.map(r=>`<tr><td>${r.fecha}</td><td>${escapeHtml(r.zona||'')}</td><td>${escapeHtml(r.planta||'')}</td><td><b>${escapeHtml(r.operadorNombre||r.operadorId||'')}</b><div class="small">${escapeHtml(r.operadorId||'')}</div></td><td>${htime(r.turnoMin)}</td><td>${htime(r.citacionMin)}</td><td>${htime(r.loginMin)}</td><td>${htime(r.asignacionMin)}</td><td>${htime(r.primeraCargaMin)}</td><td>${escapeHtml(r.crossLabel||'')}</td></tr>`).join(''):'<tr><td colspan="10" class="history-empty">NO SE ENCONTRARON DATOS PARA EL PERÍODO SELECCIONADO</td></tr>';
+  document.getElementById('histDetailBody').innerHTML=rows.length?rows.map(r=>`<tr><td>${r.fecha}</td><td>${escapeHtml(r.zona||'')}</td><td>${escapeHtml(r.planta||'')}</td><td><b>${escapeHtml(r.operadorNombre||r.operadorId||'')}</b><div class="small">${escapeHtml(r.operadorId||'')}</div></td><td>${htime(r.turnoMin)}</td><td>${htime(r.citacionMin)}</td><td>${htime(r.loginMin)}</td><td>${htime(r.asignacionMin)}</td><td>${htime(r.primeraCargaMin)}</td><td>${htime(r.tamIngresoMin)}</td><td>${htime(r.tamSalidaMin)}</td><td>${escapeHtml(r.crossLabel||'')}</td></tr>`).join(''):'<tr><td colspan="12" class="history-empty">NO SE ENCONTRARON DATOS PARA EL PERÍODO SELECCIONADO</td></tr>';
 }
 function exportarHistoricoCSV(){
   const rows=historicoUltimo?.detailed||[];if(!rows.length){alert('No hay datos detallados para exportar.');return;}
-  const head=['Fecha','Zona','Planta','Operador','ID','Turno','Citacion','Logeo','Primera Asignacion','Primera Carga','Cruce'];
-  const data=[head,...rows.map(r=>[r.fecha,r.zona,r.planta,r.operadorNombre,r.operadorId,htime(r.turnoMin),htime(r.citacionMin),htime(r.loginMin),htime(r.asignacionMin),htime(r.primeraCargaMin),r.crossLabel||''])];
+  const head=['Fecha','Zona','Planta','Operador','ID','Turno','Citacion','Logeo','Primera Asignacion','Primera Carga','Ingreso TAM','Salida TAM','Cruce'];
+  const data=[head,...rows.map(r=>[r.fecha,r.zona,r.planta,r.operadorNombre,r.operadorId,htime(r.turnoMin),htime(r.citacionMin),htime(r.loginMin),htime(r.asignacionMin),htime(r.primeraCargaMin),htime(r.tamIngresoMin),htime(r.tamSalidaMin),r.crossLabel||''])];
   const csv=data.map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='trazabilidad_cco_intelligence.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),500);
 }
 function initHistIntelligence(){
