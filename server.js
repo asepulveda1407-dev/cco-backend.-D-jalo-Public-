@@ -51,6 +51,7 @@ const DEFAULT_STATE = {
   audit: [],
   historico: [],
   historicalSnapshots: [],
+  fleet: { datos: [], metadatos: null, revision: 0 },
 };
 
 let state = loadState();
@@ -104,6 +105,7 @@ function loadState() {
       audit: Array.isArray(parsed.audit) ? parsed.audit : [],
       historico: Array.isArray(parsed.historico) ? parsed.historico : [],
       historicalSnapshots: Array.isArray(parsed.historicalSnapshots) ? parsed.historicalSnapshots : (Array.isArray(parsed.historico) ? parsed.historico : []),
+      fleet: parsed.fleet && typeof parsed.fleet === 'object' ? { datos:Array.isArray(parsed.fleet.datos)?parsed.fleet.datos:[], metadatos:parsed.fleet.metadatos||null, revision:Number(parsed.fleet.revision||0) } : { datos:[], metadatos:null, revision:0 },
     };
   } catch (err) {
     console.error('No se pudo leer persistencia; se inicia estado limpio:', err.message);
@@ -1201,6 +1203,111 @@ app.put('/api/plantas/:nombre/config', requireAuth, (req, res) => {
   res.json(p);
 });
 
+
+
+// ===== v3.1 · TORRE DE CONTROL DE FLOTA / MANTENIMIENTO =====
+const FLEET_STATUS = new Set(['available','preventive','internal','external','oos','parts','stale']);
+function normHeaderText(v){return safeText(v).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();}
+function fleetPick(row, aliases){
+  if(!row || typeof row!=='object') return '';
+  const entries=Object.entries(row);
+  for(const alias of aliases){
+    const a=normHeaderText(alias);
+    const found=entries.find(([k,v])=>normHeaderText(k)===a && v!==null && v!==undefined && safeText(v)!=='');
+    if(found) return safeText(found[1]);
+  }
+  for(const alias of aliases){
+    const a=normHeaderText(alias);
+    const found=entries.find(([k,v])=>normHeaderText(k).includes(a) && v!==null && v!==undefined && safeText(v)!=='');
+    if(found) return safeText(found[1]);
+  }
+  return '';
+}
+function fleetStatusFromSource(sourceStatus, activeFlag){
+  const s=normHeaderText(sourceStatus), a=normHeaderText(activeFlag);
+  if(s.includes('no operativo') || s.includes('fuera de servicio') || s.includes('no se activara')) return 'oos';
+  if(s.includes('mant') && s.includes('prevent')) return 'preventive';
+  if(s.includes('taller interno')) return 'internal';
+  if(s.includes('taller externo')) return 'external';
+  if(s.includes('repuesto')) return 'parts';
+  if(s.includes('operativo') || a==='activo') return 'available';
+  return 'stale';
+}
+function normalizeFleetRow(row, index){
+  const id=fleetPick(row,['ID','ID Equipo','Equipo','Código Equipo','Codigo Equipo','Código','Codigo','Unit ID','Unidad']);
+  const number=fleetPick(row,['Número','Numero','N°','Nro','Camión','Camion','Mixer','N° Camión','Numero Camion']);
+  const plate=fleetPick(row,['Patente','Placa','PPU']);
+  const brand=fleetPick(row,['Marca','Brand']);
+  const year=fleetPick(row,['Año','Ano','Year']);
+  const sourceStatus=fleetPick(row,['Estado','Estado Flota','Estado Registro','Status']) || 'Sin estado';
+  const activeFlag=fleetPick(row,['Activo / Inactivo','Activo/Inactivo','Activo','Condición','Condicion']) || 'Sin dato';
+  const plantCode=fleetPick(row,['Código Planta','Codigo Planta','Cod Planta','Centro SAP','LOCAL CMD','Local CMD']);
+  const rawPlant=fleetPick(row,['Planta','Nombre Planta','Base','Centro','Ubicación','Ubicacion']);
+  let plant='';
+  try{ plant=resolvePlantFromRow(row) || canonicalPlantName(rawPlant||plantCode||''); }catch{ plant=canonicalPlantName(rawPlant||''); }
+  if(!plant) plant=rawPlant || 'Sin planta asignada';
+  let zone=fleetPick(row,['Zona','Zone']);
+  try{ if(plant && plant!=='Sin planta asignada') zone=ensurePlant(plant)?.zona || zone; }catch{}
+  if(!zone) zone='Sin zona';
+  const observation=fleetPick(row,['Observación','Observacion','Comentario','Comentarios']);
+  const key=(id||number||plate||`ROW${index+1}`)+'-'+(plate||number||index+1);
+  return {key,id:id||number||plate||`Equipo ${index+1}`,number,brand,plate,year,zone,plantCode,plant,sourceStatus,activeFlag,observation,status:fleetStatusFromSource(sourceStatus,activeFlag),workshop:'',responsible:'',eta:'',progress:0,cause:'',history:[]};
+}
+function sanitizeFleetItem(item){
+  const x={...item};
+  x.status=FLEET_STATUS.has(x.status)?x.status:'stale';
+  x.progress=clamp(Number(x.progress||0),0,100);
+  x.history=Array.isArray(x.history)?x.history.slice(-100):[];
+  return x;
+}
+app.get('/api/flota', requireAuth, (req,res)=>{
+  const data=Array.isArray(state.fleet?.datos)?state.fleet.datos:[];
+  res.json({revision:Number(state.fleet?.revision||0),metadatos:state.fleet?.metadatos||null,cantidad:data.length,datos:data.map(sanitizeFleetItem)});
+});
+app.post('/api/flota/ingesta', requireAuth, (req,res)=>{
+  try{
+    const rows=Array.isArray(req.body?.datos)?req.body.datos:null;
+    if(!rows) return res.status(400).json({error:'datos debe ser un arreglo'});
+    if(!rows.length) return res.status(422).json({error:'Archivo de flota sin registros'});
+    const normalized=rows.map((r,i)=>normalizeFleetRow(r,i)).filter(x=>x.id||x.plate||x.number);
+    if(!normalized.length) return res.status(422).json({error:'No se detectaron equipos válidos en el archivo de flota'});
+    const oldByKey=new Map((state.fleet?.datos||[]).map(x=>[x.key,x]));
+    const merged=normalized.map(n=>{
+      const old=oldByKey.get(n.key);
+      return old?{...n,status:old.status||n.status,workshop:old.workshop||'',responsible:old.responsible||'',eta:old.eta||'',progress:Number(old.progress||0),cause:old.cause||'',observation:old.observation||n.observation||'',history:Array.isArray(old.history)?old.history:[]}:n;
+    });
+    state.fleet={datos:merged,revision:Number(state.fleet?.revision||0)+1,metadatos:{archivo:safeText(req.body?.archivo||'Flota'),hoja:safeText(req.body?.hoja||''),cargado_en:nowIso(),usuario:req.user.nombre,filas_recibidas:rows.length,equipos_validos:merged.length}};
+    persistState();io.emit('flota:actualizada',{revision:state.fleet.revision,cantidad:merged.length,metadatos:state.fleet.metadatos});
+    res.json({ok:true,revision:state.fleet.revision,cantidad:merged.length,metadatos:state.fleet.metadatos});
+  }catch(err){registrarErrorDetallado({modulo:'flota',funcion:'POST /api/flota/ingesta',error:err?.message||String(err),stack:err?.stack});res.status(422).json({error:'No fue posible procesar el archivo de flota',detalle:err?.message||String(err)});}
+});
+app.patch('/api/flota/:key', requireAuth, (req,res)=>{
+  try{
+    const data=Array.isArray(state.fleet?.datos)?state.fleet.datos:[];
+    const idx=data.findIndex(x=>x.key===req.params.key);
+    if(idx<0) return res.status(404).json({error:'Equipo no encontrado'});
+    const before={...data[idx]};
+    const allowed=['status','plant','zone','workshop','responsible','eta','progress','cause','observation'];
+    const next={...before};
+    allowed.forEach(k=>{if(Object.prototype.hasOwnProperty.call(req.body||{},k))next[k]=req.body[k];});
+    if(!FLEET_STATUS.has(next.status)) next.status='stale';
+    next.progress=clamp(Number(next.progress||0),0,100);
+    if(next.plant && next.plant!=='Sin planta asignada'){
+      const canon=canonicalPlantName(next.plant)||next.plant; next.plant=canon;
+      try{next.zone=ensurePlant(canon)?.zona||next.zone;}catch{}
+    }
+    const changes=allowed.filter(k=>String(before[k]??'')!==String(next[k]??''));
+    if(changes.length){
+      next.history=Array.isArray(before.history)?[...before.history]:[];
+      next.history.push({timestamp:nowIso(),usuario:req.user.nombre,cambios:changes.reduce((o,k)=>(o[k]={antes:before[k]??'',despues:next[k]??''},o),{})});
+      next.history=next.history.slice(-100);
+    }
+    data[idx]=next;state.fleet.datos=data;state.fleet.revision=Number(state.fleet?.revision||0)+1;persistState();
+    io.emit('flota:equipo_actualizado',{equipo:sanitizeFleetItem(next),revision:state.fleet.revision});
+    res.json({ok:true,equipo:sanitizeFleetItem(next),revision:state.fleet.revision});
+  }catch(err){registrarErrorDetallado({modulo:'flota',funcion:'PATCH /api/flota/:key',error:err?.message||String(err),stack:err?.stack});res.status(422).json({error:'No fue posible actualizar el equipo',detalle:err?.message||String(err)});}
+});
+
 app.get('/api/operadores', requireAuth, (req, res) => {
   const planta = safeText(req.query.planta || '');
   const seen = new Map();
@@ -2004,7 +2111,7 @@ app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 if (require.main === module && process.env.CCO_TEST_MODE !== '1') {
   server.listen(PORT, () => {
-    console.log(`[CCO][startup] CCO Intelligence v3.0.0 activo en puerto ${PORT}`);
+    console.log(`[CCO][startup] CCO Intelligence v3.1.0 activo en puerto ${PORT}`);
     console.log(`[CCO][startup] Diccionario plantas: ${PLANT_DICTIONARY.plants.length} plantas, ${PLANT_DICTIONARY_LOOKUP.size} alias resolubles, ${Object.keys(PLANT_DICTIONARY.conflicts||{}).length} alias ambiguos`);
     if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producción.');
   });
