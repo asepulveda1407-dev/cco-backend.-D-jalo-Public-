@@ -2463,6 +2463,83 @@ app.get('/api/historico/errores/:diagId.xlsx',requireAuth,async(req,res)=>{
   }catch(err){return res.status(422).json({error:'No fue posible generar el Excel de errores',detalle:err?.message||String(err)});}
 });
 
+
+function historicalSourceDateSets(){
+  const records=Array.isArray(historicalWarehouse?.records)?historicalWarehouse.records:[];
+  const sets={turnos:new Set(),citaciones:new Set(),status:new Set()};
+  for(const r of records){
+    const source=r?.source||r?.fuente;
+    if(sets[source]&&r?.fecha)sets[source].add(r.fecha);
+  }
+  return sets;
+}
+function latestCommonHistoricalDate(){
+  const sets=historicalSourceDateSets();
+  const loaded=Object.entries(sets).filter(([,s])=>s.size>0);
+  if(!loaded.length)return null;
+  // Prioridad: fecha más reciente con las 3 fuentes. Si aún falta una fuente,
+  // usa la intersección de las fuentes efectivamente cargadas.
+  const base=[...loaded[0][1]].sort();
+  const common=base.filter(d=>loaded.every(([,s])=>s.has(d)));
+  return common.at(-1)||null;
+}
+function historicalSourceRanges(){
+  const sets=historicalSourceDateSets(),out={};
+  for(const [source,set] of Object.entries(sets)){
+    const dates=[...set].sort();
+    out[source]={records:(historicalWarehouse.records||[]).filter(r=>(r.source||r.fuente)===source).length,minDate:dates[0]||null,maxDate:dates.at(-1)||null,days:dates.length};
+  }
+  return out;
+}
+function historicalCoverage(query={}){
+  const from=safeText(query.from),to=safeText(query.to);
+  const zona=safeText(query.zona),plants=String(query.plantas||'').split(',').map(safeText).filter(Boolean),operator=safeText(query.operator);
+  const idx=getHistoricalDailyIndex();
+  const rows=idx.rows.filter(r=>(!from||r.fecha>=from)&&(!to||r.fecha<=to)&&(!zona||r.zona===zona)&&(!plants.length||plants.includes(r.planta))&&(!operator||r.operadorKey===operator));
+  const raw=(historicalWarehouse.records||[]).filter(r=>(!from||r.fecha>=from)&&(!to||r.fecha<=to));
+  const sourceRows={turnos:0,citaciones:0,status:0};
+  for(const r of raw){const s=r.source||r.fuente;if(sourceRows[s]!==undefined)sourceRows[s]++;}
+  const withTurn=r=>r.turnoMin!==null&&r.turnoMin!==undefined;
+  const withCit=r=>r.citacionMin!==null&&r.citacionMin!==undefined;
+  const withLogin=r=>r.loginMin!==null&&r.loginMin!==undefined;
+  const withAssign=r=>r.asignacionMin!==null&&r.asignacionMin!==undefined;
+  const withStatus=r=>withLogin(r)||withAssign(r)||(r.primeraCargaMin!==null&&r.primeraCargaMin!==undefined);
+
+  const turnDays=rows.filter(withTurn).length,citDays=rows.filter(withCit).length,statusDays=rows.filter(withStatus).length;
+  const turnoCit=rows.filter(r=>withTurn(r)&&withCit(r)).length;
+  const turnoStatus=rows.filter(r=>withTurn(r)&&withStatus(r)).length;
+  const turnoLogin=rows.filter(r=>withTurn(r)&&withLogin(r)).length;
+  const turnoAsign=rows.filter(r=>withTurn(r)&&withAssign(r)).length;
+  const citLogin=rows.filter(r=>withCit(r)&&withLogin(r)).length;
+  const allThree=rows.filter(r=>withTurn(r)&&withCit(r)&&withStatus(r)).length;
+
+  return {
+    from,to,
+    sourceRows,
+    operatorDays:{turnos:turnDays,citaciones:citDays,status:statusDays},
+    crosses:{turnoCitacion:turnoCit,turnoStatus,turnoLogin,turnoAsignacion:turnoAsign,citacionLogin:citLogin,tresFuentes:allThree},
+    unmatched:{
+      turnoSinCitacion:Math.max(0,turnDays-turnoCit),
+      turnoSinStatus:Math.max(0,turnDays-turnoStatus),
+      citacionSinLogin:Math.max(0,citDays-citLogin)
+    },
+    operators:{
+      total:new Set(rows.map(r=>r.operadorKey)).size,
+      conTurno:new Set(rows.filter(withTurn).map(r=>r.operadorKey)).size,
+      conCitacion:new Set(rows.filter(withCit).map(r=>r.operadorKey)).size,
+      conStatus:new Set(rows.filter(withStatus).map(r=>r.operadorKey)).size
+    },
+    rows:rows.length
+  };
+}
+function histCrossLabel(r){
+  const p=[];
+  if(r.turnoMin!==null&&r.turnoMin!==undefined)p.push('Turno');
+  if(r.citacionMin!==null&&r.citacionMin!==undefined)p.push('Citación');
+  if(r.loginMin!==null&&r.loginMin!==undefined||r.asignacionMin!==null&&r.asignacionMin!==undefined||r.primeraCargaMin!==null&&r.primeraCargaMin!==undefined)p.push('Status');
+  return p.join(' + ')||'Sin fuente';
+}
+
 app.get('/api/historico/fuentes',requireAuth,(req,res)=>{
   const idx=getHistoricalDailyIndex(),records=Array.isArray(historicalWarehouse?.records)?historicalWarehouse.records:[];
   const dates=idx.rows.map(r=>r.fecha).filter(Boolean).sort();
@@ -2474,6 +2551,8 @@ app.get('/api/historico/fuentes',requireAuth,(req,res)=>{
     plantCatalog:idx.plants.map(planta=>({planta,zona:(idx.rows.find(r=>r.planta===planta)?.zona)||inferZona(planta)})),
     zones:idx.zones,operators:idx.operators,
     diagnostics:(historicalWarehouse.diagnostics||[]).slice(0,100),
+    recommendedDate:latestCommonHistoricalDate(),
+    sourceRanges:historicalSourceRanges(),
     plantDictionary:{
       loaded:true,
       source:'config/plant-dictionary.json',
@@ -2485,6 +2564,7 @@ app.get('/api/historico/fuentes',requireAuth,(req,res)=>{
 app.get('/api/historico/dashboard-enterprise',requireAuth,(req,res)=>{
   try{
     const cfg=histCfg(req.query),rows=histFilterBase(req.query),from=safeText(req.query.from),to=safeText(req.query.to);
+    const coverage=historicalCoverage(req.query);
     const prevRange=histPreviousRange(from,to),prevRows=prevRange?histFilterBase(req.query,prevRange):[];
     const granularity=['day','week','month','quarter','year'].includes(String(req.query.granularity))?String(req.query.granularity):'week';
     const metrics=histMetrics(rows,cfg),operators=histOperatorGroups(rows,cfg,prevRows);
@@ -2509,8 +2589,10 @@ app.get('/api/historico/dashboard-enterprise',requireAuth,(req,res)=>{
     return res.json({
       ok:true,source:'historicalWarehouse:file-attachments-only',from,to,previousRange:prevRange,granularity,cfg,empty:rows.length===0,
       mensaje:rows.length?'':'NO SE ENCONTRARON DATOS PARA EL PERÍODO SELECCIONADO',
-      metrics,trend,rankings,plants,zones,byPlant,heatmap,findings,
-      detailed:rows.slice(0,5000),totalDetailed:rows.length,
+      metrics,trend,rankings,plants,zones,byPlant,heatmap,findings,coverage,
+      recommendedDate:latestCommonHistoricalDate(),
+      sourceRanges:historicalSourceRanges(),
+      detailed:rows.slice(0,5000).map(r=>({...r,crossLabel:histCrossLabel(r)})),totalDetailed:rows.length,
       catalog:{plants:getHistoricalDailyIndex().plants,zones:getHistoricalDailyIndex().zones,operators:getHistoricalDailyIndex().operators},
       audit:{revision:Number(historicalWarehouse?.revision||0),records:(historicalWarehouse?.records||[]).length,sources:Object.keys(HISTORICAL_SOURCES).map(k=>({source:k,...historicalSourceMeta(k)}))}
     });
@@ -2940,7 +3022,7 @@ app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 if (require.main === module && process.env.CCO_TEST_MODE !== '1') {
   server.listen(PORT, () => {
-    console.log(`[CCO][startup] CCO Intelligence v3.7.2 activo en puerto ${PORT}`);
+    console.log(`[CCO][startup] CCO Intelligence v3.8.0 activo en puerto ${PORT}`);
     console.log(`[CCO][startup] Diccionario plantas: ${PLANT_DICTIONARY.plants.length} plantas, ${PLANT_DICTIONARY_LOOKUP.size} alias resolubles, ${Object.keys(PLANT_DICTIONARY.conflicts||{}).length} alias ambiguos`);
     if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producción.');
   });
