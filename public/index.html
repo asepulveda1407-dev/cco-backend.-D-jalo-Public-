@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CCO Intelligence v3.3.1 · Centro de Control Operacional</title>
+<title>CCO Intelligence v3.3.3 · Centro de Control Operacional</title>
 <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4/dist/socket.io.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
@@ -257,11 +257,11 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v3.3.1</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v3.3.3</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
     <div id="opDateControl" class="pill" style="margin:0">Operación de hoy · <b id="scopeFechaLabel">—</b><input id="scopeFecha" type="hidden"></div>
-    <span id="appVersion" class="pill">v3.3.1</span><span id="connPill" class="pill">Conectando…</span>
+    <span id="appVersion" class="pill">v3.3.3</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
 <div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
@@ -1008,7 +1008,16 @@ async function leerRespuestaApiSegura(response){
 
   if(!response.ok){
     const detalle = Array.isArray(data?.errores) && data.errores.length
-      ? ' · '+data.errores.slice(0,3).join(' | ')
+      ? ' · '+data.errores.slice(0,3).map(e=>{
+          if(typeof e==='string') return e;
+          if(e && typeof e==='object'){
+            const fila=e.fila ? `fila ${e.fila}` : '';
+            const archivo=e.archivo ? e.archivo : '';
+            const errs=Array.isArray(e.errores) ? e.errores.join(', ') : (e.error || '');
+            return [archivo,fila,errs].filter(Boolean).join(' · ');
+          }
+          return String(e);
+        }).join(' | ')
       : (data?.detalle ? ' · '+data.detalle : '');
     throw new Error((data?.error || `HTTP ${response.status}`) + detalle);
   }
@@ -2127,9 +2136,18 @@ async function procesarTowerFleetFile(file){
     for(const sheet of sheets){
       if(!sheet)continue;
       const header=typeof detectarFilaHeader==='function'?detectarFilaHeader(wb,sheet):0;
-      const part=XLSX.utils.sheet_to_json(wb.Sheets[sheet],{defval:null,range:header});
+      const ws=wb.Sheets[sheet];
+      const part=XLSX.utils.sheet_to_json(ws,{defval:null,range:header});
       if(!part.length)continue;
-      part.forEach(r=>rows.push({...r,__source_sheet:sheet}));
+      // v3.3.2: en el archivo corporativo de Flota, la planta asignada del camión
+      // está en la columna I (índice 8). La conservamos explícitamente para que
+      // ninguna heurística por encabezado/código pueda reasignar el mixer a otra planta.
+      const matrix=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:false});
+      part.forEach((r,i)=>{
+        const excelRow=header+1+i;
+        const assignedPlantColI=matrix?.[excelRow]?.[8];
+        rows.push({...r,__source_sheet:sheet,__assigned_plant_col_i:assignedPlantColI});
+      });
       usados.push(sheet);detalle.push(`${sheet}: ${part.length}`);
     }
     if(!rows.length)throw new Error('No se encontraron registros en Flota/Terceros');
@@ -2179,7 +2197,12 @@ function inicializarModulos(){
   document.getElementById('histNingunaPlanta')?.addEventListener('click',()=>{marcarHistPlantas(false);cargarHistorico();});
   document.getElementById('histExportar')?.addEventListener('click',exportarHistoricoCSV);
   HIST_SOURCE_KEYS.forEach(source=>{
-    document.getElementById('histFolder_'+source)?.addEventListener('change',e=>procesarCarpetaHistorica(source,[...(e.target.files||[])]));
+    document.getElementById('histFolder_'+source)?.addEventListener('change',async e=>{
+      const input=e.target;
+      const selected=[...(input.files||[])];
+      try{await procesarCarpetaHistorica(source,selected);}
+      finally{input.value='';}
+    });
   });
   initTower();
   setHistRangeSemana25();
@@ -2253,7 +2276,12 @@ async function procesarCarpetaHistorica(source,files){
       if(!rows.length)throw new Error('Hoja sin registros');
       const BATCH=1500;
       for(let p=0;p<rows.length;p+=BATCH){
-        const batch=rows.slice(p,p+BATCH).map(r=>({...r,__source_file:file.name}));
+        const batch=rows.slice(p,p+BATCH).map(r=>{
+          const normalized={};
+          Object.entries(r||{}).forEach(([k,v])=>{normalized[normalizeKey(k)]=v;});
+          normalized.__source_file=file.name;
+          return normalized;
+        });
         const resp=await fetch(API+'/api/historico/ingesta',{method:'POST',headers:authHeaders(),body:JSON.stringify({source,datos:batch,archivo:file.name,modo:firstBatch?'replace':'append'})});
         const data=await leerRespuestaApiSegura(resp);
         totalValidos+=Number(data.cantidad_lote||0);totalRechazados+=Number(data.rechazadas||0);firstBatch=false;
