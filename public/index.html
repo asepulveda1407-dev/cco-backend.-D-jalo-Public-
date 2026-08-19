@@ -257,18 +257,18 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v3.1</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v3.2</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
     <div id="opDateControl" class="pill" style="margin:0">Operación de hoy · <b id="scopeFechaLabel">—</b><input id="scopeFecha" type="hidden"></div>
-    <span id="appVersion" class="pill">v3.1</span><span id="connPill" class="pill">Conectando…</span>
+    <span id="appVersion" class="pill">v3.2</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
 <div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
   <span class="module-switcher-label">VISTA CCO</span>
-  <button type="button" id="quickOperacion" class="active">📊 Operación Nacional</button>
-  <button type="button" id="quickHistorico" class="secondary">📈 Trazabilidad Histórica</button>
-  <button type="button" id="quickTorre" class="secondary">🚛 Torre de Control</button>
+  <button type="button" id="quickOperacion" class="active" onclick="console.log('Botón ejecutado correctamente'); cambiarModulo('operacion',true)">📊 Operación Nacional</button>
+  <button type="button" id="quickHistorico" class="secondary" onclick="console.log('Botón ejecutado correctamente'); cambiarModulo('historico',true)">📈 Trazabilidad Histórica</button>
+  <button type="button" id="quickTorre" class="secondary" onclick="console.log('Botón ejecutado correctamente'); cambiarModulo('torre',true)">🚛 Torre de Control</button>
 </div>
 <main>
 
@@ -2135,14 +2135,25 @@ let histCatalogo={plants:[],zones:[],sources:[],plantCatalog:[]};
 const HIST_SOURCE_KEYS=['status','disponibilidad','mantenimiento','puntualidad','sobreestadia','operadores','flota','otros'];
 const histCharts={};
 
+let modulosInicializados=false;
+function enlazarBotonModulo(id, modulo, scrollTop=false){
+  const btn=document.getElementById(id);
+  if(!btn){ console.error(`[CCO][NAVEGACION] Botón no encontrado: ${id}`); return; }
+  btn.addEventListener('click',(event)=>{
+    console.log('Botón ejecutado correctamente', {id, modulo});
+    console.log(`[CCO][NAVEGACION] click ${id} -> ${modulo}`);
+    cambiarModulo(modulo,scrollTop);
+  });
+}
 function inicializarModulos(){
+  if(modulosInicializados){ console.log('[CCO][NAVEGACION] módulos ya inicializados'); return; }
+  modulosInicializados=true;
+  console.log('[CCO][NAVEGACION] inicializando módulos');
   document.querySelectorAll('main > .card').forEach(el=>{if(!['historicoPanel','towerPanel'].includes(el.id))el.classList.add('operation-view');});
-  document.getElementById('tabOperacion')?.addEventListener('click',()=>cambiarModulo('operacion'));
-  document.getElementById('tabHistorico')?.addEventListener('click',()=>cambiarModulo('historico'));
-  document.getElementById('tabTorre')?.addEventListener('click',()=>cambiarModulo('torre'));
-  document.getElementById('quickOperacion')?.addEventListener('click',()=>cambiarModulo('operacion',true));
-  document.getElementById('quickHistorico')?.addEventListener('click',()=>cambiarModulo('historico',true));
-  document.getElementById('quickTorre')?.addEventListener('click',()=>cambiarModulo('torre',true));
+  enlazarBotonModulo('tabOperacion','operacion');
+  enlazarBotonModulo('tabHistorico','historico');
+  enlazarBotonModulo('tabTorre','torre');
+  ['quickOperacion','quickHistorico','quickTorre'].forEach(id=>{const b=document.getElementById(id);if(!b)console.error('[CCO][NAVEGACION] Botón no encontrado:',id);});
   document.getElementById('histConsultar')?.addEventListener('click',cargarHistorico);
   document.getElementById('histGranularidad')?.addEventListener('change',cargarHistorico);
   document.getElementById('histZona')?.addEventListener('change',()=>{poblarHistPlantas(true);cargarHistorico();});
@@ -2155,8 +2166,17 @@ function inicializarModulos(){
   initTower();
   setHistRangeSemana25();
 }
+function initModuleTabs(){
+  console.log('[CCO][NAVEGACION] initModuleTabs ejecutado');
+  inicializarModulos();
+  cambiarModulo('operacion',false);
+}
+
 function cambiarModulo(modulo,scrollTop=false){
-  const hist=modulo==='historico', tower=modulo==='torre', op=!hist&&!tower;
+  const permitidos=new Set(['operacion','historico','torre']);
+  if(!permitidos.has(modulo)){ console.error('[CCO][NAVEGACION] módulo inválido',modulo); return; }
+  console.log('[CCO][NAVEGACION] cambiando vista ->',modulo);
+  const hist=modulo==='historico', tower=modulo==='torre', op=modulo==='operacion';
   document.querySelectorAll('.operation-view').forEach(el=>el.style.display=op?'':'none');
   const hp=document.getElementById('historicoPanel');if(hp)hp.style.display=hist?'block':'none';
   const tp=document.getElementById('towerPanel');if(tp)tp.style.display=tower?'block':'none';
@@ -2167,6 +2187,7 @@ function cambiarModulo(modulo,scrollTop=false){
   document.getElementById('quickHistorico')?.classList.toggle('active',hist);
   document.getElementById('quickTorre')?.classList.toggle('active',tower);
   ['quickOperacion','quickHistorico','quickTorre'].forEach(id=>document.getElementById(id)?.classList.toggle('secondary',!document.getElementById(id)?.classList.contains('active')));
+  [['quickOperacion',op],['quickHistorico',hist],['quickTorre',tower],['tabOperacion',op],['tabHistorico',hist],['tabTorre',tower]].forEach(([id,on])=>{const el=document.getElementById(id);if(el){el.setAttribute('aria-pressed',on?'true':'false');el.dataset.active=on?'1':'0';}});
   if(hist){cargarCatalogoHistorico().then(cargarHistorico);}
   if(tower){cargarTorreFlota();}
   if(scrollTop) window.scrollTo({top:0,behavior:'smooth'});
