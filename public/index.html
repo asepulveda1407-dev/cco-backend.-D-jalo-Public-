@@ -218,6 +218,35 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 @media(max-width:1050px){.tower-kpis{grid-template-columns:repeat(3,1fr)}.tower-grid{grid-template-columns:1fr}.tower-toolbar{grid-template-columns:1fr 1fr}.tower-bottom{grid-template-columns:1fr}}
 @media(max-width:650px){.tower-kpis{grid-template-columns:repeat(2,1fr)}.tower-upload-row{grid-template-columns:1fr}.tower-upload-status{text-align:left;min-width:0}.tower-toolbar{grid-template-columns:1fr}.tower-trucks{grid-template-columns:repeat(5,1fr)}.tower-form{grid-template-columns:1fr}.tower-form .full{grid-column:auto}}
 
+
+/* ===== v3.4 TRAZABILIDAD CCO INTELLIGENCE ===== */
+.hist-intelligence{overflow:hidden}.hist-title-row{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
+.hist-upload-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}
+.hist-drop-card{border:1.5px dashed #a9c9eb;border-radius:14px;background:#f8fbff;padding:14px;min-height:155px;display:flex;flex-direction:column;gap:6px;transition:.16s}
+.hist-drop-card.dragover{border-color:#2f80ed;background:#edf6ff;transform:translateY(-1px)}
+.hist-drop-icon{font-size:25px}.hist-file-btn{margin-top:auto}.hist-source-status{font-size:10.5px;line-height:1.35;min-height:28px}
+.hist-audit-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0}
+.hist-audit-mini{border:1px solid #d9e7f4;border-radius:12px;padding:10px;background:#fff}.hist-audit-mini b{display:block;font-size:17px;color:#123f68}.hist-audit-mini span{font-size:10px;color:#678099}
+.hist-filter-grid{display:grid;grid-template-columns:repeat(6,minmax(130px,1fr));gap:8px;align-items:end}
+.hist-period-controls{grid-column:span 2;display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
+.hist-params{border:1px solid #dce9f4;border-radius:12px;padding:8px 10px;margin:10px 0;background:#fbfdff}.hist-params summary{cursor:pointer;font-weight:700;color:#244764}
+.hist-actions{align-items:center;margin:10px 0}.hist-kpi-row{grid-template-columns:repeat(5,minmax(150px,1fr));margin-bottom:8px}
+.hist-dashboard-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.hist-dashboard-grid .hist-wide{grid-column:span 2}
+.hist-chart-card{min-height:285px}.hist-chart-card canvas{height:235px!important}.hist-ranking-controls{display:flex;justify-content:flex-end;margin:6px 0}
+.hist-two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px}.hist-insight-box,.hist-alert-box{border:1px solid #d9e7f4;border-radius:12px;padding:12px;background:#fbfdff;min-height:130px}
+.hist-alert-box{border-color:#f0d5d8;background:#fffafb}.hist-insight-box ul,.hist-alert-box ul{padding-left:20px;margin:8px 0}.hist-insight-box li,.hist-alert-box li{margin:6px 0;font-size:11px;line-height:1.4}
+.hist-plant-detail{margin-top:8px;border:1px solid #dce9f4;border-radius:10px;padding:8px;max-height:350px;overflow:auto}.hist-detail-table{max-height:520px;overflow:auto}
+.hist-gauge-wrap{display:flex;align-items:center;justify-content:center}.hist-value-good{color:#169c64}.hist-value-warn{color:#c98a00}.hist-value-bad{color:#d44355}
+@media(max-width:1050px){.hist-filter-grid{grid-template-columns:repeat(3,1fr)}.hist-upload-grid{grid-template-columns:1fr}.hist-kpi-row{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:720px){.hist-two-col,.hist-dashboard-grid{grid-template-columns:1fr}.hist-dashboard-grid .hist-wide{grid-column:auto}.hist-filter-grid{grid-template-columns:1fr}.hist-period-controls{grid-column:auto}.hist-audit-strip{grid-template-columns:repeat(2,1fr)}}
+
+
+.hist-file-list{margin-top:5px;display:flex;flex-direction:column;gap:4px;max-height:118px;overflow:auto}
+.hist-file-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:center;border:1px solid #dce9f4;border-radius:8px;padding:6px;background:#fff;font-size:9.5px}
+.hist-file-item .name{font-weight:700;color:#244764;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hist-file-item .meta{font-size:8.8px;color:#71879b}
+.hist-file-remove{border:0!important;background:#fff1f2!important;color:#be123c!important;padding:4px 7px!important;border-radius:7px!important;box-shadow:none!important}
+.hist-no-kpi{font-size:13px!important;color:#6d8296!important;font-weight:700!important}
+
 </style>
 </head>
 <body>
@@ -257,11 +286,11 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v3.3.3</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v3.4.1</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
     <div id="opDateControl" class="pill" style="margin:0">Operación de hoy · <b id="scopeFechaLabel">—</b><input id="scopeFecha" type="hidden"></div>
-    <span id="appVersion" class="pill">v3.3.3</span><span id="connPill" class="pill">Conectando…</span>
+    <span id="appVersion" class="pill">v3.4.1</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
 <div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
@@ -346,62 +375,122 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
     </div>
   </div>
 
-  <div id="historicoPanel" class="card" style="display:none">
-    <h2>Trazabilidad Histórica Enterprise <span class="small">(base histórica independiente)</span></h2>
-    <p class="small"><b>Fuente exclusiva:</b> base consolidada histórica. Esta vista no consulta Turnos, Citaciones ni StatusBreakdown activos de Operación Nacional.</p>
 
-    <div class="hist-load-grid" id="histLoadGrid">
-      <div class="hist-source-card" data-source="turnos"><div><b>Turnos</b><div class="small">Programación histórica por operador, planta y fecha</div></div><input type="file" id="histFolder_turnos" webkitdirectory directory multiple accept=".xlsx,.xls,.csv" style="display:none"><button class="secondary" onclick="seleccionarCarpetaHistorica('turnos')">📁 Cargar carpeta</button><div class="hist-source-status" id="histSource_turnos">Sin datos</div></div>
-      <div class="hist-source-card" data-source="citaciones"><div><b>Citaciones</b><div class="small">Citaciones históricas de operadores</div></div><input type="file" id="histFolder_citaciones" webkitdirectory directory multiple accept=".xlsx,.xls,.csv" style="display:none"><button class="secondary" onclick="seleccionarCarpetaHistorica('citaciones')">📁 Cargar carpeta</button><div class="hist-source-status" id="histSource_citaciones">Sin datos</div></div>
-      <div class="hist-source-card" data-source="status"><div><b>Status Black / StatusBreakdown</b><div class="small">LOGIN, ASIGNADO, CARGANDO/CARGADO y demás eventos históricos</div></div><input type="file" id="histFolder_status" webkitdirectory directory multiple accept=".xlsx,.xls,.csv" style="display:none"><button class="secondary" onclick="seleccionarCarpetaHistorica('status')">📁 Cargar carpeta</button><div class="hist-source-status" id="histSource_status">Sin datos</div></div>
+  <div id="historicoPanel" class="card hist-intelligence" style="display:none">
+    <div class="hist-title-row">
+      <div>
+        <h2>📈 Trazabilidad CCO Intelligence <span class="small">(análisis histórico avanzado · archivos adjuntos)</span></h2>
+        <p class="small"><b>Separación absoluta:</b> esta vista utiliza exclusivamente los archivos cargados aquí. No consulta Turnos, Citaciones ni StatusBreakdown activos de Operación Nacional.</p>
+      </div>
+      <span class="pill" id="histEngineStatus">Base histórica independiente</span>
     </div>
 
-    <div class="history-audit" id="histWarehouseAudit">
-      <div class="kpi-card"><div class="kpi-label">Estado base histórica</div><div class="kpi-valor" id="histBaseEstado">Sin datos</div><div class="kpi-sub">Consolidación independiente</div></div>
-      <div class="kpi-card"><div class="kpi-label">Registros históricos</div><div class="kpi-valor" id="histBaseRegistros">0</div><div class="kpi-sub">Turnos + Citaciones + StatusBreakdown</div></div>
-      <div class="kpi-card"><div class="kpi-label">Fecha mínima</div><div class="kpi-valor" id="histBaseMin">—</div><div class="kpi-sub">Cobertura consolidada</div></div>
-      <div class="kpi-card"><div class="kpi-label">Fecha máxima</div><div class="kpi-valor" id="histBaseMax">—</div><div class="kpi-sub">Cobertura consolidada</div></div>
+    <div class="hist-upload-grid">
+      <div class="hist-drop-card" data-source="turnos" id="drop_turnos">
+        <div class="hist-drop-icon">🗓️</div><b>Turnos</b>
+        <div class="small">Programación semanal/diaria por operador y planta</div>
+        <input type="file" id="histFiles_turnos" multiple accept=".xlsx,.xls,.csv,.txt,.pdf" hidden>
+        <button type="button" class="secondary hist-file-btn" data-source="turnos">Seleccionar archivos</button>
+        <div class="hist-source-status" id="histSource_turnos">Sin datos</div><div class="hist-file-list" id="histFileList_turnos"></div>
+      </div>
+      <div class="hist-drop-card" data-source="citaciones" id="drop_citaciones">
+        <div class="hist-drop-icon">⏰</div><b>Citaciones</b>
+        <div class="small">Hora citada, operador, camión y fecha</div>
+        <input type="file" id="histFiles_citaciones" multiple accept=".xlsx,.xls,.csv,.txt,.pdf" hidden>
+        <button type="button" class="secondary hist-file-btn" data-source="citaciones">Seleccionar archivos</button>
+        <div class="hist-source-status" id="histSource_citaciones">Sin datos</div><div class="hist-file-list" id="histFileList_citaciones"></div>
+      </div>
+      <div class="hist-drop-card" data-source="status" id="drop_status">
+        <div class="hist-drop-icon">🚦</div><b>Status Black / StatusBreakdown</b>
+        <div class="small">LOGIN, ASIGNADO y primera carga</div>
+        <input type="file" id="histFiles_status" multiple accept=".xlsx,.xls,.csv,.txt,.pdf" hidden>
+        <button type="button" class="secondary hist-file-btn" data-source="status">Seleccionar archivos</button>
+        <div class="hist-source-status" id="histSource_status">Sin datos</div><div class="hist-file-list" id="histFileList_status"></div>
+      </div>
+    </div>
+    <div class="history-note">También puedes <b>arrastrar y soltar</b> uno o varios archivos sobre cada tarjeta. XLSX/XLS/CSV/TXT participan en los cálculos. PDF se registra como <b>solo lectura</b> y no genera KPI si no contiene datos estructurados extraíbles.</div>
+
+    <div class="hist-audit-strip" id="histAuditStrip"></div>
+
+    <div class="rep-header"><span class="rep-titulo">Filtros de análisis</span><span class="rep-meta">Nacional → Zona → Planta → Operador</span></div>
+    <div class="hist-filter-grid">
+      <div><label>Zona</label><select id="histZona"><option value="">Nacional</option><option value="Norte">Norte</option><option value="Centro">Centro</option><option value="Sur">Sur</option></select></div>
+      <div><label>Planta</label><select id="histPlanta"><option value="">Todas las plantas</option></select></div>
+      <div><label>Operador</label><select id="histOperador"><option value="">Todos los operadores</option></select></div>
+      <div><label>Período</label><select id="histPeriodoTipo"><option value="day">Día</option><option value="week" selected>Semana</option><option value="month">Mes</option><option value="quarter">Trimestre</option><option value="year">Año</option><option value="custom">Personalizado</option></select></div>
+      <div id="histPeriodoControls" class="hist-period-controls"></div>
+      <div><label>Calcular tiempo muerto desde</label><select id="histSourceStart"><option value="logeo" selected>Logeo</option><option value="citacion">Citación</option></select></div>
     </div>
 
-    <div class="history-toolbar" style="grid-template-columns:repeat(5,minmax(145px,1fr))">
-      <div><label>Agrupar por</label><select id="histGranularidad"><option value="week" selected>Semana</option><option value="day">Día</option><option value="month">Mes</option><option value="quarter">Trimestre</option><option value="year">Año</option></select></div>
-      <div><label>Semana desde</label><select id="histSemanaDesde"></select></div>
-      <div><label>Semana hasta</label><select id="histSemanaHasta"></select></div>
-      <div><label>Zona</label><select id="histZona"><option value="">Todas las zonas</option></select></div>
-      <div><button type="button" id="histConsultar" style="width:100%">Actualizar trazabilidad</button></div>
-    </div>
-
-    <label style="margin-top:10px">Plantas detectadas <span class="small" id="histPlantasResumen">(sin datos)</span></label>
-    <div class="row" style="margin-bottom:6px">
-      <button type="button" class="secondary" id="histTodasPlantas">Marcar todas</button>
-      <button type="button" class="secondary" id="histNingunaPlanta">Desmarcar todas</button>
-      <button type="button" class="secondary" id="histExportar">Exportar histórico CSV</button>
-      <span class="small" id="histAlcance" style="align-self:center"></span>
+    <details class="hist-params">
+      <summary>⚙️ Tolerancias y parámetros</summary>
+      <div class="hist-filter-grid">
+        <div><label>Turno ↔ Citación (min)</label><input type="number" id="histTolTurnCitation" value="30" min="0" max="120"></div>
+        <div><label>Turno ↔ Asignación (min)</label><input type="number" id="histTolAssignment" value="30" min="0" max="180"></div>
+        <div><label>Adherencia Turno (min)</label><input type="number" id="histTolTurn" value="10" min="0" max="120"></div>
+        <div><label>Adherencia Citación</label><select id="histTolCitation"><option value="5">5 min</option><option value="10" selected>10 min</option><option value="15">15 min</option></select></div>
+        <div><label>Atraso leve hasta</label><input type="number" id="histAtrasoLeve" value="10" min="1" max="120"></div>
+        <div><label>Atraso moderado hasta</label><input type="number" id="histAtrasoModerado" value="20" min="2" max="180"></div>
+      </div>
+    </details>
+    <div class="row hist-actions">
+      <button type="button" id="histConsultar">Actualizar análisis</button>
+      <button type="button" class="secondary" id="histExportar">Exportar detalle CSV</button>
+      <span class="small" id="histAlcance"></span>
     </div>
     <div id="histDiagnostico" class="history-note"></div>
-    <div id="histPlantasLista" class="multiselect-box"></div>
 
-    <div class="rep-header"><span class="rep-titulo">KPIs históricos</span><span class="rep-meta">Solo base consolidada histórica</span></div>
-    <div id="histKpis" class="history-kpis"></div>
+    <div class="rep-header"><span class="rep-titulo">Dashboard Ejecutivo</span><span class="rep-meta" id="histGeneralClass">Sin datos</span></div>
+    <div class="history-kpis hist-kpi-row" id="histKpiRow1"></div>
+    <div class="history-kpis hist-kpi-row" id="histKpiRow2"></div>
 
-    <div class="hist-chart-grid">
-      <div class="hist-chart-card"><h3>Turnos históricos por período</h3><canvas id="histTurnos"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
-      <div class="hist-chart-card"><h3>Citaciones históricas por período</h3><canvas id="histCitaciones"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
-      <div class="hist-chart-card"><h3>Eventos StatusBreakdown</h3><canvas id="histStatus"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
-      <div class="hist-chart-card"><h3>LOGIN detectados</h3><canvas id="histLogin"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
-      <div class="hist-chart-card"><h3>ASIGNADO detectados</h3><canvas id="histAsignados"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
-      <div class="hist-chart-card"><h3>Primera carga detectada</h3><canvas id="histPrimeraCarga"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
-      <div class="hist-chart-card"><h3>Distribución por planta</h3><canvas id="histDistribPlanta"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
-      <div class="hist-chart-card"><h3>Distribución por zona</h3><canvas id="histDistribZona"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
-      <div class="hist-chart-card"><h3>Estados StatusBreakdown</h3><canvas id="histPareto"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
-      <div class="hist-chart-card"><h3>Heatmap planta / fecha</h3><div id="histHeatmap" class="hist-heatmap"><div class="history-empty">Sin datos</div></div></div>
-      <div class="hist-chart-card"><h3>Equipos con más eventos Status</h3><canvas id="histTopEquipos"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
-      <div class="hist-chart-card"><h3>Operadores con más eventos Status</h3><canvas id="histTopOperadores"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
+    <div class="hist-dashboard-grid">
+      <div class="hist-chart-card"><h3>Turno vs Citación</h3><canvas id="histGaugeTurnCitation"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
+      <div class="hist-chart-card hist-wide"><h3>Tendencia histórica de adherencia</h3><canvas id="histTrendAdherencia"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
+      <div class="hist-chart-card"><h3>Comparativo de Plantas</h3><canvas id="histPlantCompare"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
+      <div class="hist-chart-card"><h3>Comparativo Zonal</h3><canvas id="histZoneCompare"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
+      <div class="hist-chart-card hist-wide"><h3>Tendencia de tiempo muerto y atrasos</h3><canvas id="histDelayTrend"></canvas><div class="history-empty chart-empty">Sin datos</div></div>
+      <div class="hist-chart-card hist-wide"><h3>Heatmap de atraso al turno · planta × fecha</h3><div id="histHeatmap" class="hist-heatmap"><div class="history-empty">Sin datos</div></div></div>
     </div>
 
-    <div class="rep-header"><span class="rep-titulo">Ranking de plantas</span></div>
-    <div class="history-table-wrap"><table class="history-table"><thead><tr><th>Planta</th><th>Registros</th><th>Turnos</th><th>Citaciones</th><th>Status</th></tr></thead><tbody id="histBody"><tr><td colspan="5" class="history-empty">Cargue Turnos, Citaciones o StatusBreakdown para comenzar.</td></tr></tbody></table></div>
-    <div class="history-note"><b>Separación obligatoria:</b> Operación Nacional procesa solo archivos del día actual. Trazabilidad procesa exclusivamente carpetas históricas consolidadas en su propia base.</div>
+    <div class="rep-header"><span class="rep-titulo">Ranking Operacional</span><span class="rep-meta">Top 10 / Bottom 10 según filtros</span></div>
+    <div class="hist-ranking-controls">
+      <label>Métrica
+        <select id="histRankingMetric">
+          <option value="general">Adherencia General</option>
+          <option value="turno">Adherencia al Turno</option>
+          <option value="citacion">Adherencia a Citación</option>
+          <option value="tiempoMuerto">Tiempo Muerto</option>
+          <option value="atrasoCitacion">Atraso Citación</option>
+          <option value="atrasoTurno">Atraso Turno</option>
+        </select>
+      </label>
+    </div>
+    <div class="hist-two-col">
+      <div><h3>🏆 Top 10 Operadores</h3><div class="history-table-wrap"><table class="history-table"><thead><tr><th>#</th><th>Operador</th><th>Planta</th><th>Valor</th><th>Δ período</th></tr></thead><tbody id="histTopOps"></tbody></table></div></div>
+      <div><h3>⚠️ Top 10 Operadores Críticos</h3><div class="history-table-wrap"><table class="history-table"><thead><tr><th>#</th><th>Operador</th><th>Planta</th><th>Valor</th><th>Δ período</th></tr></thead><tbody id="histCriticalOps"></tbody></table></div></div>
+    </div>
+
+    <div class="rep-header"><span class="rep-titulo">Ranking por Planta</span></div>
+    <div class="hist-two-col">
+      <div class="history-table-wrap"><table class="history-table"><thead><tr><th>Planta</th><th>Zona</th><th>Índice General</th><th>Turno</th><th>Citación</th><th>Tiempo muerto</th></tr></thead><tbody id="histPlantRanking"></tbody></table></div>
+      <div>
+        <label>Detalle de planta</label><select id="histPlantDetail"><option value="">Seleccione planta</option></select>
+        <div class="hist-plant-detail" id="histPlantDetailContent"><div class="history-empty">Seleccione una planta.</div></div>
+      </div>
+    </div>
+
+    <div class="rep-header"><span class="rep-titulo">Hallazgos automáticos y alertas</span><span class="rep-meta">Analítica determinística auditable</span></div>
+    <div class="hist-two-col">
+      <div class="hist-insight-box"><h3>💡 Hallazgos</h3><ul id="histInsights"></ul></div>
+      <div class="hist-alert-box"><h3>🚨 Alertas Operacionales</h3><ul id="histAlerts"></ul></div>
+    </div>
+
+    <div class="rep-header"><span class="rep-titulo">Tabla Detallada Exportable</span><span class="rep-meta" id="histDetailCount"></span></div>
+    <div class="history-table-wrap hist-detail-table"><table class="history-table">
+      <thead><tr><th>Fecha</th><th>Zona</th><th>Planta</th><th>Operador</th><th>Turno</th><th>Citación</th><th>Logeo</th><th>1ª Asignación</th><th>1ª Carga</th></tr></thead>
+      <tbody id="histDetailBody"><tr><td colspan="9" class="history-empty">Cargue archivos históricos para comenzar.</td></tr></tbody>
+    </table></div>
   </div>
 
   <div class="card">
@@ -2165,11 +2254,12 @@ async function guardarTowerEditor(){const t=towerSelected();if(!t)return;try{tow
 function initTower(){document.getElementById('towerFleetFile')?.addEventListener('change',e=>{const f=e.target.files?.[0];if(f)procesarTowerFleetFile(f);e.target.value='';});['towerZoneFilter','towerPlantFilter','towerStatusFilter'].forEach(id=>document.getElementById(id)?.addEventListener('change',()=>{renderTowerPlants();renderTowerDetail();}));document.getElementById('towerSearch')?.addEventListener('input',renderTowerPlants);document.getElementById('towerReset')?.addEventListener('click',()=>{towerZoneFilter.value='all';towerPlantFilter.value='all';towerStatusFilter.value='all';towerSearch.value='';renderTowerPlants();});document.getElementById('towerEditModal')?.addEventListener('click',e=>{if(e.target.id==='towerEditModal')cerrarTowerEditor();});}
 window.towerDragStart=towerDragStart;window.towerDragOver=towerDragOver;window.towerDragLeave=towerDragLeave;window.towerDrop=towerDrop;window.seleccionarTowerEquipo=seleccionarTowerEquipo;window.abrirTowerEditor=abrirTowerEditor;window.cerrarTowerEditor=cerrarTowerEditor;window.guardarTowerEditor=guardarTowerEditor;window.cargarTorreFlota=cargarTorreFlota;
 
+
 let historicoUltimo=null;
-let histPlantasSeleccionadas=new Set();
-let histCatalogo={plants:[],zones:[],sources:[],plantCatalog:[]};
+let histCatalogo={plants:[],zones:[],operators:[],sources:[]};
 const HIST_SOURCE_KEYS=['turnos','citaciones','status'];
 const histCharts={};
+let histFilesReadOnly={turnos:[],citaciones:[],status:[]};
 
 let modulosInicializados=false;
 function enlazarBotonModulo(id, modulo, scrollTop=false){
@@ -2177,226 +2267,332 @@ function enlazarBotonModulo(id, modulo, scrollTop=false){
   if(!btn){ console.error(`[CCO][NAVEGACION] Botón no encontrado: ${id}`); return; }
   btn.addEventListener('click',(event)=>{
     console.log('Botón ejecutado correctamente', {id, modulo});
-    console.log(`[CCO][NAVEGACION] click ${id} -> ${modulo}`);
     cambiarModulo(modulo,scrollTop);
   });
 }
 function inicializarModulos(){
-  if(modulosInicializados){ console.log('[CCO][NAVEGACION] módulos ya inicializados'); return; }
+  if(modulosInicializados)return;
   modulosInicializados=true;
-  console.log('[CCO][NAVEGACION] inicializando módulos');
   document.querySelectorAll('main > .card').forEach(el=>{if(!['historicoPanel','towerPanel'].includes(el.id))el.classList.add('operation-view');});
   enlazarBotonModulo('tabOperacion','operacion');
   enlazarBotonModulo('tabHistorico','historico');
   enlazarBotonModulo('tabTorre','torre');
-  ['quickOperacion','quickHistorico','quickTorre'].forEach(id=>{const b=document.getElementById(id);if(!b)console.error('[CCO][NAVEGACION] Botón no encontrado:',id);});
-  document.getElementById('histConsultar')?.addEventListener('click',cargarHistorico);
-  document.getElementById('histGranularidad')?.addEventListener('change',cargarHistorico);
-  document.getElementById('histZona')?.addEventListener('change',()=>{poblarHistPlantas(true);cargarHistorico();});
-  document.getElementById('histTodasPlantas')?.addEventListener('click',()=>{marcarHistPlantas(true);cargarHistorico();});
-  document.getElementById('histNingunaPlanta')?.addEventListener('click',()=>{marcarHistPlantas(false);cargarHistorico();});
-  document.getElementById('histExportar')?.addEventListener('click',exportarHistoricoCSV);
-  HIST_SOURCE_KEYS.forEach(source=>{
-    document.getElementById('histFolder_'+source)?.addEventListener('change',async e=>{
-      const input=e.target;
-      const selected=[...(input.files||[])];
-      try{await procesarCarpetaHistorica(source,selected);}
-      finally{input.value='';}
-    });
-  });
+  initHistIntelligence();
   initTower();
-  setHistRangeSemana25();
 }
-function initModuleTabs(){
-  console.log('[CCO][NAVEGACION] initModuleTabs ejecutado');
-  inicializarModulos();
-  cambiarModulo('operacion',false);
-}
-
+function initModuleTabs(){inicializarModulos();cambiarModulo('operacion',false);}
 function cambiarModulo(modulo,scrollTop=false){
-  const permitidos=new Set(['operacion','historico','torre']);
-  if(!permitidos.has(modulo)){ console.error('[CCO][NAVEGACION] módulo inválido',modulo); return; }
-  console.log('[CCO][NAVEGACION] cambiando vista ->',modulo);
-  const hist=modulo==='historico', tower=modulo==='torre', op=modulo==='operacion';
+  const permitidos=new Set(['operacion','historico','torre']);if(!permitidos.has(modulo))return;
+  const hist=modulo==='historico',tower=modulo==='torre',op=modulo==='operacion';
   document.querySelectorAll('.operation-view').forEach(el=>el.style.display=op?'':'none');
   const hp=document.getElementById('historicoPanel');if(hp)hp.style.display=hist?'block':'none';
   const tp=document.getElementById('towerPanel');if(tp)tp.style.display=tower?'block':'none';
-  document.getElementById('tabOperacion')?.classList.toggle('active',op);
-  document.getElementById('tabHistorico')?.classList.toggle('active',hist);
-  document.getElementById('tabTorre')?.classList.toggle('active',tower);
-  document.getElementById('quickOperacion')?.classList.toggle('active',op);
-  document.getElementById('quickHistorico')?.classList.toggle('active',hist);
-  document.getElementById('quickTorre')?.classList.toggle('active',tower);
+  ['tabOperacion','quickOperacion'].forEach(id=>document.getElementById(id)?.classList.toggle('active',op));
+  ['tabHistorico','quickHistorico'].forEach(id=>document.getElementById(id)?.classList.toggle('active',hist));
+  ['tabTorre','quickTorre'].forEach(id=>document.getElementById(id)?.classList.toggle('active',tower));
   ['quickOperacion','quickHistorico','quickTorre'].forEach(id=>document.getElementById(id)?.classList.toggle('secondary',!document.getElementById(id)?.classList.contains('active')));
-  [['quickOperacion',op],['quickHistorico',hist],['quickTorre',tower],['tabOperacion',op],['tabHistorico',hist],['tabTorre',tower]].forEach(([id,on])=>{const el=document.getElementById(id);if(el){el.setAttribute('aria-pressed',on?'true':'false');el.dataset.active=on?'1':'0';}});
-  if(hist){cargarCatalogoHistorico().then(cargarHistorico);}
-  if(tower){cargarTorreFlota();}
-  if(scrollTop) window.scrollTo({top:0,behavior:'smooth'});
+  if(hist){cargarCatalogoHistorico().then(()=>{renderHistPeriodControls();cargarHistorico();});}
+  if(tower)cargarTorreFlota();
+  if(scrollTop)window.scrollTo({top:0,behavior:'smooth'});
 }
-function isoWeekNumber(d){
-  const x=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
-  const day=x.getUTCDay()||7;x.setUTCDate(x.getUTCDate()+4-day);
-  const y0=new Date(Date.UTC(x.getUTCFullYear(),0,1));
-  return Math.ceil((((x-y0)/86400000)+1)/7);
-}
-function isoWeekStart(year,week){
-  const jan4=new Date(Date.UTC(year,0,4)),dow=jan4.getUTCDay()||7,d=new Date(jan4);
-  d.setUTCDate(jan4.getUTCDate()-dow+1+(week-1)*7);return new Date(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate());
-}
-function isoWeekEnd(year,week){const d=isoWeekStart(year,week);d.setDate(d.getDate()+6);return d;}
-function poblarSelectoresSemanas(){
-  const year=hoyLocal.getFullYear(),currentWeek=Math.max(25,isoWeekNumber(hoyLocal)),desde=document.getElementById('histSemanaDesde'),hasta=document.getElementById('histSemanaHasta');
-  if(!desde||!hasta)return;
-  const opts=[];for(let w=25;w<=currentWeek;w++){const a=isoWeekStart(year,w),b=isoWeekEnd(year,w);opts.push(`<option value="${w}">Semana ${w} · ${a.toLocaleDateString('es-CL',{day:'2-digit',month:'2-digit'})}–${b.toLocaleDateString('es-CL',{day:'2-digit',month:'2-digit'})}</option>`);}
-  desde.innerHTML=opts.join('');hasta.innerHTML=opts.join('');desde.value='25';hasta.value=String(currentWeek);
-}
-function setHistRangeSemana25(){poblarSelectoresSemanas();}
-function seleccionarCarpetaHistorica(source){document.getElementById('histFolder_'+source)?.click();}
-function histSourceStatus(source,text,cls=''){const el=document.getElementById('histSource_'+source);if(el){el.textContent=text;el.className='hist-source-status '+cls;}}
 
-function histHojaSugerida(wb,source){
-  const tipo=source==='status'?'logeo':source;
-  try{if(typeof hojaSugeridaLote==='function')return hojaSugeridaLote(tipo,wb);}catch{}
-  const counts=wb.SheetNames.map(nombre=>({nombre,filas:contarFilasHoja(wb,nombre)})).sort((a,b)=>b.filas-a.filas);
-  return counts[0]?.nombre||wb.SheetNames[0];
+function histKey(v){return String(v??'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');}
+const HIST_HEADER_HINTS={
+  turnos:[['id_operador','conductor'],['planta'],['hora_ingreso','turno'],['fecha_inicio_semana','anosemana']],
+  citaciones:[['id','id_operador','nombre_de_operador'],['hora_citacion'],['fecha']],
+  status:[['numero_funcionario'],['descripcion_estado'],['hora_inicio'],['descripcion_planta','numero_planta']]
+};
+function histHeaderScore(cells,source){
+  const keys=cells.map(histKey).filter(Boolean);let score=0;
+  for(const group of HIST_HEADER_HINTS[source]||[])if(group.some(x=>keys.includes(histKey(x))))score+=25;
+  return score;
 }
-async function procesarCarpetaHistorica(source,files){
-  files=files.filter(f=>/\.(xlsx|xls|csv)$/i.test(f.name));
-  if(!files.length){histSourceStatus(source,'Carpeta sin archivos Excel/CSV compatibles.','err');return;}
-  histSourceStatus(source,`Validando ${files.length} archivo(s)...`,'busy');
-  let totalValidos=0,totalRechazados=0,errores=[],firstBatch=true;
-  for(let i=0;i<files.length;i++){
-    const file=files[i];
-    try{
-      histSourceStatus(source,`Procesando ${i+1}/${files.length}: ${file.name}`,'busy');
-      const wb=XLSX.read(new Uint8Array(await file.arrayBuffer()),{type:'array',cellDates:true});
-      const sheet=histHojaSugerida(wb,source);if(!sheet)throw new Error('No se encontró hoja legible');
-      const header=detectarFilaHeader(wb,sheet);
-      const rows=XLSX.utils.sheet_to_json(wb.Sheets[sheet],{defval:null,range:header});
-      if(!rows.length)throw new Error('Hoja sin registros');
-      const BATCH=1500;
-      for(let p=0;p<rows.length;p+=BATCH){
-        const batch=rows.slice(p,p+BATCH).map(r=>{
-          const normalized={};
-          Object.entries(r||{}).forEach(([k,v])=>{normalized[normalizeKey(k)]=v;});
-          normalized.__source_file=file.name;
-          return normalized;
-        });
-        const resp=await fetch(API+'/api/historico/ingesta',{method:'POST',headers:authHeaders(),body:JSON.stringify({source,datos:batch,archivo:file.name,modo:firstBatch?'replace':'append'})});
-        const data=await leerRespuestaApiSegura(resp);
-        totalValidos+=Number(data.cantidad_lote||0);totalRechazados+=Number(data.rechazadas||0);firstBatch=false;
-      }
-    }catch(err){errores.push(`${file.name}: ${err.message||err}`);}
+function histDetectSheetAndHeader(wb,source){
+  let best=null;
+  for(const sheetName of wb.SheetNames){
+    const ws=wb.Sheets[sheetName],matrix=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,range:0,raw:false});
+    const max=Math.min(matrix.length,20);
+    for(let r=0;r<max;r++){
+      const score=histHeaderScore(matrix[r]||[],source)+(sheetName.toLowerCase().includes(source==='status'?'status':source.slice(0,-1))?10:0);
+      if(!best||score>best.score)best={sheetName,headerRow:r,score,columns:(matrix[r]||[]).map(x=>String(x??'').trim()).filter(Boolean)};
+    }
   }
-  if(!totalValidos){histSourceStatus(source,`Carga fallida. ${errores.slice(0,2).join(' | ')}`,'err');return;}
-  histSourceStatus(source,`${totalValidos.toLocaleString('es-CL')} registros válidos · ${files.length-errores.length}/${files.length} archivos · ${totalRechazados} rechazados${errores.length?' · revisar '+errores.length+' archivo(s)':''}`,'ok');
-  await cargarCatalogoHistorico();await cargarHistorico();
+  if(!best||best.score<50)throw new Error(`No se reconoció la estructura ${source}. Encabezados esperados no encontrados.`);
+  return best;
 }
-
+function histFileStatus(source,text,kind=''){const el=document.getElementById('histSource_'+source);if(el){el.textContent=text;el.className='hist-source-status '+kind;}}
+function histDropSetup(source){
+  const drop=document.getElementById('drop_'+source),input=document.getElementById('histFiles_'+source);
+  document.querySelector(`.hist-file-btn[data-source="${source}"]`)?.addEventListener('click',()=>input?.click());
+  input?.addEventListener('change',async e=>{const files=[...(e.target.files||[])];e.target.value='';if(files.length)await procesarArchivosHistoricos(source,files);});
+  if(!drop)return;
+  ['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('dragover');}));
+  ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('dragover');}));
+  drop.addEventListener('drop',async e=>{const files=[...(e.dataTransfer?.files||[])];if(files.length)await procesarArchivosHistoricos(source,files);});
+}
+async function histSendBatch(source,fileName,rows,modo,finalizar){
+  const r=await fetch(API+'/api/historico/ingesta',{method:'POST',headers:authHeaders(),body:JSON.stringify({source,archivo:fileName,modo,datos:rows,finalizar})});
+  return leerRespuestaApiSegura(r);
+}
+async function histProcessWorkbook(source,file,wb,replaceFirst){
+  const det=histDetectSheetAndHeader(wb,source),ws=wb.Sheets[det.sheetName],range=XLSX.utils.decode_range(ws['!ref']||'A1:A1');
+  const matrixHeader=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,range:{s:{r:det.headerRow,c:range.s.c},e:{r:det.headerRow,c:range.e.c}},raw:false})[0]||[];
+  const headers=matrixHeader.map((x,i)=>String(x??'').trim()||`col_${i+1}`);
+  const CHUNK=3000;let sent=0,stored=0,rejected=0,ignored=0,duplicates=0,firstChunk=true;
+  for(let start=det.headerRow+1;start<=range.e.r;start+=CHUNK){
+    const end=Math.min(range.e.r,start+CHUNK-1);
+    const rows=XLSX.utils.sheet_to_json(ws,{header:headers,defval:null,range:{s:{r:start,c:range.s.c},e:{r:end,c:range.e.c}},raw:false});
+    if(!rows.length)continue;
+    const modo=replaceFirst&&firstChunk?'replace':'append';
+    const finalizar=end>=range.e.r;
+    const data=await histSendBatch(source,file.name,rows,modo,finalizar);
+    sent+=Number(data.loteRecibido||rows.length);stored+=Number(data.loteGuardado||0);rejected+=Number(data.rechazados||0);ignored+=Number(data.ignorados||0);duplicates+=Number(data.duplicados||0);
+    firstChunk=false;
+    histFileStatus(source,`Procesando ${file.name}: ${sent.toLocaleString('es-CL')} filas leídas · ${stored.toLocaleString('es-CL')} analíticas`,'busy');
+    await new Promise(r=>setTimeout(r,0));
+  }
+  return {sent,stored,rejected,ignored,duplicates,sheet:det.sheetName,headerRow:det.headerRow+1};
+}
+async function histReadFile(source,file,replaceFirst){
+  const ext=(file.name.split('.').pop()||'').toLowerCase();
+  if(ext==='pdf'){
+    histFilesReadOnly[source].push(file.name);
+    return {pdf:true,sent:0,stored:0,rejected:0,ignored:0,duplicates:0};
+  }
+  if(!['xlsx','xls','csv','txt'].includes(ext))throw new Error(`Formato no soportado: .${ext}`);
+  let wb;
+  if(ext==='csv'||ext==='txt'){const text=await file.text();wb=XLSX.read(text,{type:'string',cellDates:true});}
+  else wb=XLSX.read(new Uint8Array(await file.arrayBuffer()),{type:'array',cellDates:true});
+  return histProcessWorkbook(source,file,wb,replaceFirst);
+}
+async function procesarArchivosHistoricos(source,files){
+  files=files.filter(f=>/\.(xlsx|xls|csv|txt|pdf)$/i.test(f.name));
+  if(!files.length){histFileStatus(source,'No se seleccionaron archivos compatibles.','err');return;}
+  histFileStatus(source,`Validando ${files.length} archivo(s)...`,'busy');
+  let totals={sent:0,stored:0,rejected:0,ignored:0,duplicates:0,pdf:0},errors=[];
+  let replace=false;
+  for(const file of files){
+    try{
+      const r=await histReadFile(source,file,replace);
+      /* Los archivos nuevos se agregan; duplicados se omiten por clave histórica. */
+      totals.sent+=r.sent||0;totals.stored+=r.stored||0;totals.rejected+=r.rejected||0;totals.ignored+=r.ignored||0;totals.duplicates+=r.duplicates||0;totals.pdf+=r.pdf?1:0;
+    }catch(err){
+      console.error('[CCO][TRAZABILIDAD][ARCHIVO]',file.name,err);
+      errors.push(`${file.name}: El archivo no pudo ser procesado. Revise formato, estructura o contenido.`);
+    }
+  }
+  try{await fetch(API+'/api/historico/finalizar',{method:'POST',headers:authHeaders(),body:'{}'});}catch{}
+  const parts=[`${totals.stored.toLocaleString('es-CL')} registros analíticos`,`de ${totals.sent.toLocaleString('es-CL')} filas`,`${files.length-errors.length} archivo(s) OK`];
+  if(totals.ignored)parts.push(`${totals.ignored.toLocaleString('es-CL')} eventos no requeridos`);
+  if(totals.duplicates)parts.push(`${totals.duplicates.toLocaleString('es-CL')} duplicados omitidos`);
+  if(totals.pdf)parts.push(`${totals.pdf} PDF solo lectura`);
+  if(errors.length)parts.push(`ERROR: ${errors.join(' | ')}`);
+  histFileStatus(source,parts.join(' · '),errors.length?'err':'ok');
+  await cargarCatalogoHistorico();renderHistPeriodControls(true);await cargarHistorico();
+}
+function histDateFmt(d){return d?String(d).slice(0,10):'—';}
 async function cargarCatalogoHistorico(){
   try{
-    const r=await fetch(API+'/api/historico/fuentes',{headers:authHeaders()});const data=await leerRespuestaApiSegura(r);
-    histCatalogo=data||{plants:[],zones:[],sources:[],plantCatalog:[]}; try{localStorage.setItem('cco_hist_catalog_v3',JSON.stringify({revision:data.revision,totalRecords:data.totalRecords,loadedAt:data.loadedAt,sources:data.sources}));}catch{}
-    const allDates=(data.sources||[]).flatMap(s=>[s.minDate,s.maxDate]).filter(Boolean).sort();
-    document.getElementById('histBaseEstado').textContent=data.totalRecords>0?'Cargada':'Sin datos';
-    document.getElementById('histBaseRegistros').textContent=Number(data.totalRecords||0).toLocaleString('es-CL');
-    document.getElementById('histBaseMin').textContent=allDates[0]||'—';
-    document.getElementById('histBaseMax').textContent=allDates.at(-1)||'—';
-    (data.sources||[]).forEach(s=>{
-      if(Number(s.records||0)>0) histSourceStatus(s.source,`${Number(s.records).toLocaleString('es-CL')} registros · ${s.files?.length||0} archivo(s) · ${s.minDate||'—'} → ${s.maxDate||'—'}`,'ok');
-    });
-    const z=document.getElementById('histZona');if(z){const current=z.value;z.innerHTML='<option value="">Todas las zonas</option>'+(data.zones||[]).map(x=>`<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join('');if([...z.options].some(o=>o.value===current))z.value=current;}
-    poblarHistPlantas(true);
-  }catch(err){document.getElementById('histDiagnostico').textContent='No fue posible leer el catálogo histórico: '+(err.message||err);}
+    const r=await fetch(API+'/api/historico/fuentes',{headers:authHeaders()});const data=await leerRespuestaApiSegura(r);histCatalogo=data||{};
+    const audit=document.getElementById('histAuditStrip');
+    if(audit)audit.innerHTML=[
+      ['Registros analíticos',Number(data.totalRecords||0).toLocaleString('es-CL')],
+      ['Operador/día',Number(data.totalDays||0).toLocaleString('es-CL')],
+      ['Cobertura',`${histDateFmt(data.minDate)} → ${histDateFmt(data.maxDate)}`],
+      ['Fuentes cargadas',(data.sources||[]).filter(x=>x.records>0).length+' / 3']
+    ].map(x=>`<div class="hist-audit-mini"><span>${x[0]}</span><b>${x[1]}</b></div>`).join('');
+    (data.sources||[]).forEach(s=>{const pdf=(histFilesReadOnly[s.source]||[]).length;histFileStatus(s.source,s.records?`${Number(s.records).toLocaleString('es-CL')} registros · ${(s.files||[]).length} archivo(s) · ${s.minDate||'—'} → ${s.maxDate||'—'}${pdf?` · ${pdf} PDF lectura`:''}`:'Sin datos',s.records?'ok':'');});
+    renderHistFileLists();
+    poblarFiltrosHistoricos();
+  }catch(err){document.getElementById('histDiagnostico').textContent='No fue posible leer la base histórica: '+(err.message||err);}
 }
-function plantasHistoricasDisponibles(){
-  const zona=document.getElementById('histZona')?.value||'';
-  const catalog=Array.isArray(histCatalogo.plantCatalog)?histCatalogo.plantCatalog:[];
-  if(catalog.length) return catalog.filter(x=>!zona||x.zona===zona).map(x=>x.planta).sort((a,b)=>a.localeCompare(b,'es'));
-  return (histCatalogo.plants||[]).slice().sort((a,b)=>a.localeCompare(b,'es'));
+
+function renderHistFileLists(){
+  const sources=histCatalogo.sources||[];
+  for(const source of HIST_SOURCE_KEYS){
+    const box=document.getElementById('histFileList_'+source);if(!box)continue;
+    const src=sources.find(x=>x.source===source),files=src?.fileDetails||[];
+    const pdfs=(histFilesReadOnly[source]||[]).map(archivo=>({archivo,records:0,minDate:null,maxDate:null,pdf:true}));
+    const all=[...files,...pdfs];
+    if(!all.length){box.innerHTML='';continue;}
+    box.innerHTML=all.map(f=>`<div class="hist-file-item">
+      <div><div class="name" title="${escapeHtml(f.archivo)}">${escapeHtml(f.archivo)}</div>
+      <div class="meta">${f.pdf?'PDF · solo lectura':`${Number(f.records||0).toLocaleString('es-CL')} reg. · ${f.minDate||'—'} → ${f.maxDate||'—'}`}</div></div>
+      <button type="button" class="hist-file-remove" data-source="${source}" data-file="${encodeURIComponent(f.archivo)}" data-pdf="${f.pdf?'1':'0'}">✕</button>
+    </div>`).join('');
+  }
+  document.querySelectorAll('.hist-file-remove').forEach(btn=>btn.onclick=async()=>{
+    const source=btn.dataset.source,archivo=decodeURIComponent(btn.dataset.file||'');
+    if(btn.dataset.pdf==='1'){
+      histFilesReadOnly[source]=(histFilesReadOnly[source]||[]).filter(x=>x!==archivo);renderHistFileLists();return;
+    }
+    if(!confirm(`Eliminar "${archivo}" de Trazabilidad? Los KPI se recalcularán.`))return;
+    try{
+      const r=await fetch(API+`/api/historico/archivo?source=${encodeURIComponent(source)}&archivo=${encodeURIComponent(archivo)}`,{method:'DELETE',headers:authHeaders()});
+      await leerRespuestaApiSegura(r);await cargarCatalogoHistorico();renderHistPeriodControls(true);await cargarHistorico();
+    }catch(err){alert('El archivo no pudo ser eliminado. Intente nuevamente.');console.error('[CCO][TRAZABILIDAD][DELETE]',err);}
+  });
 }
-function poblarHistPlantas(reset){
-  const available=plantasHistoricasDisponibles();
-  if(reset||!histPlantasSeleccionadas.size)histPlantasSeleccionadas=new Set(available);
-  else histPlantasSeleccionadas=new Set([...histPlantasSeleccionadas].filter(x=>available.includes(x)));
-  const box=document.getElementById('histPlantasLista');if(!box)return;
-  box.innerHTML=available.length?available.map(p=>`<label><input type="checkbox" value="${escapeHtml(p)}" ${histPlantasSeleccionadas.has(p)?'checked':''}> ${escapeHtml(p)}</label>`).join(''):'<span class="small">No se detectaron plantas en la base histórica.</span>';
-  box.querySelectorAll('input').forEach(ch=>ch.addEventListener('change',()=>{ch.checked?histPlantasSeleccionadas.add(ch.value):histPlantasSeleccionadas.delete(ch.value);actualizarResumenHistPlantas();}));
-  actualizarResumenHistPlantas();
+
+function poblarFiltrosHistoricos(){
+  const zona=document.getElementById('histZona')?.value||'',plantSel=document.getElementById('histPlanta'),opSel=document.getElementById('histOperador');
+  const currentPlant=plantSel?.value||'',currentOp=opSel?.value||'';
+  const catalog=histCatalogo.plantCatalog||[];
+  const plants=catalog.filter(x=>!zona||x.zona===zona).map(x=>x.planta).sort((a,b)=>a.localeCompare(b,'es'));
+  if(plantSel){
+    plantSel.innerHTML='<option value="">Todas las plantas</option>'+plants.map(p=>`<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
+    plantSel.value=plants.includes(currentPlant)?currentPlant:'';
+  }
+  const plant=plantSel?.value||'';
+  const ops=(histCatalogo.operators||[]).filter(o=>(!zona||(o.zonas||[]).includes(zona))&&(!plant||(o.plantas||[]).includes(plant)));
+  if(opSel){
+    opSel.innerHTML='<option value="">Todos los operadores</option>'+ops.map(o=>`<option value="${escapeHtml(o.key)}">${escapeHtml(o.nombre||o.id||o.key)}</option>`).join('');
+    opSel.value=ops.some(o=>o.key===currentOp)?currentOp:'';
+  }
 }
-function marcarHistPlantas(v){const a=plantasHistoricasDisponibles();histPlantasSeleccionadas=v?new Set(a):new Set();document.querySelectorAll('#histPlantasLista input').forEach(x=>x.checked=v);actualizarResumenHistPlantas();}
-function actualizarResumenHistPlantas(){const a=plantasHistoricasDisponibles().length,s=histPlantasSeleccionadas.size,el=document.getElementById('histPlantasResumen');if(el)el.textContent=a?(s===a?'(todas seleccionadas)':`(${s} de ${a})`):'(sin datos)';}
-function histDashboardParams(){
-  const p=new URLSearchParams(),year=hoyLocal.getFullYear(),s1=Number(document.getElementById('histSemanaDesde')?.value||25),s2=Number(document.getElementById('histSemanaHasta')?.value||isoWeekNumber(hoyLocal)),lo=Math.min(s1,s2),hi=Math.max(s1,s2),from=dateKeyLocal(isoWeekStart(year,lo)),end=isoWeekEnd(year,hi),to=dateKeyLocal(end>hoyLocal?hoyLocal:end);
-  p.set('from',from);p.set('to',to);p.set('granularity',document.getElementById('histGranularidad')?.value||'week');
-  const zona=document.getElementById('histZona')?.value||'';if(zona)p.set('zona',zona);
-  const all=plantasHistoricasDisponibles();if(histPlantasSeleccionadas.size&&histPlantasSeleccionadas.size<all.length)p.set('plantas',[...histPlantasSeleccionadas].join(','));
-  if(histPlantasSeleccionadas.size===0&&all.length)p.set('plantas','__NINGUNA__');
+function histPeriodRange(){
+  const type=document.getElementById('histPeriodoTipo')?.value||'week',today=new Date(),min=histCatalogo.minDate||dateKeyLocal(today),max=histCatalogo.maxDate||dateKeyLocal(today);
+  const q=id=>document.getElementById(id)?.value||'';
+  if(type==='day'){const d=q('histDay')||max;return {from:d,to:d,granularity:'day'};}
+  if(type==='week'){const v=q('histWeek');if(v){const m=v.match(/^(\d{4})-W(\d{2})$/);if(m){const s=isoWeekStart(Number(m[1]),Number(m[2])),e=isoWeekEnd(Number(m[1]),Number(m[2]));return {from:dateKeyLocal(s),to:dateKeyLocal(e),granularity:'day'};}}}
+  if(type==='month'){const v=q('histMonth')||max.slice(0,7);const [y,m]=v.split('-').map(Number);return {from:`${y}-${String(m).padStart(2,'0')}-01`,to:dateKeyLocal(new Date(y,m,0)),granularity:'week'};}
+  if(type==='quarter'){const y=Number(q('histQuarterYear')||max.slice(0,4)),qt=Number(q('histQuarter')||1),sm=(qt-1)*3+1;return {from:`${y}-${String(sm).padStart(2,'0')}-01`,to:dateKeyLocal(new Date(y,sm+2,0)),granularity:'month'};}
+  if(type==='year'){const y=q('histYear')||max.slice(0,4);return {from:`${y}-01-01`,to:`${y}-12-31`,granularity:'month'};}
+  if(type==='custom')return {from:q('histFrom')||min,to:q('histTo')||max,granularity:'week'};
+  return {from:min,to:max,granularity:'week'};
+}
+function renderHistPeriodControls(keep=false){
+  const box=document.getElementById('histPeriodoControls');if(!box)return;
+  const type=document.getElementById('histPeriodoTipo')?.value||'week',max=histCatalogo.maxDate||dateKeyLocal(new Date()),year=max.slice(0,4);
+  if(type==='day')box.innerHTML=`<div><label>Fecha</label><input id="histDay" type="date" value="${max}"></div>`;
+  else if(type==='week'){const d=new Date(`${max}T12:00:00`),w=String(isoWeekNumber(d)).padStart(2,'0');box.innerHTML=`<div><label>Semana</label><input id="histWeek" type="week" value="${d.getFullYear()}-W${w}"></div>`;}
+  else if(type==='month')box.innerHTML=`<div><label>Mes</label><input id="histMonth" type="month" value="${max.slice(0,7)}"></div>`;
+  else if(type==='quarter')box.innerHTML=`<div><label>Año</label><input id="histQuarterYear" type="number" value="${year}" min="2020" max="2100"></div><div><label>Trimestre</label><select id="histQuarter"><option value="1">T1</option><option value="2">T2</option><option value="3">T3</option><option value="4">T4</option></select></div>`;
+  else if(type==='year')box.innerHTML=`<div><label>Año</label><input id="histYear" type="number" value="${year}" min="2020" max="2100"></div>`;
+  else box.innerHTML=`<div><label>Desde</label><input id="histFrom" type="date" value="${histCatalogo.minDate||max}"></div><div><label>Hasta</label><input id="histTo" type="date" value="${max}"></div>`;
+  box.querySelectorAll('input,select').forEach(el=>el.addEventListener('change',cargarHistorico));
+}
+function histParams(){
+  const range=histPeriodRange(),p=new URLSearchParams(range);
+  const zona=document.getElementById('histZona')?.value||'',plant=document.getElementById('histPlanta')?.value||'',operator=document.getElementById('histOperador')?.value||'';
+  if(zona)p.set('zona',zona);if(plant)p.set('plantas',plant);if(operator)p.set('operator',operator);
+  p.set('sourceStart',document.getElementById('histSourceStart')?.value||'logeo');
+  [['tolTurnCitation','histTolTurnCitation'],['tolAssignment','histTolAssignment'],['tolTurn','histTolTurn'],['tolCitation','histTolCitation'],['atrasoLeve','histAtrasoLeve'],['atrasoModerado','histAtrasoModerado']].forEach(([k,id])=>p.set(k,document.getElementById(id)?.value||''));
   return p;
 }
-function fmtHist(v,suf=''){return v===null||v===undefined||Number.isNaN(v)?'—':`${v}${suf}`;}
-
+function hfmt(v,s=''){return v===null||v===undefined||Number.isNaN(Number(v))?'—':`${Number(v).toLocaleString('es-CL',{maximumFractionDigits:1})}${s}`;}
+function htime(min){if(min===null||min===undefined)return '—';const m=((Math.round(min)%1440)+1440)%1440;return `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;}
+function histMetricCard(title,value,sub){
+  const noData=value==='—'||value===null||value===undefined;
+  const shown=noData?'Sin datos':value;
+  const cls=noData?'hist-no-kpi':(String(value).includes('%')&&Number(String(value).replace('%',''))<70?'hist-value-bad':'');
+  return `<div class="kpi-card"><div class="kpi-label">${title}</div><div class="kpi-valor ${cls}">${shown}</div><div class="kpi-sub">${noData?'No existen registros suficientes para calcular este KPI.':sub}</div></div>`;
+}
 async function cargarHistorico(){
   try{
-    const r=await fetch(API+'/api/historico/dashboard-enterprise?'+histDashboardParams().toString(),{headers:authHeaders()});const data=await leerRespuestaApiSegura(r);historicoUltimo=data;
+    const p=histParams(),r=await fetch(API+'/api/historico/dashboard-enterprise?'+p.toString(),{headers:authHeaders()}),data=await leerRespuestaApiSegura(r);historicoUltimo=data;
     const diag=document.getElementById('histDiagnostico');
-    if(data.empty){diag.textContent=`NO SE ENCONTRARON DATOS PARA EL PERÍODO SELECCIONADO · Rango ${data.from||'—'} → ${data.to||'—'} · Registros 0 · Fuente historicalWarehouse`;renderHistoricoDashboard(data);return;}
-    diag.textContent=`Base histórica consolidada · ${Number(data.kpis?.totalRegistros||0).toLocaleString('es-CL')} registros · ${data.minDate||'—'} → ${data.maxDate||'—'} · Agrupación ${data.granularity}`;
+    if(data.empty){diag.textContent=`NO SE ENCONTRARON DATOS PARA EL PERÍODO SELECCIONADO · ${data.from||'—'} → ${data.to||'—'} · Fuente: archivos adjuntos de Trazabilidad`;renderHistoricoDashboard(data);return;}
+    diag.textContent=`Análisis ${data.from} → ${data.to} · ${data.metrics.registros} operador/día · ${data.metrics.operadores} operadores · ${data.metrics.plantas} plantas · cálculo tiempo muerto desde ${data.cfg.sourceStart}`;
+    document.getElementById('histAlcance').textContent=`${data.from} → ${data.to}`;
     renderHistoricoDashboard(data);
-  }catch(err){document.getElementById('histDiagnostico').textContent='Error histórico controlado: '+(err.message||err);}
+  }catch(err){document.getElementById('histDiagnostico').textContent='Error de trazabilidad: '+(err.message||err);}
 }
 function renderHistoricoDashboard(data){
-  const k=data.kpis||{},cards=[
-    ['Total registros históricos',fmtHist(k.totalRegistros),'Turnos + Citaciones + StatusBreakdown'],
-    ['Turnos históricos',fmtHist(k.turnosHistoricos),'Filas de programación'],
-    ['Citaciones históricas',fmtHist(k.citacionesHistoricas),'Filas de citaciones'],
-    ['Eventos StatusBreakdown',fmtHist(k.eventosStatus),'Eventos históricos'],
-    ['Operadores únicos',fmtHist(k.totalOperadores),'IDs/nombres detectados'],
-    ['Plantas con datos',fmtHist(k.totalPlantas),'Catálogo dinámico'],
-    ['Días disponibles',fmtHist(k.diasDisponibles),'Fechas con registros'],
-    ['LOGIN detectados',fmtHist(k.loginsDetectados),'Status LOGIN / PRE-VIAJE'],
-    ['ASIGNADO detectados',fmtHist(k.asignadosDetectados),'Eventos ASIGNADO'],
-    ['Primera carga',fmtHist(k.primeraCargaDetectada),'CARGANDO / CARGADO'],
-  ];
-  document.getElementById('histKpis').innerHTML=cards.map(c=>`<div class="kpi-card"><div class="kpi-label">${c[0]}</div><div class="kpi-valor">${c[1]}</div><div class="kpi-sub">${c[2]}</div></div>`).join('');
-  const plants=data.rankings?.plantas||[];
-  document.getElementById('histBody').innerHTML=plants.length?plants.map(p=>`<tr><td><b>${escapeHtml(p.nombre)}</b></td><td>${p.registros}</td><td>${p.turnos||0}</td><td>${p.citaciones||0}</td><td>${p.status||0}</td></tr>`).join(''):'<tr><td colspan="5" class="history-empty">NO SE ENCONTRARON DATOS PARA EL PERÍODO SELECCIONADO</td></tr>';
-  renderHistCharts(data);
+  const m=data.metrics||{},tm=m.tiempoMuerto||{},ac=m.atrasoCitacion||{},at=m.atrasoTurno||{};
+  document.getElementById('histGeneralClass').textContent=`Índice General: ${hfmt(m.adherenciaGeneral,'%')} · ${m.clasificacionGeneral||'Sin datos'}`;
+  document.getElementById('histKpiRow1').innerHTML=[
+    histMetricCard('Turno vs Citación',hfmt(m.turnVsCitation,'%'),`${m.turnVsCitationN||0} comparaciones`),
+    histMetricCard('Turno vs Asignación',hfmt(m.turnVsAssignment,'%'),`${m.turnVsAssignmentN||0} comparaciones`),
+    histMetricCard('Adherencia al Turno',hfmt(m.adherenciaTurno,'%'),`${m.adherenciaTurnoN||0} con ingreso real`),
+    histMetricCard('Adherencia a Citación',hfmt(m.adherenciaCitacion,'%'),`${m.adherenciaCitacionN||0} con citación + ingreso`),
+    histMetricCard('Adherencia General',hfmt(m.adherenciaGeneral,'%'),m.clasificacionGeneral||'Sin datos')
+  ].join('');
+  document.getElementById('histKpiRow2').innerHTML=[
+    histMetricCard('Tiempo Muerto',hfmt(tm.promedio,' min'),`Mediana ${hfmt(tm.mediana,' min')} · P90 ${hfmt(tm.p90,' min')}`),
+    histMetricCard('Atraso Citación',hfmt(ac.promedio,' min'),`${hfmt(ac.porcentaje,'%')} con atraso`),
+    histMetricCard('Atraso Turno',hfmt(at.promedio,' min'),`${hfmt(at.porcentaje,'%')} con atraso`),
+    histMetricCard('Operadores',hfmt(m.operadores),`${m.registros||0} operador/día`),
+    histMetricCard('Plantas',hfmt(m.plantas),'Detectadas automáticamente')
+  ].join('');
+  renderHistChartsV34(data);renderRankingOperacional();renderPlantRanking(data);renderFindings(data);renderDetail(data);
 }
 function destroyHistChart(id){if(histCharts[id]){histCharts[id].destroy();delete histCharts[id];}}
-function chartDataOrEmpty(id,labels,values,label,type='line',suffix=''){
-  const canvas=document.getElementById(id);if(!canvas)return;
-  destroyHistChart(id);const card=canvas.closest('.hist-chart-card'),empty=card?.querySelector('.chart-empty');
-  const pairs=(labels||[]).map((l,i)=>({l,v:values?.[i]})).filter(x=>x.v!==null&&x.v!==undefined&&Number.isFinite(Number(x.v)));
-  if(!pairs.length){canvas.style.display='none';if(empty)empty.style.display='flex';return;}
-  canvas.style.display='block';if(empty)empty.style.display='none';
-  histCharts[id]=new Chart(canvas,{type,data:{labels:pairs.map(x=>x.l),datasets:[{label,data:pairs.map(x=>Number(x.v)),borderWidth:2,tension:.2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{tooltip:{callbacks:{label:c=>`${label}: ${c.parsed.y??c.parsed.x}${suffix}`}}},scales:type==='bar'?{x:{beginAtZero:true}}:{y:{beginAtZero:false}}}});
+function histChartEmpty(id,empty){
+  const c=document.getElementById(id);if(!c)return false;const e=c.closest('.hist-chart-card')?.querySelector('.chart-empty');
+  c.style.display=empty?'none':'block';if(e)e.style.display=empty?'flex':'none';if(empty)destroyHistChart(id);return empty;
 }
-function renderHistCharts(data){
-  const s=data.series||[],labels=s.map(x=>x.periodo);
-  chartDataOrEmpty('histTurnos',labels,s.map(x=>x.turnos),'Turnos','line','');
-  chartDataOrEmpty('histCitaciones',labels,s.map(x=>x.citaciones),'Citaciones','line','');
-  chartDataOrEmpty('histStatus',labels,s.map(x=>x.statusEventos),'Eventos Status','line','');
-  chartDataOrEmpty('histLogin',labels,s.map(x=>x.logins),'LOGIN','bar','');
-  chartDataOrEmpty('histAsignados',labels,s.map(x=>x.asignados),'ASIGNADO','bar','');
-  chartDataOrEmpty('histPrimeraCarga',labels,s.map(x=>x.primeraCarga),'Primera carga','bar','');
-  const pr=(data.rankings?.plantas||[]).slice(0,15);chartDataOrEmpty('histDistribPlanta',pr.map(x=>x.nombre),pr.map(x=>x.registros),'Registros','bar','');
-  const zr=(data.rankings?.zonas||[]);chartDataOrEmpty('histDistribZona',zr.map(x=>x.nombre),zr.map(x=>x.registros),'Registros','bar','');
-  const pa=(data.pareto||[]).slice(0,15);chartDataOrEmpty('histPareto',pa.map(x=>x.causa),pa.map(x=>x.cantidad),'Eventos','bar','');
-  const eq=data.rankings?.equipos||[];chartDataOrEmpty('histTopEquipos',eq.map(x=>x.equipo),eq.map(x=>x.eventos),'Eventos','bar','');
-  const op=data.rankings?.operadores||[];chartDataOrEmpty('histTopOperadores',op.map(x=>x.operador),op.map(x=>x.asignaciones),'Eventos','bar','');
-  renderHeatmap(data.heatmap||[]);
+function renderHistChartsV34(data){
+  const m=data.metrics||{};
+  const gauge=document.getElementById('histGaugeTurnCitation');if(gauge){const v=m.turnVsCitation;if(histChartEmpty('histGaugeTurnCitation',v===null||v===undefined)){}else{destroyHistChart('histGaugeTurnCitation');histCharts.histGaugeTurnCitation=new Chart(gauge,{type:'doughnut',data:{labels:['Cumplimiento','Brecha'],datasets:[{data:[v,100-v],borderWidth:0}]},options:{cutout:'72%',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${c.label}: ${c.raw.toFixed(1)}%`}}}}});}}
+  const tr=data.trend||[],labels=tr.map(x=>x.periodo);
+  function line(id,datasets){const valid=datasets.some(ds=>ds.data.some(v=>v!==null&&v!==undefined));if(histChartEmpty(id,!valid))return;destroyHistChart(id);histCharts[id]=new Chart(document.getElementById(id),{type:'line',data:{labels,datasets:datasets.map(ds=>({...ds,borderWidth:2,tension:.2,spanGaps:true}))},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},scales:{y:{beginAtZero:true}},plugins:{tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${hfmt(c.parsed.y,c.dataset.unit||'')}`}}}}});}
+  line('histTrendAdherencia',[
+    {label:'Turno vs Citación',data:tr.map(x=>x.turnVsCitation),unit:'%'},{label:'Turno vs Asignación',data:tr.map(x=>x.turnVsAssignment),unit:'%'},
+    {label:'Adherencia Turno',data:tr.map(x=>x.adherenciaTurno),unit:'%'},{label:'Adherencia Citación',data:tr.map(x=>x.adherenciaCitacion),unit:'%'},{label:'Índice General',data:tr.map(x=>x.adherenciaGeneral),unit:'%'}
+  ]);
+  line('histDelayTrend',[{label:'Tiempo muerto',data:tr.map(x=>x.tiempoMuerto?.promedio),unit:' min'},{label:'Atraso Citación',data:tr.map(x=>x.atrasoCitacion?.promedio),unit:' min'},{label:'Atraso Turno',data:tr.map(x=>x.atrasoTurno?.promedio),unit:' min'}]);
+  function bars(id,rows,label){if(histChartEmpty(id,!rows.length))return;destroyHistChart(id);histCharts[id]=new Chart(document.getElementById(id),{type:'bar',data:{labels:rows.map(x=>x.name),datasets:[{label,data:rows.map(x=>x.adherenciaGeneral)}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',scales:{x:{beginAtZero:true,max:100}},plugins:{tooltip:{callbacks:{label:c=>`${label}: ${hfmt(c.parsed.x,'%')}`}}}}});}
+  bars('histPlantCompare',(data.plants||[]).filter(x=>x.adherenciaGeneral!==null).slice(0,15),'Índice General');
+  bars('histZoneCompare',(data.zones||[]).filter(x=>x.adherenciaGeneral!==null),'Índice General');
+  renderHeatmapV34(data.heatmap||[]);
 }
-function renderHeatmap(rows){
-  const box=document.getElementById('histHeatmap');if(!box)return;
-  if(!rows.length){box.innerHTML='<div class="history-empty">Sin datos</div>';return;}
-  const dates=[...new Set(rows.map(r=>r.fecha))].sort().slice(-20),plants=[...new Set(rows.map(r=>r.planta))].sort().slice(0,20),map=new Map(rows.map(r=>[r.planta+'|'+r.fecha,Number(r.valor)||0])),max=Math.max(1,...map.values());
-  box.innerHTML='<table><thead><tr><th>Planta</th>'+dates.map(d=>`<th>${d.slice(5)}</th>`).join('')+'</tr></thead><tbody>'+plants.map(p=>'<tr><th>'+escapeHtml(p)+'</th>'+dates.map(d=>{const v=map.get(p+'|'+d)||0,op=.08+.82*(v/max);return `<td title="${escapeHtml(p)} · ${d} · ${v} eventos" style="background:rgba(47,128,237,${op})">${v||''}</td>`;}).join('')+'</tr>').join('')+'</tbody></table>';
+function renderHeatmapV34(rows){
+  const box=document.getElementById('histHeatmap');if(!box)return;if(!rows.length){box.innerHTML='<div class="history-empty">Sin datos</div>';return;}
+  const dates=[...new Set(rows.map(r=>r.fecha))].sort().slice(-24),plants=[...new Set(rows.map(r=>r.planta))].sort().slice(0,24),map=new Map(rows.map(r=>[r.planta+'|'+r.fecha,Number(r.valor)||0])),max=Math.max(1,...map.values());
+  box.innerHTML='<table><thead><tr><th>Planta</th>'+dates.map(d=>`<th>${d.slice(5)}</th>`).join('')+'</tr></thead><tbody>'+plants.map(p=>'<tr><th>'+escapeHtml(p)+'</th>'+dates.map(d=>{const v=map.get(p+'|'+d);if(v===undefined)return '<td></td>';const op=.12+.78*(v/max);return `<td title="${escapeHtml(p)} · ${d} · atraso ${v} min" style="background:rgba(47,128,237,${op})">${Math.round(v)}</td>`;}).join('')+'</tr>').join('')+'</tbody></table>';
+}
+function rankingArrays(metric){
+  const r=historicoUltimo?.rankings||{};
+  const map={general:['mejorGeneral','critGeneral','adherenciaGeneral','%'],turno:['mejorTurno','critAdherenciaTurno','adherenciaTurno','%'],citacion:['mejorCitacion','critAdherenciaCitacion','adherenciaCitacion','%'],tiempoMuerto:['menorTiempoMuerto','critTiempoMuerto','tiempoMuerto.promedio',' min'],atrasoCitacion:['menorAtrasoCitacion','critAtrasoCitacion','atrasoCitacion.promedio',' min'],atrasoTurno:['menorAtrasoTurno','critAtrasoTurno','atrasoTurno.promedio',' min']};
+  return map[metric]||map.general;
+}
+function nested(o,path){return path.split('.').reduce((v,p)=>v?.[p],o);}
+function renderRankingRows(rows,path,suffix){
+  if(!rows?.length)return '<tr><td colspan="5" class="history-empty">No hay operadores con datos completos para esta métrica.</td></tr>';
+  return rows.map((x,i)=>`<tr><td>${i+1}</td><td><b>${escapeHtml(x.operador)}</b><div class="small">${escapeHtml(x.operadorId||'')}</div></td><td>${escapeHtml(x.planta||'—')}</td><td>${hfmt(nested(x,path),suffix)}</td><td>${x.variacionGeneral===null?'—':`${x.variacionGeneral>0?'+':''}${x.variacionGeneral} pp`}</td></tr>`).join('');
+}
+function renderRankingOperacional(){
+  const metric=document.getElementById('histRankingMetric')?.value||'general',[best,worst,path,suffix]=rankingArrays(metric),r=historicoUltimo?.rankings||{};
+  document.getElementById('histTopOps').innerHTML=renderRankingRows(r[best],path,suffix);
+  document.getElementById('histCriticalOps').innerHTML=renderRankingRows(r[worst],path,suffix);
+}
+function renderPlantRanking(data){
+  const rows=data.plants||[];
+  document.getElementById('histPlantRanking').innerHTML=rows.length?rows.map(x=>`<tr><td><b>${escapeHtml(x.name)}</b></td><td>${escapeHtml((data.byPlant||[]).find(p=>p.planta===x.name)?.zona||'')}</td><td>${hfmt(x.adherenciaGeneral,'%')}</td><td>${hfmt(x.adherenciaTurno,'%')}</td><td>${hfmt(x.adherenciaCitacion,'%')}</td><td>${hfmt(x.tiempoMuerto?.promedio,' min')}</td></tr>`).join(''):'<tr><td colspan="6" class="history-empty">Sin datos</td></tr>';
+  const sel=document.getElementById('histPlantDetail'),current=sel.value;sel.innerHTML='<option value="">Seleccione planta</option>'+(data.byPlant||[]).map(x=>`<option value="${escapeHtml(x.planta)}">${escapeHtml(x.planta)}</option>`).join('');if([...sel.options].some(o=>o.value===current))sel.value=current;renderPlantDetail();
+}
+function renderPlantDetail(){
+  const p=document.getElementById('histPlantDetail')?.value||'',box=document.getElementById('histPlantDetailContent');if(!p){box.innerHTML='<div class="history-empty">Seleccione una planta.</div>';return;}
+  const d=(historicoUltimo?.byPlant||[]).find(x=>x.planta===p);if(!d){box.innerHTML='<div class="history-empty">Sin datos</div>';return;}
+  const list=(arr,title)=>`<h4>${title}</h4>`+(arr?.length?`<ol>${arr.map(x=>`<li>${escapeHtml(x.operador)} · ${hfmt(x.adherenciaGeneral,'%')}</li>`).join('')}</ol>`:'<div class="small">Sin operadores con datos completos.</div>');
+  box.innerHTML=list(d.mejores,'Top 10 mejores')+list(d.criticos,'Top 10 críticos');
+}
+function renderFindings(data){
+  document.getElementById('histInsights').innerHTML=(data.findings?.insights||[]).map(x=>`<li>${escapeHtml(x)}</li>`).join('');
+  document.getElementById('histAlerts').innerHTML=(data.findings?.alerts||[]).map(x=>`<li>${escapeHtml(x)}</li>`).join('');
+}
+function renderDetail(data){
+  const rows=data.detailed||[];document.getElementById('histDetailCount').textContent=`Mostrando ${rows.length.toLocaleString('es-CL')} de ${Number(data.totalDetailed||0).toLocaleString('es-CL')} operador/día`;
+  document.getElementById('histDetailBody').innerHTML=rows.length?rows.map(r=>`<tr><td>${r.fecha}</td><td>${escapeHtml(r.zona||'')}</td><td>${escapeHtml(r.planta||'')}</td><td><b>${escapeHtml(r.operadorNombre||r.operadorId||'')}</b><div class="small">${escapeHtml(r.operadorId||'')}</div></td><td>${htime(r.turnoMin)}</td><td>${htime(r.citacionMin)}</td><td>${htime(r.loginMin)}</td><td>${htime(r.asignacionMin)}</td><td>${htime(r.primeraCargaMin)}</td></tr>`).join(''):'<tr><td colspan="9" class="history-empty">NO SE ENCONTRARON DATOS PARA EL PERÍODO SELECCIONADO</td></tr>';
 }
 function exportarHistoricoCSV(){
-  const rows=historicoUltimo?.rankings?.plantas||[];if(!rows.length){alert('No hay histórico para exportar.');return;}
-  const data=[['Planta','Registros','Turnos','Citaciones','StatusBreakdown'],...rows.map(x=>[x.nombre,x.registros,x.turnos||0,x.citaciones||0,x.status||0])];
-  const csv=data.map(r=>r.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='trazabilidad-historica-cco.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),500);
+  const rows=historicoUltimo?.detailed||[];if(!rows.length){alert('No hay datos detallados para exportar.');return;}
+  const head=['Fecha','Zona','Planta','Operador','ID','Turno','Citacion','Logeo','Primera Asignacion','Primera Carga'];
+  const data=[head,...rows.map(r=>[r.fecha,r.zona,r.planta,r.operadorNombre,r.operadorId,htime(r.turnoMin),htime(r.citacionMin),htime(r.loginMin),htime(r.asignacionMin),htime(r.primeraCargaMin)])];
+  const csv=data.map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='trazabilidad_cco_intelligence.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),500);
+}
+function initHistIntelligence(){
+  HIST_SOURCE_KEYS.forEach(histDropSetup);
+  document.getElementById('histConsultar')?.addEventListener('click',cargarHistorico);
+  document.getElementById('histExportar')?.addEventListener('click',exportarHistoricoCSV);
+  document.getElementById('histPeriodoTipo')?.addEventListener('change',()=>{renderHistPeriodControls();cargarHistorico();});
+  document.getElementById('histZona')?.addEventListener('change',()=>{poblarFiltrosHistoricos();cargarHistorico();});
+  document.getElementById('histPlanta')?.addEventListener('change',()=>{poblarFiltrosHistoricos();cargarHistorico();});
+  ['histOperador','histSourceStart','histTolTurnCitation','histTolAssignment','histTolTurn','histTolCitation','histAtrasoLeve','histAtrasoModerado'].forEach(id=>document.getElementById(id)?.addEventListener('change',cargarHistorico));
+  document.getElementById('histRankingMetric')?.addEventListener('change',renderRankingOperacional);
+  document.getElementById('histPlantDetail')?.addEventListener('change',renderPlantDetail);
+  renderHistPeriodControls();
 }
 
 function roundRect(ctx, x, y, w, h, r){
