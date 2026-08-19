@@ -17,6 +17,7 @@ const AUTH_SECRET = process.env.AUTH_SECRET || 'cco-dev-secret-change-me';
 const DATA_FILE = path.resolve(process.env.DATA_FILE || path.join(__dirname, 'data', 'cco-state.json'));
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const PLANT_DICTIONARY_FILE = path.join(__dirname, 'config', 'plant-dictionary.json');
+const HISTORICAL_FILE = path.resolve(process.env.HISTORICAL_FILE || path.join(__dirname, 'data', 'cco-historical.json'));
 
 const app = express();
 const server = http.createServer(app);
@@ -53,6 +54,42 @@ const DEFAULT_STATE = {
 };
 
 let state = loadState();
+
+let historicalWarehouse = loadHistoricalWarehouse();
+
+function emptyHistoricalWarehouse() {
+  return { version: 1, revision: 0, loaded_at: null, sources: {}, records: [] };
+}
+function loadHistoricalWarehouse() {
+  try {
+    if (!fs.existsSync(HISTORICAL_FILE)) return emptyHistoricalWarehouse();
+    const parsed = JSON.parse(fs.readFileSync(HISTORICAL_FILE, 'utf8'));
+    return {
+      ...emptyHistoricalWarehouse(),
+      ...(parsed && typeof parsed === 'object' ? parsed : {}),
+      sources: parsed?.sources && typeof parsed.sources === 'object' ? parsed.sources : {},
+      records: Array.isArray(parsed?.records) ? parsed.records : [],
+    };
+  } catch (err) {
+    console.error('[CCO][historico] No se pudo leer base histórica:', err?.message || err);
+    return emptyHistoricalWarehouse();
+  }
+}
+let historicalPersistTimer = null;
+function persistHistoricalWarehouse() {
+  clearTimeout(historicalPersistTimer);
+  historicalPersistTimer = setTimeout(() => {
+    try {
+      fs.mkdirSync(path.dirname(HISTORICAL_FILE), { recursive: true });
+      const tmp = HISTORICAL_FILE + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify(historicalWarehouse));
+      fs.renameSync(tmp, HISTORICAL_FILE);
+    } catch (err) {
+      registrarErrorDetallado({modulo:'historico',funcion:'persistHistoricalWarehouse',error:err?.message||String(err),stack:err?.stack});
+    }
+  }, 250);
+}
+
 
 function loadState() {
   try {
@@ -964,12 +1001,14 @@ function datasetPlantCount(type, planta) {
 app.get('/health', (req, res) => res.json({
   ok: true,
   service: 'CCO Intelligence',
-  version: '2.8.0',
+  version: '3.0.0',
   plant_dictionary: { loaded: PLANT_DICTIONARY.plants.length, conflicts: Object.keys(PLANT_DICTIONARY.conflicts || {}).length, source: PLANT_DICTIONARY.source_file },
   env: NODE_ENV,
   timestamp: nowIso(),
   uptime_s: Math.round(process.uptime()),
   persistence: DATA_FILE,
+  historical_persistence: HISTORICAL_FILE,
+  historical_records: Array.isArray(historicalWarehouse?.records) ? historicalWarehouse.records.length : 0,
 }));
 
 app.post('/api/auth/login', (req, res) => {
@@ -1278,6 +1317,274 @@ app.get('/api/analisis-operadores', requireAuth, (req, res) => {
   }
 });
 
+
+// ============================================================================
+// CCO INTELLIGENCE v3.0 — DATA WAREHOUSE HISTÓRICO INDEPENDIENTE
+// Nunca consulta datasets activos de Operación Nacional.
+// ============================================================================
+const HISTORICAL_SOURCES = {
+  status: { label:'Status Black / Breakdown' },
+  disponibilidad: { label:'Disponibilidad' },
+  mantenimiento: { label:'Mantención' },
+  puntualidad: { label:'Puntualidad' },
+  sobreestadia: { label:'Sobreestadía' },
+  operadores: { label:'Operadores' },
+  flota: { label:'Flota' },
+  otros: { label:'Otros históricos' },
+};
+
+const HIST_ALIASES = {
+  fecha: ['fecha','date','fecha evento','fecha_evento','timestamp','hora inicio','hora_inicio','inicio','fecha hora','fecha_hora','created at','created_at'],
+  planta: ['planta','nombre planta','nombre_planta','plant','site','local','centro','centro sap','centro_sap','local cmd','local_cmd','codigo command','codigo_command','shortname','local inventario','local_inventario'],
+  zona: ['zona','zone','region operacional','region_operacional'],
+  cliente: ['cliente','customer','nombre cliente','nombre_cliente'],
+  patente: ['patente','placa','matricula','license plate','license_plate'],
+  camion: ['camion','camión','equipo','equipment','numero equipo','número equipo','numero_equipo','id equipo','id_equipo','mixer','vehiculo','vehículo'],
+  operador: ['operador','nombre operador','nombre_operador','numero funcionario','número funcionario','numero_funcionario','employee','conductor','chofer'],
+  estado: ['estado','status','descripcion estado','descripción estado','descripcion_estado','meaning','estado equipo','estado_equipo'],
+  evento: ['evento','event','tipo evento','tipo_evento','status change type','status_change_type'],
+  tipoMantenimiento: ['tipo mantencion','tipo mantención','tipo mantenimiento','tipo_mantenimiento','maintenance type','maintenance_type'],
+  puntualidad: ['puntualidad','adherencia','otif','on time','on_time','cumplimiento','cumplimiento %','cumplimiento_pct'],
+  sobreestadia: ['sobreestadia','sobreestadía','sobre estadia','sobre estadía','overstay','demora obra','demora_obra','min sobreestadia','min_sobreestadia'],
+  disponibilidad: ['disponibilidad','availability','availability %','availability_pct','disp %','disp_pct'],
+  horasMantenimiento: ['horas mantencion','horas mantención','horas mantenimiento','horas_mantenimiento','maintenance hours','maintenance_hours','tiempo taller','tiempo_taller'],
+  causa: ['causa','motivo','reason','causa detencion','causa_detencion','falla','failure'],
+};
+
+function historicalPick(row, aliases) {
+  if (!row || typeof row !== 'object') return null;
+  for (const alias of aliases || []) {
+    const v=row?.[normalizeKey(alias)];
+    if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+  }
+  return null;
+}
+function historicalNumber(v, percent=false) {
+  if (v === null || v === undefined || v === '') return null;
+  if (typeof v === 'number' && Number.isFinite(v)) {
+    if (percent && v >= 0 && v <= 1) return round1(v*100);
+    return round1(v);
+  }
+  const s=String(v).trim().replace(/\s/g,'').replace('%','').replace(/\.(?=\d{3}(?:\D|$))/g,'').replace(',','.');
+  const n=Number(s);
+  if (!Number.isFinite(n)) return null;
+  if (percent && n >= 0 && n <= 1 && !String(v).includes('%')) return round1(n*100);
+  return round1(n);
+}
+function historicalDate(row) {
+  const direct=parseDateKey(historicalPick(row,HIST_ALIASES.fecha));
+  if (direct) return direct;
+  for (const v of Object.values(row||{})) {
+    if (v instanceof Date) { const d=parseDateKey(v); if(d) return d; }
+  }
+  return null;
+}
+function historicalNormalizeRecord(source,row,archivo='') {
+  if (!HISTORICAL_SOURCES[source]) throw new Error(`Fuente histórica desconocida: ${source}`);
+  const fecha=historicalDate(row);
+  const plantaRaw=historicalPick(row,HIST_ALIASES.planta);
+  let planta='Sin planta';
+  if (plantaRaw !== null) {
+    const synthetic={}; synthetic[normalizeKey('planta')]=plantaRaw;
+    planta=resolvePlantFromRow(synthetic);
+    if (!planta || planta==='Sin planta') planta=canonicalPlantName(plantaRaw);
+  }
+  const zonaRaw=historicalPick(row,HIST_ALIASES.zona);
+  const zona=planta && planta!=='Sin planta' ? inferZona(planta,zonaRaw) : (canonicalZone(zonaRaw)||'Sin zona');
+  return {
+    id: crypto.randomUUID(),
+    fecha,
+    planta: safeText(planta||'Sin planta'),
+    zona: safeText(zona||'Sin zona'),
+    cliente: safeText(historicalPick(row,HIST_ALIASES.cliente)),
+    patente: safeText(historicalPick(row,HIST_ALIASES.patente)),
+    camion: safeText(historicalPick(row,HIST_ALIASES.camion)),
+    operador: safeText(historicalPick(row,HIST_ALIASES.operador)),
+    estado: safeText(historicalPick(row,HIST_ALIASES.estado)),
+    evento: safeText(historicalPick(row,HIST_ALIASES.evento)),
+    tipoMantenimiento: safeText(historicalPick(row,HIST_ALIASES.tipoMantenimiento)),
+    puntualidad: historicalNumber(historicalPick(row,HIST_ALIASES.puntualidad),true),
+    sobreestadia: historicalNumber(historicalPick(row,HIST_ALIASES.sobreestadia),false),
+    disponibilidad: historicalNumber(historicalPick(row,HIST_ALIASES.disponibilidad),true),
+    horasMantenimiento: historicalNumber(historicalPick(row,HIST_ALIASES.horasMantenimiento),false),
+    causa: safeText(historicalPick(row,HIST_ALIASES.causa)),
+    fuente: source,
+    archivo: safeText(row?.__source_file || archivo),
+  };
+}
+function validateHistoricalRecord(source,rec) {
+  const errors=[];
+  if (!rec?.fecha) errors.push('Falta fecha válida');
+  if (rec?.planta==='Sin planta' && !rec?.camion && !rec?.patente && !rec?.operador) errors.push('Falta identificador operacional (planta/camión/patente/operador)');
+  if (source==='status' && !rec?.estado && !rec?.evento) errors.push('Falta estado/evento');
+  if (source==='disponibilidad' && rec?.disponibilidad===null) errors.push('Falta disponibilidad');
+  if (source==='puntualidad' && rec?.puntualidad===null) errors.push('Falta puntualidad');
+  if (source==='sobreestadia' && rec?.sobreestadia===null) errors.push('Falta sobreestadía');
+  if (source==='mantenimiento' && !rec?.tipoMantenimiento && !rec?.estado && !rec?.evento && rec?.horasMantenimiento===null) errors.push('Falta información de mantención');
+  return errors;
+}
+function historicalSourceMeta(source) {
+  const s=historicalWarehouse?.sources?.[source];
+  return s && typeof s==='object' ? s : {source,label:HISTORICAL_SOURCES[source]?.label||source,status:'sin_datos',records:0,files:[],errors:[]};
+}
+function historicalPeriodKey(dateStr, granularity='week') {
+  if (granularity==='day') return dateStr;
+  if (granularity==='month') return String(dateStr).slice(0,7);
+  if (granularity==='quarter') {
+    const [y,m]=String(dateStr).split('-').map(Number); return `${y}-T${Math.floor((m-1)/3)+1}`;
+  }
+  if (granularity==='year') return String(dateStr).slice(0,4);
+  return isoWeekKey(dateStr);
+}
+let historicalRuntimeIndex={revision:-1,byDate:new Map(),dates:[],plantCatalog:[]};
+function getHistoricalRuntimeIndex() {
+  const revision=Number(historicalWarehouse?.revision||0);
+  if(historicalRuntimeIndex.revision===revision) return historicalRuntimeIndex;
+  const byDate=new Map(), plantMap=new Map();
+  for(const r of (Array.isArray(historicalWarehouse?.records)?historicalWarehouse.records:[])){
+    if(r?.fecha){if(!byDate.has(r.fecha))byDate.set(r.fecha,[]);byDate.get(r.fecha).push(r);}
+    const p=safeText(r?.planta),z=safeText(r?.zona);
+    if(p&&p!=='Sin planta'&&!plantMap.has(p))plantMap.set(p,{planta:p,zona:z||'Sin zona'});
+  }
+  historicalRuntimeIndex={revision,byDate,dates:[...byDate.keys()].sort(),plantCatalog:[...plantMap.values()].sort((a,b)=>a.planta.localeCompare(b.planta,'es'))};
+  return historicalRuntimeIndex;
+}
+function historicalFilterRecords(query={}) {
+  const idx=getHistoricalRuntimeIndex();
+  const from=safeText(query.from||''), to=safeText(query.to||''), zona=safeText(query.zona||'');
+  const plantas=String(query.plantas||'').split(',').map(safeText).filter(Boolean);
+  const sources=String(query.sources||'').split(',').map(safeText).filter(Boolean);
+  const selectedDates=idx.dates.filter(d=>(!from||d>=from)&&(!to||d<=to));
+  const candidate=selectedDates.flatMap(d=>idx.byDate.get(d)||[]);
+  return candidate.filter(r=>
+    (!zona||r.zona===zona)&&
+    (!plantas.length||plantas.includes(r.planta))&&
+    (!sources.length||sources.includes(r.fuente))
+  );
+}
+function historicalAvg(rows,key) {
+  const vals=rows.map(r=>Number(r?.[key])).filter(Number.isFinite);
+  return vals.length?round1(vals.reduce((a,b)=>a+b,0)/vals.length):null;
+}
+function historicalDistinct(rows, keys) {
+  const s=new Set();
+  for (const r of rows) {
+    for (const k of keys) { const v=safeText(r?.[k]); if(v){s.add(v);break;} }
+  }
+  return s.size;
+}
+function historicalMaintenanceEntries(rows) {
+  return rows.filter(r=>r.fuente==='mantenimiento' || /mant|taller|falla|averia/.test(normalizeName(`${r.estado} ${r.evento} ${r.tipoMantenimiento}`)));
+}
+function historicalMtbfHours(rows) {
+  const maint=historicalMaintenanceEntries(rows), byTruck=new Map(), diffs=[];
+  for (const r of maint) {
+    const key=safeText(r.camion||r.patente); if(!key||!r.fecha) continue;
+    if(!byTruck.has(key)) byTruck.set(key,[]);
+    byTruck.get(key).push(r.fecha);
+  }
+  for (const ds of byTruck.values()) {
+    const unique=[...new Set(ds)].sort();
+    for(let i=1;i<unique.length;i++){
+      const a=new Date(unique[i-1]+'T12:00:00Z'),b=new Date(unique[i]+'T12:00:00Z'),h=(b-a)/3600000;
+      if(Number.isFinite(h)&&h>0) diffs.push(h);
+    }
+  }
+  return diffs.length?round1(diffs.reduce((a,b)=>a+b,0)/diffs.length):null;
+}
+function aggregateHistoricalEnterprise(rows, granularity='week') {
+  const groups=new Map();
+  for (const r of rows) {
+    const key=historicalPeriodKey(r.fecha,granularity);
+    if(!groups.has(key)) groups.set(key,[]);
+    groups.get(key).push(r);
+  }
+  return [...groups.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([periodo,items])=>{
+    const maint=historicalMaintenanceEntries(items), available=new Set(), out=new Set();
+    for(const r of items){
+      const truck=safeText(r.camion||r.patente); if(!truck) continue;
+      const st=normalizeName(`${r.estado} ${r.evento}`);
+      if(/disponible|operativo|en servicio/.test(st)) available.add(truck);
+      if(/fuera|mant|taller|detenido|no disponible|falla/.test(st)) out.add(truck);
+    }
+    return {
+      periodo,registros:items.length,
+      disponibilidad:historicalAvg(items,'disponibilidad'),
+      puntualidad:historicalAvg(items,'puntualidad'),
+      sobreestadia:historicalAvg(items,'sobreestadia'),
+      ingresosMantenimiento:maint.length,
+      salidasMantenimiento:maint.filter(r=>/salida|liberado|disponible|fin/.test(normalizeName(`${r.estado} ${r.evento}`))).length,
+      flotaDisponible:available.size,flotaFueraServicio:out.size,
+    };
+  });
+}
+function rankHistorical(rows,key='planta') {
+  const map=new Map();
+  for(const r of rows){const k=safeText(r?.[key])||`Sin ${key}`;if(!map.has(k))map.set(k,[]);map.get(k).push(r);}
+  return [...map.entries()].map(([nombre,items])=>({nombre,registros:items.length,disponibilidad:historicalAvg(items,'disponibilidad'),puntualidad:historicalAvg(items,'puntualidad'),sobreestadia:historicalAvg(items,'sobreestadia')})).sort((a,b)=>(Number(b.disponibilidad)||-1)-(Number(a.disponibilidad)||-1)||b.registros-a.registros);
+}
+function paretoHistorical(rows) {
+  const m=new Map();
+  for(const r of rows){const cause=safeText(r.causa||r.tipoMantenimiento||r.evento||r.estado);if(cause)m.set(cause,(m.get(cause)||0)+1);}
+  return [...m.entries()].map(([causa,cantidad])=>({causa,cantidad})).sort((a,b)=>b.cantidad-a.cantidad).slice(0,20);
+}
+function heatmapHistorical(rows) {
+  const m=new Map();
+  for(const r of rows){if(!r.fecha)continue;const key=`${r.planta||'Sin planta'}|${r.fecha}`;m.set(key,(m.get(key)||0)+1);}
+  return [...m.entries()].map(([key,valor])=>{const [planta,fecha]=key.split('|');return {planta,fecha,valor};}).slice(0,5000);
+}
+
+app.post('/api/historico/ingesta', requireAuth, (req,res)=>{
+  try{
+    const source=safeText(req.body?.source||''), incoming=req.body?.datos, archivo=safeText(req.body?.archivo||'archivo'), modo=safeText(req.body?.modo||'append').toLowerCase();
+    if(!HISTORICAL_SOURCES[source]) return res.status(400).json({error:`Fuente histórica inválida: ${source}`});
+    if(!Array.isArray(incoming)||!incoming.length) return res.status(400).json({error:'La carpeta/archivo no contiene filas para procesar'});
+    const normalized=normalizeRows(incoming), valid=[], rejected=[], errors=[];
+    normalized.forEach((row,i)=>{const rec=historicalNormalizeRecord(source,row,archivo), er=validateHistoricalRecord(source,rec);if(er.length){rejected.push(rec);errors.push({fila:i+1,archivo,errores:er});}else valid.push(rec);});
+    if(!valid.length) return res.status(422).json({error:`${HISTORICAL_SOURCES[source].label}: ninguna fila superó la validación`,errores:errors.slice(0,20)});
+    if(!Array.isArray(historicalWarehouse.records)) historicalWarehouse.records=[];
+    if(modo==='replace'){historicalWarehouse.records=historicalWarehouse.records.filter(r=>r.fuente!==source);historicalWarehouse.sources[source]={};}
+    historicalWarehouse.records.push(...valid);
+    const prev=historicalSourceMeta(source), files=[...new Set([...(Array.isArray(prev.files)?prev.files:[]),archivo].filter(Boolean))], sourceRows=historicalWarehouse.records.filter(r=>r.fuente===source), dates=sourceRows.map(r=>r.fecha).filter(Boolean).sort();
+    historicalWarehouse.sources[source]={source,label:HISTORICAL_SOURCES[source].label,status:'cargado',records:sourceRows.length,files,minDate:dates[0]||null,maxDate:dates.at(-1)||null,lastLoadedAt:nowIso(),loadedBy:req.user?.nombre||'Sistema',rejected:Number(prev.rejected||0)+rejected.length,errors:[...(Array.isArray(prev.errors)?prev.errors:[]),...errors].slice(-100)};
+    historicalWarehouse.revision=Number(historicalWarehouse.revision||0)+1;historicalWarehouse.loaded_at=nowIso();historicalRuntimeIndex.revision=-1;persistHistoricalWarehouse();
+    return res.json({ok:true,source,cantidad:sourceRows.length,cantidad_lote:valid.length,rechazadas:rejected.length,meta:historicalWarehouse.sources[source]});
+  }catch(err){
+    registrarErrorDetallado({modulo:'historico',funcion:'POST /api/historico/ingesta',error:err?.message||String(err),stack:err?.stack});
+    return res.status(422).json({error:'No fue posible consolidar la carpeta histórica',detalle:err?.message||String(err)});
+  }
+});
+
+app.get('/api/historico/fuentes', requireAuth, (req,res)=>{
+  const records=Array.isArray(historicalWarehouse?.records)?historicalWarehouse.records:[];
+  const idx=getHistoricalRuntimeIndex();
+  const plants=idx.plantCatalog.map(x=>x.planta);
+  const zones=[...new Set(idx.plantCatalog.map(x=>x.zona).filter(z=>z&&z!=='Sin zona'))].sort((a,b)=>a.localeCompare(b,'es'));
+  return res.json({ok:true,revision:Number(historicalWarehouse?.revision||0),totalRecords:records.length,loadedAt:historicalWarehouse?.loaded_at||null,sources:Object.keys(HISTORICAL_SOURCES).map(k=>({source:k,label:HISTORICAL_SOURCES[k].label,...historicalSourceMeta(k)})),plants,zones,plantCatalog:idx.plantCatalog});
+});
+
+app.get('/api/historico/dashboard-enterprise', requireAuth, (req,res)=>{
+  try{
+    const granularity=['day','week','month','quarter','year'].includes(String(req.query.granularity))?String(req.query.granularity):'week', rows=historicalFilterRecords(req.query), all=Array.isArray(historicalWarehouse?.records)?historicalWarehouse.records:[];
+    const dates=rows.map(r=>r.fecha).filter(Boolean).sort(), maintenance=historicalMaintenanceEntries(rows), totalMaintenanceHours=rows.map(r=>Number(r.horasMantenimiento)).filter(Number.isFinite), avgWorkshop=maintenance.map(r=>Number(r.horasMantenimiento)).filter(Number.isFinite);
+    const kpis={totalRegistros:rows.length,totalCamiones:historicalDistinct(rows,['camion','patente']),totalOperadores:historicalDistinct(rows,['operador']),disponibilidadPromedio:historicalAvg(rows,'disponibilidad'),puntualidadPromedio:historicalAvg(rows,'puntualidad'),sobreestadiaPromedio:historicalAvg(rows,'sobreestadia'),horasMantenimiento:totalMaintenanceHours.length?round1(totalMaintenanceHours.reduce((a,b)=>a+b,0)):null,frecuenciaMantenimiento:maintenance.length,mtbfHoras:historicalMtbfHours(rows),tiempoPromedioTallerHoras:avgWorkshop.length?round1(avgWorkshop.reduce((a,b)=>a+b,0)/avgWorkshop.length):null};
+    const series=aggregateHistoricalEnterprise(rows,granularity), plantRank=rankHistorical(rows,'planta'), zoneRank=rankHistorical(rows,'zona'), equipMap=new Map(), opMap=new Map();
+    for(const r of rows){const eq=safeText(r.camion||r.patente);if(eq)equipMap.set(eq,(equipMap.get(eq)||0)+1);const op=safeText(r.operador);if(op)opMap.set(op,(opMap.get(op)||0)+1);}
+    return res.json({
+      ok:true,source:'historicalWarehouse',granularity,from:req.query.from||null,to:req.query.to||null,totalBase:all.length,minDate:dates[0]||null,maxDate:dates.at(-1)||null,kpis,series,
+      rankings:{plantas:plantRank,zonas:zoneRank,equipos:[...equipMap.entries()].map(([equipo,eventos])=>({equipo,eventos})).sort((a,b)=>b.eventos-a.eventos).slice(0,20),operadores:[...opMap.entries()].map(([operador,asignaciones])=>({operador,asignaciones})).sort((a,b)=>b.asignaciones-a.asignaciones).slice(0,20)},
+      pareto:paretoHistorical(rows),heatmap:heatmapHistorical(rows),
+      plants:[...new Set(rows.map(r=>r.planta).filter(p=>p&&p!=='Sin planta'))].sort((a,b)=>a.localeCompare(b,'es')),
+      zones:[...new Set(rows.map(r=>r.zona).filter(z=>z&&z!=='Sin zona'))].sort((a,b)=>a.localeCompare(b,'es')),
+      sources:Object.keys(HISTORICAL_SOURCES).map(k=>({source:k,label:HISTORICAL_SOURCES[k].label,...historicalSourceMeta(k)})),
+      empty:rows.length===0,mensaje:rows.length?'':'NO SE ENCONTRARON DATOS PARA EL PERÍODO SELECCIONADO',
+    });
+  }catch(err){
+    registrarErrorDetallado({modulo:'historico',funcion:'GET /api/historico/dashboard-enterprise',error:err?.message||String(err),stack:err?.stack});
+    return res.status(422).json({error:'No fue posible construir el tablero histórico',detalle:err?.message||String(err)});
+  }
+});
+
 function historyScopeKey({ zona=null, region=null, planta=null, plantasFiltro=null } = {}) {
   if (planta) return `PLANTA:${planta}`;
   if (Array.isArray(plantasFiltro) && plantasFiltro.length) return `PLANTAS:${[...plantasFiltro].sort().join('|')}`;
@@ -1376,7 +1683,7 @@ function saveHistorySnapshot(payload, req) {
     resumen: structuredClone(payload.resumen),
     porPlanta: Array.isArray(payload.porPlanta) ? structuredClone(payload.porPlanta) : [],
     origen: snapshotSourceAudit(payload.fecha),
-    origen_version: '2.8',
+    origen_version: '3.0',
   };
   const idx = snapshots.findIndex(h => h.fecha === snapshot.fecha && h.scopeKey === scopeKey);
   if (idx >= 0) { snapshot.id = snapshots[idx].id; snapshots[idx] = snapshot; }
@@ -1535,7 +1842,7 @@ app.get('/api/reporte', requireAuth, (req, res) => {
       return res.json(payload);
   } catch (err) {
     registrarErrorDetallado({ modulo:'reporte', funcion:'GET /api/reporte', error:err?.message || String(err), stack:err?.stack, contexto:{ query:req.query, usuario:req.user?.nombre || '' } });
-    return res.status(422).json({ error:'No fue posible procesar el reporte con los datos disponibles', detalle:err?.message || String(err), mensaje_usuario:'Información incompleta o inválida. Revise los archivos cargados.', version:'2.8.0' });
+    return res.status(422).json({ error:'No fue posible procesar el reporte con los datos disponibles', detalle:err?.message || String(err), mensaje_usuario:'Información incompleta o inválida. Revise los archivos cargados.', version:'3.0.0' });
   }
 });
 
@@ -1674,89 +1981,7 @@ function aggregatePlantHistoricalRows(items) {
 }
 
 app.get('/api/historico/dashboard', requireAuth, (req,res) => {
-  try {
-    const currentYear=new Date().getFullYear();
-    const from=safeText(req.query.from || `${currentYear}-06-15`);
-    const to=safeText(req.query.to || new Date().toISOString().slice(0,10));
-    const zona=safeText(req.query.zona || '');
-    const plantasFiltro=req.query.plantas ? String(req.query.plantas).split(',').map(safeText).filter(Boolean) : [];
-
-    const allSnapshots=getHistoricalSnapshots();
-    const validacion=validarTrazabilidadHistorica(allSnapshots);
-    const consistencia=validarConsistenciaHistorica(allSnapshots);
-    if (!validacion.ok) return res.status(422).json({error:'Repositorio histórico inválido',detalle:validacion.errores.slice(0,10)});
-
-    const periodSnapshots=allSnapshots
-      .filter(s=>s?.scopeKey==='NACIONAL')
-      .filter(s=>(!from||s?.fecha>=from)&&(!to||s?.fecha<=to))
-      .sort((a,b)=>String(a?.fecha||'').localeCompare(String(b?.fecha||'')));
-
-    const daily=[];
-    for (const snap of periodSnapshots) {
-      let plants=Array.isArray(snap?.porPlanta)?snap.porPlanta.map(x=>({...x})):[];
-      if (zona) plants=plants.filter(p=>p?.zona===zona);
-      if (plantasFiltro.length) {
-        if (plantasFiltro.includes('__NINGUNA__')) plants=[];
-        else plants=plants.filter(p=>plantasFiltro.includes(p?.planta));
-      }
-      if (!plants.length) continue;
-      daily.push({fecha:snap.fecha,plants,snapshotId:snap.id,generado_en:snap.generado_en,origen:snap.origen||null});
-    }
-
-    const weeklyMap=new Map();
-    for (const day of daily) {
-      const key=isoWeekKey(day.fecha);
-      if (!weeklyMap.has(key)) weeklyMap.set(key,[]);
-      weeklyMap.get(key).push(day);
-    }
-    const weekly=[...weeklyMap.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([semana,days])=>{
-      const plants=days.flatMap(d=>d.plants);
-      const agg=aggregatePlantHistoricalRows(plants);
-      return {semana,dias:days.length,...agg,adherenciaPct:agg.adherenciaPct};
-    });
-
-    const allPlantRows=daily.flatMap(d=>d.plants);
-    const acumulado=aggregatePlantHistoricalRows(allPlantRows);
-    const byZone=new Map();
-    for (const row of allPlantRows) {
-      const z=safeText(row?.zona)||'Sin zona';
-      if (!byZone.has(z)) byZone.set(z,[]);
-      byZone.get(z).push(row);
-    }
-    const zonas=[...byZone.entries()].map(([z,items])=>({zona:z,...aggregatePlantHistoricalRows(items)})).sort((a,b)=>a.zona.localeCompare(b.zona));
-    const byPlant=new Map();
-    for (const row of allPlantRows) {
-      const key=`${safeText(row?.zona)}|${safeText(row?.planta)}`;
-      if (!byPlant.has(key)) byPlant.set(key,[]);
-      byPlant.get(key).push(row);
-    }
-    const plantas=[...byPlant.entries()].map(([key,items])=>{const [z,p]=key.split('|'); return {zona:z,planta:p,...aggregatePlantHistoricalRows(items)}}).sort((a,b)=>a.zona.localeCompare(b.zona)||a.planta.localeCompare(b.planta));
-
-    const allNational=allSnapshots.filter(s=>s?.scopeKey==='NACIONAL').sort((a,b)=>String(a?.fecha||'').localeCompare(String(b?.fecha||'')));
-    const uniqueDays=[...new Set(allNational.map(s=>s?.fecha).filter(Boolean))];
-    const uniqueWeeks=[...new Set(uniqueDays.map(isoWeekKey))];
-    const ultimo=allNational.length?allNational[allNational.length-1]:null;
-
-    return res.json({
-      ok:true, source:'historicalSnapshots', from,to,zona,plantasFiltro,
-      dailySnapshots:daily.length, diasConDatos:daily.length,
-      weekly, acumulado, zonas, plantas,
-      validacionHistorica:validacion,
-      consistenciaHistorica:consistencia,
-      audit:{
-        fechaOperacionNacional:req.user?.fecha||null,
-        ultimoSnapshotHistorico:ultimo?.fecha||null,
-        ultimoSnapshotGeneradoEn:ultimo?.generado_en||null,
-        semanasDisponibles:uniqueWeeks.length,
-        diasDisponibles:uniqueDays.length,
-        registrosHistoricos:allNational.length,
-      },
-      snapshotsDisponibles:allNational.map(s=>({fecha:s.fecha,id:s.id,generado_en:s.generado_en,generado_por:s.generado_por,origen:s.origen||null})),
-    });
-  } catch(err) {
-    registrarErrorDetallado({modulo:'historico',funcion:'GET /api/historico/dashboard',error:err?.message||String(err),stack:err?.stack});
-    return res.status(422).json({error:'No fue posible consultar la trazabilidad histórica',detalle:err?.message||String(err)});
-  }
+  return res.status(410).json({error:'Endpoint histórico anterior descontinuado en v3.0',detalle:'Use /api/historico/dashboard-enterprise'});
 });
 
 app.get('/api/audit', requireAuth, (req,res)=>res.json(state.audit.slice(0,500)));
@@ -1779,10 +2004,10 @@ app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 if (require.main === module && process.env.CCO_TEST_MODE !== '1') {
   server.listen(PORT, () => {
-    console.log(`[CCO][startup] CCO Intelligence v2.8.0 activo en puerto ${PORT}`);
+    console.log(`[CCO][startup] CCO Intelligence v3.0.0 activo en puerto ${PORT}`);
     console.log(`[CCO][startup] Diccionario plantas: ${PLANT_DICTIONARY.plants.length} plantas, ${PLANT_DICTIONARY_LOOKUP.size} alias resolubles, ${Object.keys(PLANT_DICTIONARY.conflicts||{}).length} alias ambiguos`);
     if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producción.');
   });
 }
 
-module.exports = { app, server, state, _test:{ buildOperatorRecords, buildRecordsWithDiagnostics, validateDataset, normalizeRows, parseTimeMinutes, parseDateKey, filterRowsForDate, ensurePlant, canonicalPlantName, normalizeId, sourceCoverageForDate, recordsToPlantRows, registrarErrorDetallado, FIELDS } };
+module.exports = { app, server, state, _test:{ buildOperatorRecords, buildRecordsWithDiagnostics, validateDataset, normalizeRows, parseTimeMinutes, parseDateKey, filterRowsForDate, ensurePlant, canonicalPlantName, normalizeId, sourceCoverageForDate, recordsToPlantRows, registrarErrorDetallado, FIELDS, historicalNormalizeRecord, validateHistoricalRecord, historicalPeriodKey, aggregateHistoricalEnterprise, historicalAvg, historicalMtbfHours, getHistoricalRuntimeIndex } };
