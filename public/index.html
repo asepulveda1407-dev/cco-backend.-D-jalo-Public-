@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CCO Intelligence v1.5 · Centro de Control Operacional</title>
+<title>CCO Intelligence v3.1 · Centro de Control Operacional</title>
 <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4/dist/socket.io.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
@@ -200,6 +200,24 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 .hist-heatmap table{width:100%;border-collapse:collapse}.hist-heatmap th,.hist-heatmap td{border:1px solid var(--line);padding:3px;text-align:center}
 @media(max-width:900px){.hist-chart-grid{grid-template-columns:1fr}.history-toolbar{grid-template-columns:1fr 1fr!important}}
 
+
+
+/* ===== v3.1 · Torre de Control de Flota integrada al tema CCO ===== */
+.tower-panel{display:none}
+.tower-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;margin-bottom:14px}
+.tower-head h2{font-size:17px!important;margin:0 0 4px!important}.tower-head-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.tower-head-actions button{margin:0}
+.tower-upload{border:1px dashed #a9c7e4;background:#f7fbff;border-radius:12px;padding:12px;margin-bottom:14px}.tower-upload-row{display:grid;grid-template-columns:180px 1fr auto;gap:10px;align-items:center}.tower-upload-row input{margin:0}.tower-upload-status{font-size:10px;color:var(--mut);min-width:220px;text-align:right}.tower-upload-status.ok{color:var(--green)}.tower-upload-status.err{color:var(--red)}
+.tower-kpis{display:grid;grid-template-columns:repeat(6,minmax(135px,1fr));gap:10px;margin-bottom:14px}.tower-kpi{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 13px;box-shadow:0 4px 14px rgba(23,50,77,.05);position:relative;overflow:hidden}.tower-kpi:before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--blue)}.tower-kpi.ok:before{background:var(--green)}.tower-kpi.warn:before{background:var(--yellow)}.tower-kpi.crit:before{background:var(--red)}.tower-kpi .l{font-size:9px;color:var(--mut);text-transform:uppercase;font-weight:800;letter-spacing:.45px}.tower-kpi .v{font-size:24px;font-weight:900;color:var(--txt);margin-top:4px}.tower-kpi .s{font-size:9px;color:var(--mut);margin-top:4px}
+.tower-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(310px,.9fr);gap:14px}.tower-card{background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 4px 14px rgba(23,50,77,.05);overflow:hidden}.tower-card-h{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line);background:#f8fbff}.tower-card-h h3{font-size:11px;margin:0;color:#244764;text-transform:uppercase;letter-spacing:.4px}.tower-card-b{padding:12px}
+.tower-toolbar{display:grid;grid-template-columns:repeat(3,minmax(130px,1fr)) minmax(170px,1.4fr) auto;gap:8px;align-items:end;margin-bottom:10px}.tower-toolbar button{margin:0;height:35px}.tower-toolbar label{margin-top:0}
+.tower-legend{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 12px}.tower-legend span{font-size:9px;color:var(--mut);display:flex;align-items:center;gap:4px}.tower-dot{width:8px;height:8px;border-radius:50%;display:inline-block}.tower-dot.available{background:#27ae60}.tower-dot.preventive{background:#2f80ed}.tower-dot.internal{background:#f2b01e}.tower-dot.external{background:#9b51e0}.tower-dot.oos{background:#eb5757}.tower-dot.parts{background:#f2994a}.tower-dot.stale{background:#95a5a6}
+.tower-plants{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;max-height:600px;overflow:auto;padding-right:2px}.tower-plant{border:1px solid #d6e3ef;border-radius:10px;background:#fbfdff;min-height:120px;transition:.15s}.tower-plant.dragover{border-color:var(--blue);box-shadow:0 0 0 3px rgba(47,128,237,.12);background:#f1f7ff}.tower-plant-h{display:flex;justify-content:space-between;gap:8px;padding:8px 9px;border-bottom:1px solid #e1eaf3}.tower-plant-h b{font-size:10px;color:#244764}.tower-plant-h small{font-size:9px;color:var(--mut)}.tower-trucks{display:grid;grid-template-columns:repeat(6,1fr);gap:5px;padding:8px}.tower-truck{height:31px;border-radius:7px;border:1px solid #d7e2ed;background:#fff;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:900;cursor:grab;position:relative;color:#244764;user-select:none}.tower-truck:active{cursor:grabbing}.tower-truck.available{border-color:#a7ddbf;background:#edf9f2;color:#1e7e46}.tower-truck.preventive{border-color:#b9d6fa;background:#eff6ff;color:#2d6bb0}.tower-truck.internal{border-color:#f1d392;background:#fff8e8;color:#9a6c00}.tower-truck.external{border-color:#d7c0ef;background:#f8f1ff;color:#7540a7}.tower-truck.oos{border-color:#efbcbc;background:#fff1f1;color:#b63737}.tower-truck.parts{border-color:#f1c49a;background:#fff7ef;color:#ad631f}.tower-truck.stale{border-color:#d7dfe7;background:#f5f7f9;color:#6d7c89}.tower-truck.sel{outline:3px solid rgba(47,128,237,.2);border-color:#2f80ed}
+.tower-detail-empty{padding:28px 12px;text-align:center;color:var(--mut);font-size:11px}.tower-truck-hero{text-align:center;padding:12px;border:1px solid #dbe6f0;background:#f7fbff;border-radius:10px;margin-bottom:10px}.tower-truck-hero .ico{font-size:42px}.tower-truck-hero .id{font-size:19px;font-weight:900;color:#17324d}.tower-truck-hero .state{font-size:10px;font-weight:800;color:var(--blue);margin-top:3px}.tower-info{display:grid;grid-template-columns:115px 1fr;font-size:10px;gap:0}.tower-info div{padding:6px 4px;border-bottom:1px solid #e3ebf3}.tower-info .k{color:var(--mut)}.tower-info .val{font-weight:700;color:#244764}.tower-detail-actions{display:flex;gap:8px;margin-top:12px}.tower-detail-actions button{flex:1;margin:0}.tower-history{margin-top:10px;max-height:160px;overflow:auto}.tower-history-item{font-size:9px;padding:6px 7px;border-left:3px solid var(--blue);background:#f8fbff;margin-bottom:5px;border-radius:5px;color:#526d86}
+.tower-bottom{display:grid;grid-template-columns:1.5fr 1fr;gap:14px;margin-top:14px}.tower-table-wrap{max-height:360px;overflow:auto}.tower-table-wrap th{position:sticky;top:0;z-index:2}.tower-status-pill{display:inline-block;padding:2px 7px;border-radius:999px;font-size:8px;font-weight:800}.tower-status-pill.available{background:#eaf8f0;color:#21894e}.tower-status-pill.preventive{background:#eaf4ff;color:#2f80ed}.tower-status-pill.internal{background:#fff6df;color:#a87700}.tower-status-pill.external{background:#f5ecff;color:#7b45af}.tower-status-pill.oos{background:#fff0f0;color:#c63d3d}.tower-status-pill.parts{background:#fff4e8;color:#ad631f}.tower-status-pill.stale{background:#edf2f7;color:#677b8d}
+.tower-modal{display:none;position:fixed;inset:0;background:rgba(15,34,54,.38);z-index:10050;align-items:center;justify-content:center;padding:16px}.tower-modal.open{display:flex}.tower-modal-box{background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 24px 60px rgba(23,50,77,.24);width:min(720px,96vw);max-height:90vh;overflow:auto}.tower-modal-h{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line)}.tower-modal-h h3{margin:0;font-size:13px}.tower-modal-b{padding:14px 16px}.tower-form{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px}.tower-form .full{grid-column:1/-1}.tower-modal-actions{display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid var(--line)}.tower-modal-actions button{margin:0}.tower-msg{font-size:10px;margin-top:8px;color:var(--mut)}
+@media(max-width:1050px){.tower-kpis{grid-template-columns:repeat(3,1fr)}.tower-grid{grid-template-columns:1fr}.tower-toolbar{grid-template-columns:1fr 1fr}.tower-bottom{grid-template-columns:1fr}}
+@media(max-width:650px){.tower-kpis{grid-template-columns:repeat(2,1fr)}.tower-upload-row{grid-template-columns:1fr}.tower-upload-status{text-align:left;min-width:0}.tower-toolbar{grid-template-columns:1fr}.tower-trucks{grid-template-columns:repeat(5,1fr)}.tower-form{grid-template-columns:1fr}.tower-form .full{grid-column:auto}}
+
 </style>
 </head>
 <body>
@@ -239,23 +257,93 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v3.0</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v3.1</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
     <div id="opDateControl" class="pill" style="margin:0">Operación de hoy · <b id="scopeFechaLabel">—</b><input id="scopeFecha" type="hidden"></div>
-    <span id="appVersion" class="pill">v3.0</span><span id="connPill" class="pill">Conectando…</span>
+    <span id="appVersion" class="pill">v3.1</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
 <div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
   <span class="module-switcher-label">VISTA CCO</span>
   <button type="button" id="quickOperacion" class="active">📊 Operación Nacional</button>
   <button type="button" id="quickHistorico" class="secondary">📈 Trazabilidad Histórica</button>
+  <button type="button" id="quickTorre" class="secondary">🚛 Torre de Control</button>
 </div>
 <main>
 
   <div id="ccoTabs" class="module-tabs">
     <button type="button" id="tabOperacion" class="module-tab active">Operación de hoy</button>
     <button type="button" id="tabHistorico" class="module-tab">Trazabilidad histórica</button>
+    <button type="button" id="tabTorre" class="module-tab">Torre de Control</button>
+  </div>
+
+
+
+  <div id="towerPanel" class="card tower-panel" style="display:none">
+    <div class="tower-head">
+      <div><h2>🚛 Torre de Control de Mantenimiento · Flota Nacional</h2><div class="small">Visibilidad nacional de mixers, estados de mantenimiento y redistribución entre plantas.</div></div>
+      <div class="tower-head-actions"><span class="pill" id="towerRevision">Sin flota cargada</span><button type="button" class="secondary" onclick="cargarTorreFlota()">↻ Actualizar</button></div>
+    </div>
+
+    <div class="tower-upload">
+      <div class="tower-upload-row">
+        <div><b style="font-size:11px;color:#244764">Archivo Flota Nacional</b><div class="small">Excel/CSV · se recomienda hoja “Flota”</div></div>
+        <input type="file" id="towerFleetFile" accept=".xlsx,.xls,.csv">
+        <div class="tower-upload-status" id="towerFleetStatus">Seleccione el archivo de flota.</div>
+      </div>
+      <div class="small" style="margin-top:7px">CCO detecta automáticamente columnas de equipo, número, patente, marca, año, zona, planta, estado y activo/inactivo. Los cambios manuales de mantenimiento se conservan al volver a cargar el mismo equipo.</div>
+    </div>
+
+    <div class="tower-kpis" id="towerKpis"></div>
+
+    <div class="tower-grid">
+      <div class="tower-card">
+        <div class="tower-card-h"><h3>Mapa operacional / Vista por planta</h3><small id="towerVisibleCount">0 equipos visibles</small></div>
+        <div class="tower-card-b">
+          <div class="tower-toolbar">
+            <div><label>Zona</label><select id="towerZoneFilter"><option value="all">Todas las zonas</option></select></div>
+            <div><label>Planta</label><select id="towerPlantFilter"><option value="all">Todas las plantas</option></select></div>
+            <div><label>Estado</label><select id="towerStatusFilter"><option value="all">Todos los estados</option></select></div>
+            <div><label>Buscar equipo</label><input id="towerSearch" placeholder="ID, número, patente o marca"></div>
+            <button type="button" class="secondary" id="towerReset">Limpiar</button>
+          </div>
+          <div class="tower-legend">
+            <span><i class="tower-dot available"></i>Disponible</span><span><i class="tower-dot preventive"></i>Preventiva</span><span><i class="tower-dot internal"></i>Taller interno</span><span><i class="tower-dot external"></i>Taller externo</span><span><i class="tower-dot parts"></i>Repuestos</span><span><i class="tower-dot oos"></i>Fuera servicio</span><span><i class="tower-dot stale"></i>Sin actualización</span>
+          </div>
+          <div id="towerPlants" class="tower-plants"><div class="tower-detail-empty">Cargue el archivo de flota para comenzar.</div></div>
+        </div>
+      </div>
+      <div class="tower-card">
+        <div class="tower-card-h"><h3>Detalle del equipo</h3><small id="towerDetailBadge">—</small></div>
+        <div class="tower-card-b" id="towerDetail"><div class="tower-detail-empty">Seleccione un mixer para ver su detalle.</div></div>
+      </div>
+    </div>
+
+    <div class="tower-bottom">
+      <div class="tower-card"><div class="tower-card-h"><h3>Resumen de flota por planta</h3><small id="towerPlantCount">0 plantas</small></div><div class="tower-card-b tower-table-wrap"><table><thead><tr><th>Zona</th><th>Planta</th><th>Total</th><th>Disponibles</th><th>En mantención</th><th>Fuera servicio</th><th>Disponibilidad</th></tr></thead><tbody id="towerPlantTable"></tbody></table></div></div>
+      <div class="tower-card"><div class="tower-card-h"><h3>Distribución por estado</h3><small>Estado CCO</small></div><div class="tower-card-b"><table><thead><tr><th>Estado</th><th>Unidades</th><th>%</th></tr></thead><tbody id="towerStateTable"></tbody></table></div></div>
+    </div>
+  </div>
+
+  <div id="towerEditModal" class="tower-modal" aria-hidden="true">
+    <div class="tower-modal-box">
+      <div class="tower-modal-h"><h3 id="towerEditTitle">Editar estado</h3><button type="button" class="secondary" onclick="cerrarTowerEditor()" style="margin:0">✕</button></div>
+      <div class="tower-modal-b">
+        <div class="tower-form">
+          <div><label>Estado CCO</label><select id="towerEditStatus"><option value="available">Disponible para Operación</option><option value="preventive">Mantención Preventiva Programada</option><option value="internal">Taller Interno</option><option value="external">Taller Externo</option><option value="parts">Esperando Repuestos</option><option value="oos">Fuera de Servicio</option><option value="stale">Sin Actualización</option></select></div>
+          <div><label>Planta / ubicación operacional</label><select id="towerEditPlant"></select></div>
+          <div><label>Taller / ubicación</label><input id="towerEditWorkshop" placeholder="Ej: Taller Interno Lo Espejo"></div>
+          <div><label>Responsable</label><input id="towerEditResponsible" placeholder="Nombre responsable"></div>
+          <div><label>ETA liberación</label><input id="towerEditEta" type="datetime-local"></div>
+          <div><label>Avance mantenimiento (%)</label><input id="towerEditProgress" type="number" min="0" max="100" step="1"></div>
+          <div class="full"><label>Tipo / causa</label><input id="towerEditCause" placeholder="Ej: MP 1.000 h / Sistema hidráulico"></div>
+          <div class="full"><label>Observación operacional</label><textarea id="towerEditObservation" rows="3" placeholder="Información relevante para CCO..."></textarea></div>
+        </div>
+        <div id="towerEditMsg" class="tower-msg"></div>
+      </div>
+      <div class="tower-modal-actions"><button type="button" class="secondary" onclick="cerrarTowerEditor()">Cancelar</button><button type="button" onclick="guardarTowerEditor()">Guardar cambio</button></div>
+    </div>
   </div>
 
   <div id="historicoPanel" class="card" style="display:none">
@@ -1989,6 +2077,58 @@ function descargarImagenReporte(){
 
 
 
+
+// ===== v3.1 · Torre de Control de Flota =====
+let towerFleet=[],towerSelectedKey=null,towerRevision=0;
+const TOWER_STATUS_LABELS={available:'Disponible',preventive:'Mantención Preventiva',internal:'Taller Interno',external:'Taller Externo',oos:'Fuera de Servicio',parts:'Esperando Repuestos',stale:'Sin Actualización'};
+const TOWER_MAINT_STATUS=new Set(['preventive','internal','external','parts']);
+function towerEsc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function towerSetStatus(text,cls=''){const el=document.getElementById('towerFleetStatus');if(el){el.textContent=text;el.className='tower-upload-status '+cls;}}
+function towerSelected(){return towerFleet.find(x=>x.key===towerSelectedKey)||null;}
+function towerFiltered(){
+  const z=document.getElementById('towerZoneFilter')?.value||'all',p=document.getElementById('towerPlantFilter')?.value||'all',st=document.getElementById('towerStatusFilter')?.value||'all',q=(document.getElementById('towerSearch')?.value||'').toLowerCase().trim();
+  return towerFleet.filter(t=>(z==='all'||t.zone===z)&&(p==='all'||t.plant===p)&&(st==='all'||t.status===st)&&(!q||[t.id,t.number,t.plate,t.brand,t.plant].join(' ').toLowerCase().includes(q)));
+}
+function towerCounts(list=towerFleet){const total=list.length,available=list.filter(x=>x.status==='available').length,maint=list.filter(x=>TOWER_MAINT_STATUS.has(x.status)).length,oos=list.filter(x=>x.status==='oos').length,parts=list.filter(x=>x.status==='parts').length;return{total,available,maint,oos,parts,pct:total?available/total*100:0};}
+function renderTowerKpis(){const c=towerCounts();const cards=[['Flota registrada',c.total,'Equipos cargados',''],['Disponibles',c.available,'Disponibles para operación','ok'],['En mantención',c.maint,'Preventiva / talleres / repuestos','warn'],['Fuera servicio',c.oos,'No disponibles','crit'],['Esperando repuestos',c.parts,'Bloqueados por repuesto','warn'],['Disponibilidad',c.pct.toFixed(1)+'%','Disponible / total',c.pct>=90?'ok':c.pct>=80?'warn':'crit']];document.getElementById('towerKpis').innerHTML=cards.map(x=>`<div class="tower-kpi ${x[3]}"><div class="l">${x[0]}</div><div class="v">${x[1]}</div><div class="s">${x[2]}</div></div>`).join('');}
+function poblarTowerFiltros(){
+  const z=document.getElementById('towerZoneFilter'),p=document.getElementById('towerPlantFilter'),st=document.getElementById('towerStatusFilter');if(!z||!p||!st)return;
+  const zv=z.value,pv=p.value,sv=st.value;const zones=[...new Set(towerFleet.map(x=>x.zone).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));const plants=[...new Set(towerFleet.map(x=>x.plant).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
+  z.innerHTML='<option value="all">Todas las zonas</option>'+zones.map(x=>`<option value="${towerEsc(x)}">${towerEsc(x)}</option>`).join('');p.innerHTML='<option value="all">Todas las plantas</option>'+plants.map(x=>`<option value="${towerEsc(x)}">${towerEsc(x)}</option>`).join('');st.innerHTML='<option value="all">Todos los estados</option>'+Object.entries(TOWER_STATUS_LABELS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');if([...z.options].some(o=>o.value===zv))z.value=zv;if([...p.options].some(o=>o.value===pv))p.value=pv;if([...st.options].some(o=>o.value===sv))st.value=sv;
+}
+function towerDragStart(ev,key){ev.dataTransfer.setData('text/tower-key',key);ev.dataTransfer.effectAllowed='move';}
+function towerDragOver(ev){ev.preventDefault();ev.currentTarget.classList.add('dragover');}
+function towerDragLeave(ev){ev.currentTarget.classList.remove('dragover');}
+async function towerDrop(ev,plant){ev.preventDefault();ev.currentTarget.classList.remove('dragover');const key=ev.dataTransfer.getData('text/tower-key');if(!key||!plant)return;const t=towerFleet.find(x=>x.key===key);if(!t||t.plant===plant)return;await actualizarTowerEquipo(key,{plant});towerSelectedKey=key;renderTorre();}
+function renderTowerPlants(){
+  const list=towerFiltered(),box=document.getElementById('towerPlants');document.getElementById('towerVisibleCount').textContent=`${list.length} equipos visibles`;
+  if(!list.length){box.innerHTML='<div class="tower-detail-empty">No hay equipos para los filtros seleccionados.</div>';return;}
+  const groups={};list.forEach(t=>(groups[t.plant||'Sin planta asignada']??=[]).push(t));box.innerHTML=Object.entries(groups).sort((a,b)=>a[0].localeCompare(b[0],'es')).map(([plant,arr])=>{const c=towerCounts(arr);return `<div class="tower-plant" ondragover="towerDragOver(event)" ondragleave="towerDragLeave(event)" ondrop="towerDrop(event,'${String(plant).replace(/'/g,"\\'")}')"><div class="tower-plant-h"><b>${towerEsc(plant)}</b><small>${arr.length} mixer · ${c.pct.toFixed(0)}%</small></div><div class="tower-trucks">${arr.map(t=>`<div class="tower-truck ${t.status} ${t.key===towerSelectedKey?'sel':''}" draggable="true" ondragstart="towerDragStart(event,'${String(t.key).replace(/'/g,"\\'")}')" onclick="seleccionarTowerEquipo('${String(t.key).replace(/'/g,"\\'")}')" title="${towerEsc(t.id)} · ${towerEsc(t.plate)} · ${towerEsc(TOWER_STATUS_LABELS[t.status]||t.status)}">${towerEsc(t.number||t.id)}</div>`).join('')}</div></div>`}).join('');
+}
+function renderTowerDetail(){
+  const t=towerSelected(),box=document.getElementById('towerDetail'),badge=document.getElementById('towerDetailBadge');if(!t){badge.textContent='—';box.innerHTML='<div class="tower-detail-empty">Seleccione un mixer para ver su detalle.</div>';return;}badge.textContent=TOWER_STATUS_LABELS[t.status]||t.status;
+  const hist=(Array.isArray(t.history)?t.history:[]).slice().reverse().slice(0,8);box.innerHTML=`<div class="tower-truck-hero"><div class="ico">🚛</div><div class="id">${towerEsc(t.id||t.number||'Equipo')}</div><div class="state">${towerEsc(TOWER_STATUS_LABELS[t.status]||t.status)}</div></div><div class="tower-info"><div class="k">Número</div><div class="val">${towerEsc(t.number||'—')}</div><div class="k">Patente</div><div class="val">${towerEsc(t.plate||'—')}</div><div class="k">Marca / año</div><div class="val">${towerEsc([t.brand,t.year].filter(Boolean).join(' · ')||'—')}</div><div class="k">Zona</div><div class="val">${towerEsc(t.zone||'—')}</div><div class="k">Planta</div><div class="val">${towerEsc(t.plant||'—')}</div><div class="k">Estado registro</div><div class="val">${towerEsc(t.sourceStatus||'—')}</div><div class="k">Taller</div><div class="val">${towerEsc(t.workshop||'—')}</div><div class="k">Responsable</div><div class="val">${towerEsc(t.responsible||'—')}</div><div class="k">ETA</div><div class="val">${towerEsc(t.eta||'—')}</div><div class="k">Avance</div><div class="val">${Number(t.progress||0)}%</div><div class="k">Causa</div><div class="val">${towerEsc(t.cause||'—')}</div><div class="k">Observación</div><div class="val">${towerEsc(t.observation||'—')}</div></div><div class="tower-detail-actions"><button type="button" onclick="abrirTowerEditor()">Editar estado</button></div><div class="tower-history">${hist.length?hist.map(h=>`<div class="tower-history-item"><b>${new Date(h.timestamp).toLocaleString('es-CL')}</b> · ${towerEsc(h.usuario||'CCO')}<br>${towerEsc(Object.entries(h.cambios||{}).map(([k,v])=>`${k}: ${v.antes||'—'} → ${v.despues||'—'}`).join(' · '))}</div>`).join(''):'<div class="small" style="padding:8px">Sin cambios registrados.</div>'}</div>`;
+}
+function renderTowerTables(){
+  const groups={};towerFleet.forEach(t=>(groups[t.plant||'Sin planta asignada']??=[]).push(t));const rows=Object.entries(groups).sort((a,b)=>a[0].localeCompare(b[0],'es'));document.getElementById('towerPlantCount').textContent=`${rows.length} plantas`;document.getElementById('towerPlantTable').innerHTML=rows.map(([plant,arr])=>{const c=towerCounts(arr);return `<tr><td>${towerEsc(arr[0]?.zone||'—')}</td><td><b>${towerEsc(plant)}</b></td><td>${c.total}</td><td>${c.available}</td><td>${c.maint}</td><td>${c.oos}</td><td>${c.pct.toFixed(1)}%</td></tr>`}).join('')||'<tr><td colspan="7" class="history-empty">Sin flota cargada.</td></tr>';
+  const by={};towerFleet.forEach(t=>by[t.status]=(by[t.status]||0)+1);document.getElementById('towerStateTable').innerHTML=Object.entries(by).sort((a,b)=>b[1]-a[1]).map(([st,n])=>`<tr><td><span class="tower-status-pill ${st}">${towerEsc(TOWER_STATUS_LABELS[st]||st)}</span></td><td>${n}</td><td>${towerFleet.length?(n/towerFleet.length*100).toFixed(1):'0.0'}%</td></tr>`).join('')||'<tr><td colspan="3" class="history-empty">Sin datos.</td></tr>';
+}
+function renderTorre(){renderTowerKpis();poblarTowerFiltros();renderTowerPlants();renderTowerDetail();renderTowerTables();}
+function seleccionarTowerEquipo(key){towerSelectedKey=key;renderTowerPlants();renderTowerDetail();}
+async function cargarTorreFlota(){
+  try{towerSetStatus('Sincronizando flota...');const r=await fetch(API+'/api/flota',{headers:authHeaders()});const data=await leerRespuestaApiSegura(r);towerFleet=Array.isArray(data.datos)?data.datos:[];towerRevision=Number(data.revision||0);document.getElementById('towerRevision').textContent=towerFleet.length?`Rev. ${towerRevision} · ${towerFleet.length} equipos`:'Sin flota cargada';if(towerFleet.length&&!towerSelectedKey)towerSelectedKey=towerFleet[0].key;const m=data.metadatos||{};towerSetStatus(towerFleet.length?`${towerFleet.length} equipos · ${m.archivo||'fuente cargada'} · ${m.cargado_en?new Date(m.cargado_en).toLocaleString('es-CL'):''}`:'Seleccione el archivo de flota.','ok');renderTorre();}catch(err){towerSetStatus('No se pudo cargar flota: '+(err.message||err),'err');}
+}
+function towerSheetScore(wb,name){const n=name.toLowerCase();let score=n.includes('flota')?100:0;try{const matrix=XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,defval:null,range:0});score+=Math.min(matrix.length,10000)/1000;const text=(matrix.slice(0,12).flat().join(' ')||'').toLowerCase();['patente','marca','camion','camión','planta','estado'].forEach(k=>{if(text.includes(k))score+=10});}catch{}return score;}
+async function procesarTowerFleetFile(file){
+  if(!file)return;towerSetStatus(`Leyendo ${file.name}...`);try{const wb=XLSX.read(new Uint8Array(await file.arrayBuffer()),{type:'array',cellDates:true});if(!wb.SheetNames.length)throw new Error('El archivo no contiene hojas');const sheet=[...wb.SheetNames].sort((a,b)=>towerSheetScore(wb,b)-towerSheetScore(wb,a))[0];const header=typeof detectarFilaHeader==='function'?detectarFilaHeader(wb,sheet):0;const rows=XLSX.utils.sheet_to_json(wb.Sheets[sheet],{defval:null,range:header});if(!rows.length)throw new Error(`La hoja ${sheet} no contiene registros`);towerSetStatus(`${rows.length} filas detectadas en ${sheet}. Validando...`);const r=await fetch(API+'/api/flota/ingesta',{method:'POST',headers:authHeaders(),body:JSON.stringify({datos:rows,archivo:file.name,hoja:sheet})});const data=await leerRespuestaApiSegura(r);towerSetStatus(`${data.cantidad} equipos cargados · hoja ${sheet}`,'ok');await cargarTorreFlota();}catch(err){towerSetStatus('Archivo de flota inválido: '+(err.message||err),'err');}
+}
+async function actualizarTowerEquipo(key,patch){const r=await fetch(API+'/api/flota/'+encodeURIComponent(key),{method:'PATCH',headers:authHeaders(),body:JSON.stringify(patch)});const data=await leerRespuestaApiSegura(r);const i=towerFleet.findIndex(x=>x.key===key);if(i>=0)towerFleet[i]=data.equipo;towerRevision=Number(data.revision||towerRevision);document.getElementById('towerRevision').textContent=`Rev. ${towerRevision} · ${towerFleet.length} equipos`;return data.equipo;}
+function abrirTowerEditor(){const t=towerSelected();if(!t)return;document.getElementById('towerEditTitle').textContent=`Editar · ${t.id||t.number}`;towerEditStatus.value=t.status||'stale';const plants=[...new Set(towerFleet.map(x=>x.plant).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));towerEditPlant.innerHTML=plants.map(x=>`<option value="${towerEsc(x)}">${towerEsc(x)}</option>`).join('');if(!plants.includes(t.plant))towerEditPlant.insertAdjacentHTML('afterbegin',`<option value="${towerEsc(t.plant)}">${towerEsc(t.plant)}</option>`);towerEditPlant.value=t.plant;towerEditWorkshop.value=t.workshop||'';towerEditResponsible.value=t.responsible||'';towerEditEta.value=(t.eta||'').slice(0,16);towerEditProgress.value=Number(t.progress||0);towerEditCause.value=t.cause||'';towerEditObservation.value=t.observation||'';towerEditMsg.textContent='';towerEditModal.classList.add('open');towerEditModal.setAttribute('aria-hidden','false');}
+function cerrarTowerEditor(){towerEditModal.classList.remove('open');towerEditModal.setAttribute('aria-hidden','true');}
+async function guardarTowerEditor(){const t=towerSelected();if(!t)return;try{towerEditMsg.textContent='Guardando...';await actualizarTowerEquipo(t.key,{status:towerEditStatus.value,plant:towerEditPlant.value,workshop:towerEditWorkshop.value,responsible:towerEditResponsible.value,eta:towerEditEta.value,progress:Number(towerEditProgress.value||0),cause:towerEditCause.value,observation:towerEditObservation.value});towerEditMsg.textContent='Cambio guardado.';cerrarTowerEditor();renderTorre();}catch(err){towerEditMsg.textContent='Error: '+(err.message||err);}}
+function initTower(){document.getElementById('towerFleetFile')?.addEventListener('change',e=>{const f=e.target.files?.[0];if(f)procesarTowerFleetFile(f);e.target.value='';});['towerZoneFilter','towerPlantFilter','towerStatusFilter'].forEach(id=>document.getElementById(id)?.addEventListener('change',()=>{renderTowerPlants();renderTowerDetail();}));document.getElementById('towerSearch')?.addEventListener('input',renderTowerPlants);document.getElementById('towerReset')?.addEventListener('click',()=>{towerZoneFilter.value='all';towerPlantFilter.value='all';towerStatusFilter.value='all';towerSearch.value='';renderTowerPlants();});document.getElementById('towerEditModal')?.addEventListener('click',e=>{if(e.target.id==='towerEditModal')cerrarTowerEditor();});}
+window.towerDragStart=towerDragStart;window.towerDragOver=towerDragOver;window.towerDragLeave=towerDragLeave;window.towerDrop=towerDrop;window.seleccionarTowerEquipo=seleccionarTowerEquipo;window.abrirTowerEditor=abrirTowerEditor;window.cerrarTowerEditor=cerrarTowerEditor;window.guardarTowerEditor=guardarTowerEditor;window.cargarTorreFlota=cargarTorreFlota;
+
 let historicoUltimo=null;
 let histPlantasSeleccionadas=new Set();
 let histCatalogo={plants:[],zones:[],sources:[],plantCatalog:[]};
@@ -1996,11 +2136,13 @@ const HIST_SOURCE_KEYS=['status','disponibilidad','mantenimiento','puntualidad',
 const histCharts={};
 
 function inicializarModulos(){
-  document.querySelectorAll('main > .card').forEach(el=>{if(el.id!=='historicoPanel')el.classList.add('operation-view');});
+  document.querySelectorAll('main > .card').forEach(el=>{if(!['historicoPanel','towerPanel'].includes(el.id))el.classList.add('operation-view');});
   document.getElementById('tabOperacion')?.addEventListener('click',()=>cambiarModulo('operacion'));
   document.getElementById('tabHistorico')?.addEventListener('click',()=>cambiarModulo('historico'));
+  document.getElementById('tabTorre')?.addEventListener('click',()=>cambiarModulo('torre'));
   document.getElementById('quickOperacion')?.addEventListener('click',()=>cambiarModulo('operacion',true));
   document.getElementById('quickHistorico')?.addEventListener('click',()=>cambiarModulo('historico',true));
+  document.getElementById('quickTorre')?.addEventListener('click',()=>cambiarModulo('torre',true));
   document.getElementById('histConsultar')?.addEventListener('click',cargarHistorico);
   document.getElementById('histGranularidad')?.addEventListener('change',cargarHistorico);
   document.getElementById('histZona')?.addEventListener('change',()=>{poblarHistPlantas(true);cargarHistorico();});
@@ -2010,17 +2152,23 @@ function inicializarModulos(){
   HIST_SOURCE_KEYS.forEach(source=>{
     document.getElementById('histFolder_'+source)?.addEventListener('change',e=>procesarCarpetaHistorica(source,[...(e.target.files||[])]));
   });
+  initTower();
   setHistRangeSemana25();
 }
 function cambiarModulo(modulo,scrollTop=false){
-  const hist=modulo==='historico';
-  document.querySelectorAll('.operation-view').forEach(el=>el.style.display=hist?'none':'');
-  document.getElementById('historicoPanel').style.display=hist?'block':'none';
-  document.getElementById('tabOperacion')?.classList.toggle('active',!hist);
+  const hist=modulo==='historico', tower=modulo==='torre', op=!hist&&!tower;
+  document.querySelectorAll('.operation-view').forEach(el=>el.style.display=op?'':'none');
+  const hp=document.getElementById('historicoPanel');if(hp)hp.style.display=hist?'block':'none';
+  const tp=document.getElementById('towerPanel');if(tp)tp.style.display=tower?'block':'none';
+  document.getElementById('tabOperacion')?.classList.toggle('active',op);
   document.getElementById('tabHistorico')?.classList.toggle('active',hist);
-  document.getElementById('quickOperacion')?.classList.toggle('active',!hist);
+  document.getElementById('tabTorre')?.classList.toggle('active',tower);
+  document.getElementById('quickOperacion')?.classList.toggle('active',op);
   document.getElementById('quickHistorico')?.classList.toggle('active',hist);
+  document.getElementById('quickTorre')?.classList.toggle('active',tower);
+  ['quickOperacion','quickHistorico','quickTorre'].forEach(id=>document.getElementById(id)?.classList.toggle('secondary',!document.getElementById(id)?.classList.contains('active')));
   if(hist){cargarCatalogoHistorico().then(cargarHistorico);}
+  if(tower){cargarTorreFlota();}
   if(scrollTop) window.scrollTo({top:0,behavior:'smooth'});
 }
 function isoWeekNumber(d){
