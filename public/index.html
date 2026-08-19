@@ -350,11 +350,11 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v4.1</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v4.1.1</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
     <div id="opDateControl" class="pill" style="margin:0">Operación de hoy · <b id="scopeFechaLabel">—</b><input id="scopeFecha" type="hidden"></div>
-    <span id="appVersion" class="pill">v4.1</span><span id="connPill" class="pill">Conectando…</span>
+    <span id="appVersion" class="pill">v4.1.1</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
 <div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
@@ -2613,6 +2613,7 @@ function renderHistDiagnostics(){
       </div>
       <details class="hist-diag-log"><summary>Detalle técnico</summary>
         ${(d.log||[]).map(x=>`<div><b>${escapeHtml(x.at)}</b> · ${escapeHtml(x.msg)}</div>`).join('')||'<div>Sin eventos adicionales.</div>'}
+        ${d.tamConsolidation?`<div style="margin-top:7px"><b>Consolidación TAM ID + Fecha:</b> ${Number(d.tamConsolidation.operatorDays||0).toLocaleString('es-CL')} operador/día · ${Number(d.tamConsolidation.blankIngresoRowsRecovered||0).toLocaleString('es-CL')} filas de ingreso vacío recuperadas · ${Number(d.tamConsolidation.operatorDaysWithoutIngreso||0).toLocaleString('es-CL')} operador/día sin ingreso TAM</div>`:''}
         ${d.ruleCounts&&Object.keys(d.ruleCounts).length?`<div style="margin-top:7px"><b>Reglas aplicadas:</b> ${Object.entries(d.ruleCounts).map(([k,v])=>`${escapeHtml(k)}: ${Number(v).toLocaleString('es-CL')}`).join(' · ')}</div>`:''}
         ${Array.isArray(d.samples)&&d.samples.length?`<div style="margin-top:7px"><b>Muestras de filas:</b>${d.samples.slice(0,12).map(s=>`<div>Fila ${s.row} · Campo ${escapeHtml(s.field||'—')} · ${escapeHtml(s.reason||s.code||'')}</div>`).join('')}</div>`:''}
         ${(d.rowsDiscarded||0)>0&&d.id?`<div style="margin-top:8px"><button type="button" class="secondary" onclick="descargarErroresHistoricos('${encodeURIComponent(d.id)}')">Descargar Excel errores</button></div>`:''}
@@ -2715,7 +2716,7 @@ function histDiagFromServer(source,fileName,d){
     sheet:d?.sheet||null,reason:d?.reason||'Procesando archivo...',
     log:Array.isArray(d?.log)?d.log.map(x=>({at:x.at?new Date(x.at).toLocaleString('es-CL'):new Date().toLocaleString('es-CL'),msg:x.msg||''})):[],
     ruleCounts:d?.ruleCounts||{},samples:d?.samples||[],
-    durationMs:Number(d?.durationMs||0),memoryMb:Number(d?.memoryMb||0),md5:d?.md5||null,fromCache:d?.fromCache===true
+    durationMs:Number(d?.durationMs||0),memoryMb:Number(d?.memoryMb||0),md5:d?.md5||null,fromCache:d?.fromCache===true,tamConsolidation:d?.tamConsolidation||null
   };
   return diag;
 }
