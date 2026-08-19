@@ -286,11 +286,11 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v3.4.1</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v3.4.2</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
     <div id="opDateControl" class="pill" style="margin:0">Operación de hoy · <b id="scopeFechaLabel">—</b><input id="scopeFecha" type="hidden"></div>
-    <span id="appVersion" class="pill">v3.4.1</span><span id="connPill" class="pill">Conectando…</span>
+    <span id="appVersion" class="pill">v3.4.2</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
 <div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
@@ -2324,7 +2324,18 @@ function histFileStatus(source,text,kind=''){const el=document.getElementById('h
 function histDropSetup(source){
   const drop=document.getElementById('drop_'+source),input=document.getElementById('histFiles_'+source);
   document.querySelector(`.hist-file-btn[data-source="${source}"]`)?.addEventListener('click',()=>input?.click());
-  input?.addEventListener('change',async e=>{const files=[...(e.target.files||[])];e.target.value='';if(files.length)await procesarArchivosHistoricos(source,files);});
+  input?.addEventListener('change',async e=>{
+    const files=[...(e.target.files||[])];
+    e.target.value='';
+    if(!files.length)return;
+    console.log('[CCO][TRAZABILIDAD] Archivos seleccionados',source,files.map(f=>f.name));
+    histFileStatus(source,`Leyendo ${files.length} archivo(s)...`,'busy');
+    try{await procesarArchivosHistoricos(source,files);}
+    catch(err){
+      console.error('[CCO][TRAZABILIDAD][CARGA]',err);
+      histFileStatus(source,'El archivo no pudo ser procesado. Revise formato, estructura o contenido.','err');
+    }
+  });
   if(!drop)return;
   ['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('dragover');}));
   ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('dragover');}));
@@ -2338,7 +2349,7 @@ async function histProcessWorkbook(source,file,wb,replaceFirst){
   const det=histDetectSheetAndHeader(wb,source),ws=wb.Sheets[det.sheetName],range=XLSX.utils.decode_range(ws['!ref']||'A1:A1');
   const matrixHeader=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,range:{s:{r:det.headerRow,c:range.s.c},e:{r:det.headerRow,c:range.e.c}},raw:false})[0]||[];
   const headers=matrixHeader.map((x,i)=>String(x??'').trim()||`col_${i+1}`);
-  const CHUNK=3000;let sent=0,stored=0,rejected=0,ignored=0,duplicates=0,firstChunk=true;
+  const CHUNK=source==='status'?1200:2500;let sent=0,stored=0,rejected=0,ignored=0,duplicates=0,firstChunk=true;
   for(let start=det.headerRow+1;start<=range.e.r;start+=CHUNK){
     const end=Math.min(range.e.r,start+CHUNK-1);
     const rows=XLSX.utils.sheet_to_json(ws,{header:headers,defval:null,range:{s:{r:start,c:range.s.c},e:{r:end,c:range.e.c}},raw:false});
@@ -2388,7 +2399,14 @@ async function procesarArchivosHistoricos(source,files){
   if(totals.pdf)parts.push(`${totals.pdf} PDF solo lectura`);
   if(errors.length)parts.push(`ERROR: ${errors.join(' | ')}`);
   histFileStatus(source,parts.join(' · '),errors.length?'err':'ok');
-  await cargarCatalogoHistorico();renderHistPeriodControls(true);await cargarHistorico();
+  try{
+    await cargarCatalogoHistorico();
+    renderHistPeriodControls(true);
+    await cargarHistorico();
+  }catch(uiErr){
+    console.error('[CCO][TRAZABILIDAD][REFRESH]',uiErr);
+    histFileStatus(source,parts.join(' · ')+' · Archivo procesado; no fue posible refrescar el dashboard automáticamente.','err');
+  }
 }
 function histDateFmt(d){return d?String(d).slice(0,10):'—';}
 async function cargarCatalogoHistorico(){
@@ -2450,6 +2468,35 @@ function poblarFiltrosHistoricos(){
     opSel.value=ops.some(o=>o.key===currentOp)?currentOp:'';
   }
 }
+
+function dateKeyLocal(value){
+  const d=value instanceof Date?value:new Date(value);
+  if(!d || Number.isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function isoWeekNumber(value){
+  const d=value instanceof Date?new Date(value):new Date(value);
+  if(Number.isNaN(d.getTime())) return null;
+  const x=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
+  const day=x.getUTCDay()||7;
+  x.setUTCDate(x.getUTCDate()+4-day);
+  const yearStart=new Date(Date.UTC(x.getUTCFullYear(),0,1));
+  return Math.ceil((((x-yearStart)/86400000)+1)/7);
+}
+function isoWeekStart(year,week){
+  const jan4=new Date(year,0,4,12,0,0);
+  const dow=jan4.getDay()||7;
+  const monday=new Date(jan4);
+  monday.setDate(jan4.getDate()-dow+1+(Number(week)-1)*7);
+  monday.setHours(12,0,0,0);
+  return monday;
+}
+function isoWeekEnd(year,week){
+  const d=isoWeekStart(year,week);
+  d.setDate(d.getDate()+6);
+  return d;
+}
+
 function histPeriodRange(){
   const type=document.getElementById('histPeriodoTipo')?.value||'week',today=new Date(),min=histCatalogo.minDate||dateKeyLocal(today),max=histCatalogo.maxDate||dateKeyLocal(today);
   const q=id=>document.getElementById(id)?.value||'';
