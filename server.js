@@ -1643,7 +1643,7 @@ function etlRecordQuality(rec){
 }
 function etlNormalizeRow(source,row,archivo,rowNumber,diag,statusAccumulator=null){
   const r=normalizeRows([row])[0]||{};
-  const base={source,archivo,rowIndex:rowNumber,fecha:null,planta:'',zona:'',operadorId:'',operadorNombre:'',operadorKey:'',camion:'',turnoMin:null,citacionMin:null,loginMin:null,asignacionMin:null,primeraCargaMin:null,tamIngresoMin:null,tamSalidaMin:null,quality:'completo',qualityIssues:[]};
+  const base={source,archivo,rowIndex:rowNumber,fecha:null,planta:'',zona:'',operadorId:'',operadorNombre:'',operadorKey:'',camion:'',turnoMin:null,citacionMin:null,loginMin:null,asignacionMin:null,primeraCargaMin:null,tamIngresoMin:null,tamSalidaMin:null,tamSindicato:'',tamSubdivision:'',tamJefatura:'',quality:'completo',qualityIssues:[]};
 
   if(source==='turnos'){
     const id=histPick(r,HIST_FIELD.turnos.operatorId),name=safeText(histPick(r,HIST_FIELD.turnos.operatorName)),key=histOperatorKey(id,name);
@@ -1674,14 +1674,17 @@ function etlNormalizeRow(source,row,archivo,rowNumber,diag,statusAccumulator=nul
 
 
   if(source==='tam'){
-    // CRUCE TAM: ID de columna A + Fecha.
-    // No se utiliza Nombre Jefe ni Ubicación para identificar operador/planta.
+    // Archivo real probado: título fila 1, encabezado fila 2.
+    // CRUCE EXCLUSIVO: ID de columna A + Fecha.
     const id=histPick(r,HIST_FIELD.tam.operatorId);
+    const name=safeText(histPick(r,HIST_FIELD.tam.operatorName));
     const operadorId=normalizeId(id);
-    const key=histOperatorKey(id,'');
+    const key=histOperatorKey(id,name);
     const fecha=parseDateKey(histPick(r,HIST_FIELD.tam.date));
-    const ingreso=histTime(histPick(r,HIST_FIELD.tam.in));
-    const salida=histTime(histPick(r,HIST_FIELD.tam.out));
+    const rawIngreso=histPick(r,HIST_FIELD.tam.in);
+    const rawSalida=histPick(r,HIST_FIELD.tam.out);
+    const ingreso=histTime(rawIngreso);
+    const salida=histTime(rawSalida);
 
     if(!key){
       etlReason(diag,rowNumber,'TAM_ID_COLUMNA_A_VACIO','ID','La columna A (ID) está vacía o no es normalizable.','rejected');
@@ -1692,31 +1695,39 @@ function etlNormalizeRow(source,row,archivo,rowNumber,diag,statusAccumulator=nul
       return [];
     }
 
-    const rec={...base,fecha,operadorId,operadorNombre:'',operadorKey:key,tamIngresoMin:ingreso,tamSalidaMin:salida};
+    const rec={
+      ...base,fecha,operadorId,operadorNombre:name,operadorKey:key,
+      tamIngresoMin:ingreso,tamSalidaMin:salida,
+      tamSindicato:safeText(histPick(r,HIST_FIELD.tam.sindicato)),
+      tamSubdivision:safeText(histPick(r,HIST_FIELD.tam.subdivision)),
+      tamJefatura:safeText(histPick(r,HIST_FIELD.tam.jefe))
+    };
 
-    const rawIngreso=histPick(r,HIST_FIELD.tam.in);
-    const rawSalida=histPick(r,HIST_FIELD.tam.out);
+    // Celda vacía NO es error de parser. Se consolida por ID + Fecha.
+    if(ingreso===null && rawIngreso!==null && rawIngreso!==undefined && String(rawIngreso).trim()!==''){
+      rec.quality='parcial';
+      rec.qualityIssues.push('TAM_INGRESO_NO_RECONOCIBLE');
+      etlReason(
+        diag,rowNumber,'TAM_INGRESO_NO_RECONOCIBLE','A.Hora Inicio',
+        `Valor presente pero no interpretable (${typeof rawIngreso}): ${String(rawIngreso).slice(0,40)}`,
+        'partial'
+      );
+    }else if(ingreso===null){
+      rec.qualityIssues.push('TAM_INGRESO_AUSENTE_EN_FILA');
+    }
 
-    if(ingreso===null){
+    if(salida===null && rawSalida!==null && rawSalida!==undefined && String(rawSalida).trim()!==''){
       rec.quality='parcial';
-      // Celda vacía no es error de parser: TAM puede traer marcajes de salida
-      // separados. La consolidación ID + Fecha recuperará el ingreso desde
-      // otra fila del mismo operador/día cuando exista.
-      if(rawIngreso===null||rawIngreso===undefined||String(rawIngreso).trim()===''){
-        rec.qualityIssues.push('TAM_INGRESO_AUSENTE_EN_FILA');
-      }else{
-        rec.qualityIssues.push('TAM_INGRESO_NO_RECONOCIBLE');
-        etlReason(diag,rowNumber,'TAM_INGRESO_NO_RECONOCIBLE','A.Hora Inicio','La celda contiene un valor, pero no pudo interpretarse como hora TAM.','partial');
-      }
+      rec.qualityIssues.push('TAM_SALIDA_NO_RECONOCIBLE');
+      etlReason(
+        diag,rowNumber,'TAM_SALIDA_NO_RECONOCIBLE','A. Hora Fin',
+        `Valor presente pero no interpretable (${typeof rawSalida}): ${String(rawSalida).slice(0,40)}`,
+        'partial'
+      );
+    }else if(salida===null){
+      rec.qualityIssues.push('TAM_SALIDA_AUSENTE_EN_FILA');
     }
-    if(salida===null){
-      rec.quality='parcial';
-      if(rawSalida===null||rawSalida===undefined||String(rawSalida).trim()==='')rec.qualityIssues.push('TAM_SALIDA_AUSENTE_EN_FILA');
-      else{
-        rec.qualityIssues.push('TAM_SALIDA_NO_RECONOCIBLE');
-        etlReason(diag,rowNumber,'TAM_SALIDA_NO_RECONOCIBLE','A. Hora Fin','La celda contiene un valor, pero no pudo interpretarse como hora TAM.','partial');
-      }
-    }
+
     return [rec];
   }
 
@@ -1791,7 +1802,7 @@ function summarizeTamConsolidation(records,diag){
     operatorDaysWithoutIngreso:missingIngreso,
     operatorDaysWithoutSalida:missingSalida
   };
-  etlLog(diag,`TAM consolidado por ID + Fecha · ${groups.size.toLocaleString('es-CL')} operador/día · ${recovered.toLocaleString('es-CL')} filas con ingreso vacío recuperadas desde otra fila del mismo día · ${missingIngreso.toLocaleString('es-CL')} operador/día sin ingreso TAM.`);
+  etlLog(diag,`TAM consolidado por ID columna A + Fecha · ${groups.size.toLocaleString('es-CL')} operador/día · ${recovered.toLocaleString('es-CL')} filas con ingreso vacío recuperadas · ${missingIngreso.toLocaleString('es-CL')} operador/día realmente sin ingreso TAM · ${missingSalida.toLocaleString('es-CL')} sin salida TAM.`);
 }
 
 function etlDedupeKey(r){
@@ -1838,7 +1849,7 @@ async function etlProcessXlsx(filePath,source,archivo,job,diag){
           selected=true;diag.sheet=ws.name;diag.headerRow=bestHeader.rowNumber;
           diag.columns=bestHeader.values.map(v=>safeText(v)).filter(Boolean);diag.columnCount=diag.columns.length;
           if(source==='tam' && normalizeKey(bestHeader.values?.[0])!=='id'){
-            throw new Error('Marcaje TAM inválido: la columna A debe corresponder a ID.');
+            throw new Error(`Marcaje TAM inválido: el encabezado detectado en fila ${bestHeader.rowNumber} no tiene ID en la columna A.`);
           }
           diag.missing=etlMissingHeaderGroups(bestHeader,source);headers=etlHeaders(bestHeader.values);
           etlLog(diag,`Hoja principal detectada: ${ws.name} · encabezado fila ${diag.headerRow}.`);
@@ -2095,11 +2106,16 @@ const HIST_FIELD = {
     ticket:['n_de_tiquete','n° de tiquete','numero_tiquete','número de tiquete'],
   },
   tam: {
-    // Regla corporativa: el identificador es la columna A "ID".
+    // Esquema real Marcaje TAM. La clave de cruce sigue siendo ID columna A + Fecha.
     operatorId:['id'],
+    operatorName:['nombre'],
+    sindicato:['sindicato'],
+    subdivision:['subdivision','subdivisión'],
+    jefe:['nombre jefe','jefatura','nombre jefatura'],
     date:['fecha'],
-    in:['a.hora inicio','a hora inicio','a_hora_inicio'],
-    out:['a. hora fin','a hora fin','a_hora_fin'],
+    endDate:['fecha fin'],
+    in:['a.hora inicio','a hora inicio','a_hora_inicio','inicio'],
+    out:['a. hora fin','a hora fin','a_hora_fin','fin'],
   }
 };
 
@@ -3304,7 +3320,7 @@ app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 if (require.main === module && process.env.CCO_TEST_MODE !== '1') {
   server.listen(PORT, () => {
-    console.log(`[CCO][startup] CCO Intelligence v4.1.1 activo en puerto ${PORT}`);
+    console.log(`[CCO][startup] CCO Intelligence v4.1.2 activo en puerto ${PORT}`);
     console.log(`[CCO][startup] Diccionario plantas: ${PLANT_DICTIONARY.plants.length} plantas, ${PLANT_DICTIONARY_LOOKUP.size} alias resolubles, ${Object.keys(PLANT_DICTIONARY.conflicts||{}).length} alias ambiguos`);
     if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producción.');
   });
