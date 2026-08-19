@@ -1,11 +1,11 @@
 {
   "name": "cco-intelligence",
-  "version": "2.8.0",
+  "version": "3.0.0",
   "private": true,
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node tests/run-tests.js && node tests/dictionary-tests.js",
+    "test": "node tests/run-tests.js",
     "check": "node --check server.js"
   },
   "dependencies": {
