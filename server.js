@@ -2387,8 +2387,8 @@ function histCfg(query={}){
     sourceStart:String(query.sourceStart||'logeo')==='citacion'?'citacion':'logeo',
     tolTurnCitation:num(query.tolTurnCitation,30,0,120),
     tolAssignment:num(query.tolAssignment,30,0,180),
-    tolTurn:num(query.tolTurn,10,0,120),
-    tolCitation:num(query.tolCitation,10,0,120),
+    tolTurn:num(query.tolTurn,20,0,120),
+    tolCitation:num(query.tolCitation,20,0,120),
     atrasoLeve:num(query.atrasoLeve,10,1,120),
     atrasoModerado:num(query.atrasoModerado,20,2,180),
   };
@@ -2414,18 +2414,18 @@ function histMetrics(rows,cfg){
   let tvcN=0,tvcOk=0,tvaN=0,tvaOk=0,atN=0,atOk=0,acN=0,acOk=0;
   const dead=[],delayCit=[],delayTurn=[],tamVsTurno=[],tamVsLogeo=[],tamVsAsignacion=[];
   for(const r of rows){
-    if(r.turnoMin!==null&&r.citacionMin!==null){tvcN++;const d=histMinutesDiff(r.citacionMin,r.turnoMin);if(d!==null&&Math.abs(d)<=cfg.tolTurnCitation)tvcOk++;}
-    if(r.turnoMin!==null&&r.asignacionMin!==null){tvaN++;const d=histMinutesDiff(r.asignacionMin,r.turnoMin);if(d!==null&&Math.abs(d)<=cfg.tolAssignment)tvaOk++;}
-    if(r.turnoMin!==null&&r.loginMin!==null){atN++;const d=histMinutesDiff(r.loginMin,r.turnoMin);if(d!==null&&Math.abs(d)<=cfg.tolTurn)atOk++;if(d!==null)delayTurn.push(Math.max(0,d));}
-    if(r.citacionMin!==null&&r.loginMin!==null){acN++;const d=histMinutesDiff(r.loginMin,r.citacionMin);if(d!==null&&Math.abs(d)<=cfg.tolCitation)acOk++;if(d!==null)delayCit.push(Math.max(0,d));}
+    if(r.turnoMin!==null&&r.citacionMin!==null){tvcN++;const d=histMinutesDiff(r.citacionMin,r.turnoMin);if(d!==null&&d>=-cfg.tolTurnCitation&&d<=cfg.tolTurnCitation)tvcOk++;}
+    if(r.turnoMin!==null&&r.asignacionMin!==null){tvaN++;const d=histMinutesDiff(r.asignacionMin,r.turnoMin);if(d!==null&&d>=0&&d<=cfg.tolAssignment)tvaOk++;}
+    if(r.turnoMin!==null&&r.loginMin!==null){atN++;const d=histMinutesDiff(r.loginMin,r.turnoMin);if(d!==null&&d>=0&&d<=cfg.tolTurn)atOk++;if(d!==null&&d>=0)delayTurn.push(d);}
+    if(r.citacionMin!==null&&r.loginMin!==null){acN++;const d=histMinutesDiff(r.loginMin,r.citacionMin);if(d!==null&&d>=0&&d<=cfg.tolCitation)acOk++;if(d!==null&&d>=0)delayCit.push(d);}
     const start=cfg.sourceStart==='citacion'?r.citacionMin:r.loginMin;
-    if(start!==null&&r.asignacionMin!==null){const d=histMinutesDiff(r.asignacionMin,start);if(d!==null&&d>=0&&d<=720)dead.push(d);}
+    if(start!==null&&r.asignacionMin!==null){const d=histMinutesDiff(r.asignacionMin,start);if(d!==null&&d>=0&&d<=720){dead.push(d);}else if(d!==null&&d>720){console.warn(`[histMetrics] Tiempo muerto fuera de rango: ${d}min para ${r.operadorId} en ${r.fecha}`);}}
     if(r.tamIngresoMin!==null&&r.turnoMin!==null){const d=histMinutesDiff(r.tamIngresoMin,r.turnoMin);if(d!==null)tamVsTurno.push(d);}
     if(r.tamIngresoMin!==null&&r.loginMin!==null){const d=histMinutesDiff(r.loginMin,r.tamIngresoMin);if(d!==null)tamVsLogeo.push(d);}
     if(r.tamIngresoMin!==null&&r.asignacionMin!==null){const d=histMinutesDiff(r.asignacionMin,r.tamIngresoMin);if(d!==null&&d>=0&&d<=720)tamVsAsignacion.push(d);}
   }
   const values=[histMetricPct(tvcOk,tvcN),histMetricPct(tvaOk,tvaN),histMetricPct(atOk,atN),histMetricPct(acOk,acN)].filter(v=>v!==null);
-  const general=values.length?round1(values.reduce((a,b)=>a+b,0)/values.length):null;
+  const general=values.length>=2?round1(values.reduce((a,b)=>a+b,0)/values.length):null;
   const citLate=delayCit.filter(x=>x>0),turnLate=delayTurn.filter(x=>x>0);
   return {
     turnVsCitation:histMetricPct(tvcOk,tvcN),turnVsCitationN:tvcN,
@@ -2434,8 +2434,8 @@ function histMetrics(rows,cfg){
     adherenciaCitacion:histMetricPct(acOk,acN),adherenciaCitacionN:acN,
     adherenciaGeneral:general,clasificacionGeneral:histClassGeneral(general),
     tiempoMuerto:histStats(dead),
-    atrasoCitacion:{...histStats(delayCit),porcentaje:acN?round1(citLate.length/acN*100):null},
-    atrasoTurno:{...histStats(delayTurn),porcentaje:atN?round1(turnLate.length/atN*100):null},
+    atrasoCitacion:{...histStats(citLate),porcentaje:acN?round1(citLate.length/acN*100):null},
+    atrasoTurno:{...histStats(turnLate),porcentaje:atN?round1(turnLate.length/atN*100):null},
     tamVsTurno:histStats(tamVsTurno),
     tamVsLogeo:histStats(tamVsLogeo),
     tamVsAsignacion:histStats(tamVsAsignacion),
@@ -3399,7 +3399,7 @@ app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 if (require.main === module && process.env.CCO_TEST_MODE !== '1') {
   server.listen(PORT, () => {
-    console.log(`[CCO][startup] CCO Intelligence v4.2.6 activo en puerto ${PORT}`);
+    console.log(`[CCO][startup] CCO Intelligence v4.2.7 activo en puerto ${PORT}`);
     console.log(`[CCO][startup] Diccionario plantas: ${PLANT_DICTIONARY.plants.length} plantas, ${PLANT_DICTIONARY_LOOKUP.size} alias resolubles, ${Object.keys(PLANT_DICTIONARY.conflicts||{}).length} alias ambiguos`);
     if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producción.');
   });
