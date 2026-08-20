@@ -2385,10 +2385,14 @@ function histCfg(query={}){
   const num=(v,d,min=0,max=240)=>{const n=Number(v);return Number.isFinite(n)?Math.max(min,Math.min(max,n)):d;};
   return {
     sourceStart:String(query.sourceStart||'logeo')==='citacion'?'citacion':'logeo',
-    tolTurnCitation:num(query.tolTurnCitation,30,0,120),
-    tolAssignment:num(query.tolAssignment,30,0,180),
-    tolTurn:num(query.tolTurn,20,0,120),
-    tolCitation:num(query.tolCitation,20,0,120),
+    tolTurnCitationBefore:num(query.tolTurnCitationBefore,20,0,120),
+    tolTurnCitationAfter:num(query.tolTurnCitationAfter,40,0,120),
+    tolAssignmentBefore:num(query.tolAssignmentBefore,15,0,180),
+    tolAssignmentAfter:num(query.tolAssignmentAfter,40,0,180),
+    tolTurnBefore:num(query.tolTurnBefore,15,0,120),
+    tolTurnAfter:num(query.tolTurnAfter,40,0,120),
+    tolCitationBefore:num(query.tolCitationBefore,15,0,120),
+    tolCitationAfter:num(query.tolCitationAfter,40,0,120),
     atrasoLeve:num(query.atrasoLeve,10,1,120),
     atrasoModerado:num(query.atrasoModerado,20,2,180),
   };
@@ -2414,10 +2418,10 @@ function histMetrics(rows,cfg){
   let tvcN=0,tvcOk=0,tvaN=0,tvaOk=0,atN=0,atOk=0,acN=0,acOk=0;
   const dead=[],delayCit=[],delayTurn=[],tamVsTurno=[],tamVsLogeo=[],tamVsAsignacion=[];
   for(const r of rows){
-    if(r.turnoMin!==null&&r.citacionMin!==null){tvcN++;const d=histMinutesDiff(r.citacionMin,r.turnoMin);if(d!==null&&d>=-cfg.tolTurnCitation&&d<=cfg.tolTurnCitation)tvcOk++;}
-    if(r.turnoMin!==null&&r.asignacionMin!==null){tvaN++;const d=histMinutesDiff(r.asignacionMin,r.turnoMin);if(d!==null&&d>=0&&d<=cfg.tolAssignment)tvaOk++;}
-    if(r.turnoMin!==null&&r.loginMin!==null){atN++;const d=histMinutesDiff(r.loginMin,r.turnoMin);if(d!==null&&d>=0&&d<=cfg.tolTurn)atOk++;if(d!==null&&d>=0)delayTurn.push(d);}
-    if(r.citacionMin!==null&&r.loginMin!==null){acN++;const d=histMinutesDiff(r.loginMin,r.citacionMin);if(d!==null&&d>=0&&d<=cfg.tolCitation)acOk++;if(d!==null&&d>=0)delayCit.push(d);}
+    if(r.turnoMin!==null&&r.citacionMin!==null){tvcN++;const d=histMinutesDiff(r.citacionMin,r.turnoMin);if(d!==null&&d>=-cfg.tolTurnCitationBefore&&d<=cfg.tolTurnCitationAfter)tvcOk++;}
+    if(r.turnoMin!==null&&r.asignacionMin!==null){tvaN++;const d=histMinutesDiff(r.asignacionMin,r.turnoMin);if(d!==null&&d>=-cfg.tolAssignmentBefore&&d<=cfg.tolAssignmentAfter)tvaOk++;}
+    if(r.turnoMin!==null&&r.loginMin!==null){atN++;const d=histMinutesDiff(r.loginMin,r.turnoMin);if(d!==null&&d>=-cfg.tolTurnBefore&&d<=cfg.tolTurnAfter)atOk++;if(d!==null&&d>0)delayTurn.push(d);}
+    if(r.citacionMin!==null&&r.loginMin!==null){acN++;const d=histMinutesDiff(r.loginMin,r.citacionMin);if(d!==null&&d>=-cfg.tolCitationBefore&&d<=cfg.tolCitationAfter)acOk++;if(d!==null&&d>0)delayCit.push(d);}
     const start=cfg.sourceStart==='citacion'?r.citacionMin:r.loginMin;
     if(start!==null&&r.asignacionMin!==null){const d=histMinutesDiff(r.asignacionMin,start);if(d!==null&&d>=0&&d<=720){dead.push(d);}else if(d!==null&&d>720){console.warn(`[histMetrics] Tiempo muerto fuera de rango: ${d}min para ${r.operadorId} en ${r.fecha}`);}}
     if(r.tamIngresoMin!==null&&r.turnoMin!==null){const d=histMinutesDiff(r.tamIngresoMin,r.turnoMin);if(d!==null)tamVsTurno.push(d);}
@@ -3399,7 +3403,7 @@ app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 if (require.main === module && process.env.CCO_TEST_MODE !== '1') {
   server.listen(PORT, () => {
-    console.log(`[CCO][startup] CCO Intelligence v4.2.7 activo en puerto ${PORT}`);
+    console.log(`[CCO][startup] CCO Intelligence v4.2.8 activo en puerto ${PORT}`);
     console.log(`[CCO][startup] Diccionario plantas: ${PLANT_DICTIONARY.plants.length} plantas, ${PLANT_DICTIONARY_LOOKUP.size} alias resolubles, ${Object.keys(PLANT_DICTIONARY.conflicts||{}).length} alias ambiguos`);
     if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producción.');
   });
