@@ -326,8 +326,8 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
   .hist-two-col .history-table{min-width:820px}
 }
 
-/* ===== v4.2.6 · Ranking por Planta (6 columnas) ya no se desborda sobre Detalle de planta =====
-   v4.2.6: Re-estructurado para tabla con scroll independiente sin overlap.
+/* ===== v4.2.7 · Ranking por Planta (6 columnas) ya no se desborda sobre Detalle de planta =====
+   v4.2.7: Re-estructurado para tabla con scroll independiente sin overlap.
    El contenedor de la tabla obtiene min-width: 0 para permitir shrink en grid,
    y la tabla dentro obtiene overflow-x:auto para scroll independiente.
    El contenedor de detalle usa flex para llenar el espacio restante. */
@@ -388,11 +388,11 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v4.2.6</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v4.2.7</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
     <div id="opDateControl" class="pill" style="margin:0">Operación de hoy · <b id="scopeFechaLabel">—</b><input id="scopeFecha" type="hidden"></div>
-    <span id="appVersion" class="pill">v4.2.6</span><span id="connPill" class="pill">Conectando…</span>
+    <span id="appVersion" class="pill">v4.2.7</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
 <div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
@@ -3283,7 +3283,7 @@ function renderFindings(data){
   document.getElementById('histInsights').innerHTML=(data.findings?.insights||[]).map(x=>`<li>${escapeHtml(x)}</li>`).join('');
   document.getElementById('histAlerts').innerHTML=(data.findings?.alerts||[]).map(x=>`<li>${escapeHtml(x)}</li>`).join('');
 }
-/* ===== v4.2.6 · fix: helpers de fecha/semana ISO ausentes (causaban ReferenceError en initTower, renderDetail y período "Semana") ===== */
+/* ===== v4.2.7 · fix: helpers de fecha/semana ISO ausentes (causaban ReferenceError en initTower, renderDetail y período "Semana") ===== */
 function dateKeyLocal(d){
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
