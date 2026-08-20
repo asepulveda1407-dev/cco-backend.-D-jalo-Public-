@@ -856,6 +856,17 @@ function requireAuth(req, res, next) {
   req.user = user; next();
 }
 
+
+function operationRevisionFingerprint(){
+  const ds=state?.datasets||{};
+  const revPart=['turnos','citaciones','logeo'].map(k=>{
+    const m=ds?.[k]?.metadatos||{};
+    return `${k}:${Number(m.revision||0)}:${Number(m.cantidad||0)}:${safeText(m.cargado_en||'')}`;
+  }).join('|');
+  const plantPart=Object.values(state?.plantas||{}).map(p=>`${safeText(p?.nombre||'')}:${Number(p?._version||1)}:${safeText(p?.actualizado_en||'')}`).sort().join('|');
+  return crypto.createHash('sha1').update(revPart+'#'+plantPart).digest('hex').slice(0,16);
+}
+
 function getDatasetRows(tipo) {
   const rows = state?.datasets?.[tipo]?.datos;
   return Array.isArray(rows) ? rows : [];
@@ -1207,7 +1218,17 @@ app.post('/api/ingesta', requireAuth, (req, res) => {
       fechas_detectadas: dateProfile.fechas,
       fecha_unica: dateProfile.fecha_unica,
     };
-    if (esUltimoLote) emitRealtime('ingesta:actualizada',info,'operacion','ingesta_actualizada',req.user,{tipo});
+    if (esUltimoLote){
+      emitRealtime('ingesta:actualizada',info,'operacion','ingesta_actualizada',req.user,{tipo});
+      emitRealtime('operacion:actualizada',{
+        tipo,
+        revision:operationRevisionFingerprint(),
+        cantidad:combinados.length,
+        subido_por:req.user?.nombre||'Sistema',
+        fecha_unica:dateProfile.fecha_unica,
+        fechas_detectadas:dateProfile.fechas
+      },'operacion','datos_operacionales_actualizados',req.user,{tipo});
+    }
     return res.json({ ok:true, ...info, errores: result.errors.slice(0,5) });
   } catch (err) {
     registrarErrorDetallado({
@@ -1227,6 +1248,22 @@ app.post('/api/ingesta', requireAuth, (req, res) => {
       detalle:err?.message || String(err),
     });
   }
+});
+
+
+app.get('/api/operacion/revision', requireAuth, (req,res)=>{
+  const fecha=safeText(req.query.fecha||req.user?.fecha||'');
+  return res.json({
+    ok:true,
+    fecha,
+    revision:operationRevisionFingerprint(),
+    datasets:{
+      turnos:Number(state.datasets?.turnos?.metadatos?.revision||0),
+      citaciones:Number(state.datasets?.citaciones?.metadatos?.revision||0),
+      logeo:Number(state.datasets?.logeo?.metadatos?.revision||0)
+    },
+    updatedAt:nowIso()
+  });
 });
 
 app.get('/api/ingesta/estado', requireAuth, (req, res) => {
@@ -1289,6 +1326,7 @@ app.put('/api/plantas/:nombre/config', requireAuth, (req, res) => {
   });
   persistState();
   emitRealtime('config:actualizada',p,'configuracion','config_actualizada',req.user,{planta:nombre});
+  emitRealtime('operacion:actualizada',{tipo:'configuracion',revision:operationRevisionFingerprint(),planta:nombre},'operacion','config_operacional_actualizada',req.user,{planta:nombre});
   res.json(p);
 });
 
@@ -1377,7 +1415,7 @@ app.post('/api/flota/ingesta', requireAuth, (req,res)=>{
     const oldByKey=new Map((state.fleet?.datos||[]).map(x=>[x.key,x]));
     const merged=normalized.map(n=>{
       const old=oldByKey.get(n.key);
-      return old?{...n,status:old.status||n.status,workshop:old.workshop||'',responsible:old.responsible||'',eta:old.eta||'',progress:Number(old.progress||0),cause:old.cause||'',observation:old.observation||n.observation||'',history:Array.isArray(old.history)?old.history:[],version:Number(old.version||1)}:{...n,version:Number(n.version||1)};
+      return old?{...n,status:old.status||n.status,workshop:old.workshop||'',responsible:old.responsible||'',eta:old.eta||'',progress:Number(old.progress||0),cause:old.cause||'',observation:old.observation||n.observation||'',history:Array.isArray(old.history)?old.history:[],version:Number(old.version||1),lastRelocation:old.lastRelocation||null}:{...n,version:Number(n.version||1),lastRelocation:null};
     });
     state.fleet={datos:merged,revision:Number(state.fleet?.revision||0)+1,metadatos:{archivo:safeText(req.body?.archivo||'Flota'),hoja:safeText(req.body?.hoja||''),cargado_en:nowIso(),usuario:req.user.nombre,filas_recibidas:rows.length,equipos_validos:merged.length}};
     persistState();emitRealtime('flota:actualizada',{revision:state.fleet.revision,cantidad:merged.length,metadatos:state.fleet.metadatos},'flota','flota_actualizada',req.user);
@@ -1412,6 +1450,14 @@ app.patch('/api/flota/:key', requireAuth, (req,res)=>{
     }
     const changes=allowed.filter(k=>String(before[k]??'')!==String(next[k]??''));
     next.version=changes.length?currentVersion+1:currentVersion;
+    if(changes.includes('plant')){
+      next.lastRelocation={
+        at:nowIso(),
+        from:safeText(before.plant||'Sin planta asignada'),
+        to:safeText(next.plant||'Sin planta asignada'),
+        user:req.user?.nombre||'Sistema'
+      };
+    }
     if(changes.length){
       next.history=Array.isArray(before.history)?[...before.history]:[];
       next.history.push({timestamp:nowIso(),usuario:req.user.nombre,cambios:changes.reduce((o,k)=>(o[k]={antes:before[k]??'',despues:next[k]??''},o),{})});
@@ -3469,7 +3515,7 @@ app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 if (require.main === module && process.env.CCO_TEST_MODE !== '1') {
   server.listen(PORT, () => {
-    console.log(`[CCO][startup] CCO Intelligence v4.3.0 activo en puerto ${PORT}`);
+    console.log(`[CCO][startup] CCO Intelligence v4.3.1 activo en puerto ${PORT}`);
     console.log(`[CCO][startup] Diccionario plantas: ${PLANT_DICTIONARY.plants.length} plantas, ${PLANT_DICTIONARY_LOOKUP.size} alias resolubles, ${Object.keys(PLANT_DICTIONARY.conflicts||{}).length} alias ambiguos`);
     if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producción.');
   });
