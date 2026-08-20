@@ -326,6 +326,18 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
   .hist-two-col .history-table{min-width:820px}
 }
 
+/* ===== v4.2.6 · Ranking por Planta (6 columnas) ya no se desborda sobre Detalle de planta =====
+   v4.2.6: Re-estructurado para tabla con scroll independiente sin overlap.
+   El contenedor de la tabla obtiene min-width: 0 para permitir shrink en grid,
+   y la tabla dentro obtiene overflow-x:auto para scroll independiente.
+   El contenedor de detalle usa flex para llenar el espacio restante. */
+.hist-plant-rank-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
+.hist-plant-rank-table-container{min-width:0;overflow:hidden;border-radius:10px}
+.hist-plant-rank-table-container .history-table-wrap{overflow-x:auto!important}
+.hist-plant-detail-container{display:flex;flex-direction:column;gap:8px}
+.hist-plant-detail-container label{margin:0;font-size:10px;color:#60778c;font-weight:600}
+.hist-plant-detail-container select{padding:6px 8px;border:1px solid #cddff0;border-radius:6px;background:white}
+
 
 /* ===== v4.2.3 · filtro semanal independiente tabla detallada ===== */
 .hist-detail-header{align-items:end!important;gap:12px;flex-wrap:wrap}
@@ -376,11 +388,11 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v4.2.4</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v4.2.6</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
     <div id="opDateControl" class="pill" style="margin:0">Operación de hoy · <b id="scopeFechaLabel">—</b><input id="scopeFecha" type="hidden"></div>
-    <span id="appVersion" class="pill">v4.2.4</span><span id="connPill" class="pill">Conectando…</span>
+    <span id="appVersion" class="pill">v4.2.6</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
 <div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
@@ -628,9 +640,9 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
     </div>
 
     <div class="rep-header"><span class="rep-titulo">Ranking por Planta</span></div>
-    <div class="hist-two-col">
-      <div class="history-table-wrap"><table class="history-table"><thead><tr><th>Planta</th><th>Zona</th><th>Adherencia principal</th><th>Turno</th><th>Citación</th><th>Tiempo muerto</th></tr></thead><tbody id="histPlantRanking"></tbody></table></div>
-      <div>
+    <div class="hist-two-col hist-plant-rank-row">
+      <div class="hist-plant-rank-table-container"><div class="history-table-wrap hist-plant-rank-wrap"><table class="history-table"><thead><tr><th>Planta</th><th>Zona</th><th>Adherencia principal</th><th>Turno</th><th>Citación</th><th>Tiempo muerto</th></tr></thead><tbody id="histPlantRanking"></tbody></table></div></div>
+      <div class="hist-plant-detail-container">
         <label>Detalle de planta</label><select id="histPlantDetail"><option value="">Seleccione planta</option></select>
         <div class="hist-plant-detail" id="histPlantDetailContent"><div class="history-empty">Seleccione una planta.</div></div>
       </div>
@@ -654,7 +666,7 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
     </div>
     <div class="history-table-wrap hist-detail-table"><table class="history-table">
       <thead><tr><th>Fecha</th><th>Zona</th><th>Planta</th><th>Operador</th><th>Turno</th><th>Citación</th><th>Ingreso TAM</th><th>Logeo</th><th>1ª Asignación</th><th>1ª Carga</th><th>Salida TAM</th><th>Cruce</th></tr></thead>
-      <tbody id="histDetailBody"><tr><td colspan="9" class="history-empty">Cargue archivos históricos para comenzar.</td></tr></tbody>
+      <tbody id="histDetailBody"><tr><td colspan="12" class="history-empty">Cargue archivos históricos para comenzar.</td></tr></tbody>
     </table></div>
   </div>
 
@@ -2393,9 +2405,6 @@ async function procesarTowerFleetFile(file){
       const ws=wb.Sheets[sheet];
       const part=XLSX.utils.sheet_to_json(ws,{defval:null,range:header});
       if(!part.length)continue;
-      // v3.3.2: en el archivo corporativo de Flota, la planta asignada del camión
-      // está en la columna I (índice 8). La conservamos explícitamente para que
-      // ninguna heurística por encabezado/código pueda reasignar el mixer a otra planta.
       const matrix=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:false});
       part.forEach((r,i)=>{
         const excelRow=header+1+i;
@@ -2405,12 +2414,17 @@ async function procesarTowerFleetFile(file){
       usados.push(sheet);detalle.push(`${sheet}: ${part.length}`);
     }
     if(!rows.length)throw new Error('No se encontraron registros en Flota/Terceros');
-    towerSetStatus(`${rows.length} filas detectadas · ${detalle.join(' · ')}. Validando...`);
+    towerSetStatus(`${rows.length} filas detectadas · ${detalle.join(' · ')}. Enviando al servidor...`);
     const r=await fetch(API+'/api/flota/ingesta',{method:'POST',headers:authHeaders(),body:JSON.stringify({datos:rows,archivo:file.name,hoja:usados.join(' + ')})});
     const data=await leerRespuestaApiSegura(r);
-    towerSetStatus(`${data.cantidad} equipos consolidados · ${usados.join(' + ')}`,'ok');
+    if(!data.ok){throw new Error(data.error||'No se pudo procesar el archivo');}
+    towerSetStatus(`${data.cantidad||data.equipos||rows.length} equipos consolidados · ${usados.join(' + ')}`,'ok');
     await cargarTorreFlota();
-  }catch(err){towerSetStatus('Archivo de flota inválido: '+(err.message||err),'err');}
+  }catch(err){
+    const msg='Archivo de flota inválido: '+(err.message||String(err));
+    console.error('[procesarTowerFleetFile]',err);
+    towerSetStatus(msg,'err');
+  }
 }
 async function actualizarTowerEquipo(key,patch){const r=await fetch(API+'/api/flota/'+encodeURIComponent(key),{method:'PATCH',headers:authHeaders(),body:JSON.stringify(patch)});const data=await leerRespuestaApiSegura(r);const i=towerFleet.findIndex(x=>x.key===key);if(i>=0)towerFleet[i]=data.equipo;towerRevision=Number(data.revision||towerRevision);document.getElementById('towerRevision').textContent=`Rev. ${towerRevision} · ${towerFleet.length} equipos`;return data.equipo;}
 function abrirTowerEditor(){const t=towerSelected();if(!t)return;document.getElementById('towerEditTitle').textContent=`Editar · ${t.id||t.number}`;towerEditStatus.value=t.status||'stale';const plants=[...new Set(towerFleet.map(x=>x.plant).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));towerEditPlant.innerHTML=plants.map(x=>`<option value="${towerEsc(x)}">${towerEsc(x)}</option>`).join('');if(!plants.includes(t.plant))towerEditPlant.insertAdjacentHTML('afterbegin',`<option value="${towerEsc(t.plant)}">${towerEsc(t.plant)}</option>`);towerEditPlant.value=t.plant;towerEditWorkshop.value=t.workshop||'';towerEditResponsible.value=t.responsible||'';towerEditEta.value=(t.eta||'').slice(0,16);towerEditProgress.value=Number(t.progress||0);towerEditCause.value=t.cause||'';towerEditObservation.value=t.observation||'';towerEditMsg.textContent='';towerEditModal.classList.add('open');towerEditModal.setAttribute('aria-hidden','false');}
@@ -3269,6 +3283,30 @@ function renderFindings(data){
   document.getElementById('histInsights').innerHTML=(data.findings?.insights||[]).map(x=>`<li>${escapeHtml(x)}</li>`).join('');
   document.getElementById('histAlerts').innerHTML=(data.findings?.alerts||[]).map(x=>`<li>${escapeHtml(x)}</li>`).join('');
 }
+/* ===== v4.2.6 · fix: helpers de fecha/semana ISO ausentes (causaban ReferenceError en initTower, renderDetail y período "Semana") ===== */
+function dateKeyLocal(d){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function isoWeekNumber(d){
+  const t=new Date(d.getFullYear(),d.getMonth(),d.getDate());
+  t.setDate(t.getDate()+4-(t.getDay()||7));
+  const yearStart=new Date(t.getFullYear(),0,1);
+  return Math.ceil((((t-yearStart)/86400000)+1)/7);
+}
+function isoWeekStart(year,week){
+  const jan4=new Date(year,0,4);
+  const jan4Day=jan4.getDay()||7;
+  const monday=new Date(year,0,4-jan4Day+1);
+  monday.setDate(monday.getDate()+(week-1)*7);
+  return monday;
+}
+function isoWeekEnd(year,week){
+  const s=isoWeekStart(year,week);
+  const e=new Date(s);
+  e.setDate(s.getDate()+6);
+  return e;
+}
+
 let histDetailWeekSelected='';
 function detailWeekKey(fecha){
   if(!fecha)return '';
@@ -3296,20 +3334,36 @@ function syncHistDetailWeekOptions(rows){
   else{histDetailWeekSelected='';sel.value='';}
 }
 function renderDetail(data){
-  const allRows=data.detailed||[];
-  syncHistDetailWeekOptions(allRows);
-  const filtered=histDetailWeekSelected
-    ? allRows.filter(r=>detailWeekKey(r.fecha)===histDetailWeekSelected)
-    : allRows;
-  const rows=filtered.slice(0,500);
-  const totalShown=filtered.length;
-  const globalTotal=Number(data.totalDetailed||allRows.length);
-  document.getElementById('histDetailCount').textContent=histDetailWeekSelected
-    ? `Mostrando ${rows.length.toLocaleString('es-CL')} de ${totalShown.toLocaleString('es-CL')} operador/día en la semana seleccionada`
-    : `Mostrando ${rows.length.toLocaleString('es-CL')} de ${globalTotal.toLocaleString('es-CL')} operador/día`;
-  document.getElementById('histDetailBody').innerHTML=rows.length
-    ? rows.map(r=>`<tr><td>${r.fecha}</td><td>${escapeHtml(r.zona||'')}</td><td>${escapeHtml(r.planta||'')}</td><td><b>${escapeHtml(r.operadorNombre||r.operadorId||'')}</b><div class="small">${escapeHtml(r.operadorId||'')}</div></td><td>${htime(r.turnoMin)}</td><td>${htime(r.citacionMin)}</td><td>${htime(r.tamIngresoMin)}</td><td>${htime(r.loginMin)}</td><td>${htime(r.asignacionMin)}</td><td>${htime(r.primeraCargaMin)}</td><td>${htime(r.tamSalidaMin)}</td><td>${escapeHtml(r.crossLabel||'')}</td></tr>`).join('')
-    : '<tr><td colspan="12" class="history-empty">SIN INFORMACIÓN PARA LA SEMANA SELECCIONADA</td></tr>';
+  try{
+    const allRows=data.detailed||[];
+    syncHistDetailWeekOptions(allRows);
+    const filtered=histDetailWeekSelected
+      ? allRows.filter(r=>detailWeekKey(r.fecha)===histDetailWeekSelected)
+      : allRows;
+    const rows=filtered.slice(0,500);
+    const totalShown=filtered.length;
+    const globalTotal=Number(data.totalDetailed||allRows.length);
+    const countEl=document.getElementById('histDetailCount');
+    const bodyEl=document.getElementById('histDetailBody');
+    if(countEl){
+      countEl.textContent=histDetailWeekSelected
+        ? `Mostrando ${rows.length.toLocaleString('es-CL')} de ${totalShown.toLocaleString('es-CL')} operador/día en la semana seleccionada`
+        : `Mostrando ${rows.length.toLocaleString('es-CL')} de ${globalTotal.toLocaleString('es-CL')} operador/día`;
+    }
+    if(bodyEl){
+      if(rows.length){
+        bodyEl.innerHTML=rows.map(r=>`<tr><td>${r.fecha}</td><td>${escapeHtml(r.zona||'')}</td><td>${escapeHtml(r.planta||'')}</td><td><b>${escapeHtml(r.operadorNombre||r.operadorId||'')}</b><div class="small">${escapeHtml(r.operadorId||'')}</div></td><td>${htime(r.turnoMin)}</td><td>${htime(r.citacionMin)}</td><td>${htime(r.tamIngresoMin)}</td><td>${htime(r.loginMin)}</td><td>${htime(r.asignacionMin)}</td><td>${htime(r.primeraCargaMin)}</td><td>${htime(r.tamSalidaMin)}</td><td>${escapeHtml(r.crossLabel||'')}</td></tr>`).join('');
+      }else{
+        bodyEl.innerHTML=histDetailWeekSelected
+          ? '<tr><td colspan="12" class="history-empty">SIN INFORMACIÓN PARA LA SEMANA SELECCIONADA</td></tr>'
+          : '<tr><td colspan="12" class="history-empty">Cargue archivos históricos para comenzar.</td></tr>';
+      }
+    }
+  }catch(err){
+    console.error('[renderDetail]',err);
+    const bodyEl=document.getElementById('histDetailBody');
+    if(bodyEl)bodyEl.innerHTML='<tr><td colspan="12" class="history-empty">Error renderizando tabla detallada. Recargue la página.</td></tr>';
+  }
 }
 function exportarHistoricoCSV(){
   const baseRows=historicoUltimo?.detailed||[];
