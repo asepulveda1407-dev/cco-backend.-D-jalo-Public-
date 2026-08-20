@@ -290,14 +290,7 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 .hist-diagnostics-body>.rep-meta{margin-bottom:7px}
 
 
-/* ===== v3.9.3 · rankings visibles + semanas disponibles ===== */
-.hist-two-col .history-table{width:100%;table-layout:fixed}
-.hist-two-col .history-table th:nth-child(1),.hist-two-col .history-table td:nth-child(1){width:42px}
-.hist-two-col .history-table th:nth-child(2),.hist-two-col .history-table td:nth-child(2){width:40%}
-.hist-two-col .history-table th:nth-child(3),.hist-two-col .history-table td:nth-child(3){width:24%}
-.hist-two-col .history-table th:nth-child(4),.hist-two-col .history-table td:nth-child(4){width:16%}
-.hist-two-col .history-table th:nth-child(5),.hist-two-col .history-table td:nth-child(5){width:16%}
-.hist-two-col .history-table-wrap{overflow-x:hidden}
+/* v3.9.3 (columnas fijas) reemplazado por v4.2.1 (auto + !important) más abajo; regla eliminada para evitar reglas muertas contradictorias */
 #histPeriodoControls select{min-width:330px;max-width:100%}
 
 
@@ -383,11 +376,11 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v4.2.3</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v4.2.4</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
     <div id="opDateControl" class="pill" style="margin:0">Operación de hoy · <b id="scopeFechaLabel">—</b><input id="scopeFecha" type="hidden"></div>
-    <span id="appVersion" class="pill">v4.2.3</span><span id="connPill" class="pill">Conectando…</span>
+    <span id="appVersion" class="pill">v4.2.4</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
 <div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
@@ -3254,13 +3247,14 @@ function renderRankingOperacional(){
   if(critical)critical.innerHTML=renderAdvancedRankingRows(criticalRows,metric);
 }
 function renderPlantRanking(data){
-  const mode=data.mode||'logeo',field=mode==='citacion'?'adherenciaCitacion':'adherenciaTurno',label=mode==='citacion'?'Adherencia Citación':'Adherencia Turno';
+  const mode=data.mode||'logeo',field=mode==='citacion'?'adherenciaCitacion':'adherenciaTurno';
   const rows=(data.plants||[]).filter(x=>x[field]!==null&&x[field]!==undefined);
-  const table=document.getElementById('histPlantRanking')?.closest('table');
-  if(table)table.querySelector('thead').innerHTML=`<tr><th>Planta</th><th>Zona</th><th>${label}</th><th>Operadores</th></tr>`;
   document.getElementById('histPlantRanking').innerHTML=rows.length
-    ? rows.map(x=>`<tr><td><b>${escapeHtml(x.name)}</b></td><td>${escapeHtml((data.byPlant||[]).find(p=>p.planta===x.name)?.zona||'')}</td><td>${hfmt(x[field],'%')}</td><td>${Number(x.operadores||0).toLocaleString('es-CL')}</td></tr>`).join('')
-    : '<tr><td colspan="4" class="history-empty">No existen cruces suficientes por planta para calcular el ranking en este período.</td></tr>';
+    ? rows.map(x=>{
+        const zona=escapeHtml((data.byPlant||[]).find(p=>p.planta===x.name)?.zona||'');
+        return `<tr><td><b>${escapeHtml(x.name)}</b></td><td>${zona}</td><td>${hfmt(x[field],'%')}</td><td>${hfmt(x.adherenciaTurno,'%')}</td><td>${hfmt(x.adherenciaCitacion,'%')}</td><td>${hfmt(x.tiempoMuerto?.promedio,' min')}</td></tr>`;
+      }).join('')
+    : '<tr><td colspan="6" class="history-empty">No existen cruces suficientes por planta para calcular el ranking en este período.</td></tr>';
   const sel=document.getElementById('histPlantDetail'),current=sel.value;
   sel.innerHTML='<option value="">Seleccione planta</option>'+(data.byPlant||[]).map(x=>`<option value="${escapeHtml(x.planta)}">${escapeHtml(x.planta)}</option>`).join('');
   if([...sel.options].some(o=>o.value===current))sel.value=current;
