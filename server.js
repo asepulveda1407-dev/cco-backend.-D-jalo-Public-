@@ -2704,10 +2704,15 @@ function latestCommonHistoricalDate(){
   return common.at(-1)||null;
 }
 function historicalSourceRanges(){
-  const sets=historicalSourceDateSets(),out={};
-  for(const [source,set] of Object.entries(sets)){
-    const dates=[...set].sort();
-    out[source]={records:(historicalWarehouse.records||[]).filter(r=>(r.source||r.fuente)===source).length,minDate:dates[0]||null,maxDate:dates.at(-1)||null,days:dates.length};
+  const acc={turnos:{records:0,dates:new Set()},citaciones:{records:0,dates:new Set()},status:{records:0,dates:new Set()},tam:{records:0,dates:new Set()}};
+  for(const r of (historicalWarehouse.records||[])){
+    const s=r.source||r.fuente;if(!acc[s])continue;
+    acc[s].records++;if(r.fecha)acc[s].dates.add(r.fecha);
+  }
+  const out={};
+  for(const [source,x] of Object.entries(acc)){
+    const dates=[...x.dates].sort();
+    out[source]={records:x.records,minDate:dates[0]||null,maxDate:dates.at(-1)||null,days:dates.length};
   }
   return out;
 }
@@ -2964,7 +2969,7 @@ app.get('/api/historico/dashboard-enterprise',requireAuth,(req,res)=>{
       metrics,trend,rankings,operatorRanking,advancedRankings,plants,zones,byPlant,heatmap,findings,coverage,integrity,filesUsed,e2eHealth,
       recommendedDate:latestCommonHistoricalDate(),
       sourceRanges:historicalSourceRanges(),
-      detailed:rows.slice(0,5000).map(r=>({...r,crossLabel:histCrossLabel(r)})),totalDetailed:rows.length,
+      detailed:rows.slice(0,2500).map(r=>({...r,crossLabel:histCrossLabel(r)})),totalDetailed:rows.length,
       catalog:{plants:getHistoricalDailyIndex().plants,zones:getHistoricalDailyIndex().zones,operators:getHistoricalDailyIndex().operators},
       audit:{revision:Number(historicalWarehouse?.revision||0),records:(historicalWarehouse?.records||[]).length,sources:Object.keys(HISTORICAL_SOURCES).map(k=>({source:k,...historicalSourceMeta(k)}))}
     });
@@ -3394,7 +3399,7 @@ app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 if (require.main === module && process.env.CCO_TEST_MODE !== '1') {
   server.listen(PORT, () => {
-    console.log(`[CCO][startup] CCO Intelligence v4.2.0 activo en puerto ${PORT}`);
+    console.log(`[CCO][startup] CCO Intelligence v4.2.2 activo en puerto ${PORT}`);
     console.log(`[CCO][startup] Diccionario plantas: ${PLANT_DICTIONARY.plants.length} plantas, ${PLANT_DICTIONARY_LOOKUP.size} alias resolubles, ${Object.keys(PLANT_DICTIONARY.conflicts||{}).length} alias ambiguos`);
     if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producción.');
   });
