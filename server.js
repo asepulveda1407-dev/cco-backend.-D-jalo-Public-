@@ -1827,7 +1827,11 @@ function etlChooseBest(candidates,source){
 async function etlProcessXlsx(filePath,source,archivo,job,diag){
   const validationWatchdog=createValidationWatchdog();
   etlUpdateJob(job,25,'Detectando hoja y encabezado',diag);
-  const existing=new Set((historicalWarehouse.records||[]).filter(r=>r.source===source).map(etlDedupeKey));
+  const existing=new Set(
+    (historicalWarehouse.records||[])
+      .filter(r=>r.source===source && safeText(r.archivo)!==safeText(archivo))
+      .map(etlDedupeKey)
+  );
   const staged=[],partial=[],statusAcc=new Map();
   let selected=false;
   const reader=new ExcelJS.stream.xlsx.WorkbookReader(filePath,{entries:'emit',sharedStrings:'cache',styles:'ignore',hyperlinks:'ignore',worksheets:'emit'});
@@ -1881,8 +1885,9 @@ async function etlProcessXlsx(filePath,source,archivo,job,diag){
       }
       if(diag.rowsFound%HIST_BATCH_SIZE===0){
         diag.blocksProcessed++;
+        diag.rowsStored=source==='status'?statusAcc.size:staged.length;
         const p=Math.min(94,35+Math.floor(Math.log10(Math.max(diag.rowsFound,10))*12));
-        etlUpdateJob(job,p,`Procesando bloque ${diag.blocksProcessed.toLocaleString('es-CL')} · ${diag.rowsFound.toLocaleString('es-CL')} filas`,diag);
+        etlUpdateJob(job,p,`Procesando bloque ${diag.blocksProcessed.toLocaleString('es-CL')} · ${diag.rowsFound.toLocaleString('es-CL')} filas · ${diag.rowsStored.toLocaleString('es-CL')} válidos`,diag);
         await yieldEventLoop();
       }
     }
@@ -1899,7 +1904,7 @@ async function etlProcessXlsx(filePath,source,archivo,job,diag){
   }
   if(source==='tam')summarizeTamConsolidation(staged,diag);
   diag.rowsStored=staged.length;
-  historicalWarehouse.records.push(...staged);
+  replaceHistoricalFileRecords(source,archivo,staged,diag);
   if(partial.length){
     if(!Array.isArray(historicalWarehouse.partialRecords))historicalWarehouse.partialRecords=[];
     historicalWarehouse.partialRecords.push(...partial.slice(0,5000));
@@ -1939,7 +1944,11 @@ async function etlProcessNonXlsx(filePath,ext,source,archivo,job,diag){
   diag.sheet=best.sheetName;diag.headerRow=best.bestHeader.rowNumber;diag.columns=best.bestHeader.values.map(v=>safeText(v)).filter(Boolean);diag.columnCount=diag.columns.length;diag.missing=etlMissingHeaderGroups(best.bestHeader,source);
   if(source==='tam' && normalizeKey(best.bestHeader.values?.[0])!=='id')throw new Error('Marcaje TAM inválido: la columna A debe corresponder a ID.');
   etlUpdateJob(job,55,'Procesando registros',diag);
-  const headers=etlHeaders(best.bestHeader.values),existing=new Set((historicalWarehouse.records||[]).filter(r=>r.source===source).map(etlDedupeKey)),staged=[],statusAcc=new Map();
+  const headers=etlHeaders(best.bestHeader.values),existing=new Set(
+    (historicalWarehouse.records||[])
+      .filter(r=>r.source===source && safeText(r.archivo)!==safeText(archivo))
+      .map(etlDedupeKey)
+  ),staged=[],statusAcc=new Map();
   const matrix=best.matrix;
   for(let i=diag.headerRow;i<matrix.length;i++){
     const vals=matrix[i]||[];diag.rowsFound++;
@@ -1948,14 +1957,26 @@ async function etlProcessNonXlsx(filePath,ext,source,archivo,job,diag){
     for(const rec of recs){const dk=etlDedupeKey(rec);if(existing.has(dk)){diag.duplicates++;continue;}existing.add(dk);if(rec.quality==='parcial')diag.rowsPartial++;staged.push(rec);}
     if(diag.rowsFound%HIST_BATCH_SIZE===0){
       diag.blocksProcessed++;
+      diag.rowsStored=source==='status'?statusAcc.size:staged.length;
       const p=Math.min(94,55+Math.floor(Math.log10(Math.max(diag.rowsFound,10))*10));
-      etlUpdateJob(job,p,`Procesando bloque ${diag.blocksProcessed.toLocaleString('es-CL')} · ${diag.rowsFound.toLocaleString('es-CL')} filas`,diag);
+      etlUpdateJob(job,p,`Procesando bloque ${diag.blocksProcessed.toLocaleString('es-CL')} · ${diag.rowsFound.toLocaleString('es-CL')} filas · ${diag.rowsStored.toLocaleString('es-CL')} válidos`,diag);
       await yieldEventLoop();
     }
   }
   if(source==='status')for(const rec of statusAcc.values()){const dk=etlDedupeKey(rec);if(existing.has(dk)){diag.duplicates++;continue;}existing.add(dk);staged.push(rec);}
-  diag.rowsStored=staged.length;historicalWarehouse.records.push(...staged);return staged;
+  if(source==='tam')summarizeTamConsolidation(staged,diag);
+  diag.rowsStored=staged.length;replaceHistoricalFileRecords(source,archivo,staged,diag);return staged;
 }
+
+function replaceHistoricalFileRecords(source,archivo,newRecords,diag){
+  const before=historicalWarehouse.records||[];
+  const old=before.filter(r=>r.source===source && safeText(r.archivo)===safeText(archivo));
+  const keep=before.filter(r=>!(r.source===source && safeText(r.archivo)===safeText(archivo)));
+  historicalWarehouse.records=[...keep,...newRecords];
+  diag.replacedPreviousRecords=old.length;
+  etlLog(diag,`Reproceso controlado: ${old.length.toLocaleString('es-CL')} registros anteriores del mismo archivo fueron reemplazados por ${newRecords.length.toLocaleString('es-CL')} registros nuevos.`);
+}
+
 function etlRefreshSourceMeta(source,archivo,diag,user){
   const rows=(historicalWarehouse.records||[]).filter(r=>r.source===source),dates=rows.map(r=>r.fecha).filter(Boolean).sort(),prev=historicalWarehouse.sources?.[source]||{};
   historicalWarehouse.sources[source]={...prev,source,label:HISTORICAL_SOURCES[source].label,status:rows.length?'cargado':'sin_datos',records:rows.length,files:[...new Set([...(prev.files||[]),archivo])],minDate:dates[0]||null,maxDate:dates.at(-1)||null,lastLoadedAt:nowIso(),loadedBy:user||'Sistema',lastDiagnostic:diag};
@@ -1967,7 +1988,8 @@ function hashFileMd5(filePath){
     s.on('data',d=>h.update(d));s.on('error',reject);s.on('end',()=>resolve(h.digest('hex')));
   });
 }
-function histCacheKey(source,md5){return `${source}:${md5}`;}
+const HIST_ETL_CACHE_VERSION='4.1.3';
+function histCacheKey(source,md5){return `${HIST_ETL_CACHE_VERSION}:${source}:${md5}`;}
 function publicDiagnostic(diag){if(!diag)return null;const {_errorRows,...safe}=diag;return safe;}
 function finalizeDiagRuntime(diag){
   const start=Date.parse(diag.startedAt||'')||Date.now();
@@ -2032,7 +2054,11 @@ async function processHistoricalUploadJob(job){
       finalizeDiagRuntime(diag);etlStoreDiagnostic(publicDiagnostic(diag));etlUpdateJob(job,100,'PDF registrado',diag);persistHistoricalWarehouse();return;
     }
     etlUpdateJob(job,20,'Etapa 3/4 · validando columnas',diag);
-    if(ext==='xlsx')await etlProcessXlsx(file.path,source,file.originalname,job,diag);
+    const useFastTamXlsx=ext==='xlsx'&&source==='tam'&&Number(file.size||0)<=5*1024*1024;
+    if(useFastTamXlsx){
+      etlLog(diag,'Fast-path TAM activado: XLSX pequeño procesado en memoria para evitar latencia del streaming.');
+      await etlProcessNonXlsx(file.path,ext,source,file.originalname,job,diag);
+    }else if(ext==='xlsx')await etlProcessXlsx(file.path,source,file.originalname,job,diag);
     else await etlProcessNonXlsx(file.path,ext,source,file.originalname,job,diag);
     etlUpdateJob(job,96,'Etapa 4/4 · consolidando resultados',diag);
     diag.status=diag.rowsStored>0?(diag.rowsPartial||diag.rowsRejected?'parcial':'correcto'):'parcial';
@@ -2814,6 +2840,21 @@ function histCrossLabel(r){
   return p.join(' + ')||'Sin fuente';
 }
 
+
+app.get('/api/historico/health-check',requireAuth,(req,res)=>{
+  try{
+    return res.json({
+      ok:true,
+      health:historicalEndToEndHealth(req.query),
+      weeks:historicalAvailableWeeks(),
+      ranges:historicalSourceRanges(),
+      files:historicalFilesUsed?historicalFilesUsed(safeText(req.query.from),safeText(req.query.to)):[]
+    });
+  }catch(err){
+    return res.status(422).json({ok:false,error:'No fue posible auditar el modelo histórico',detalle:err?.message||String(err)});
+  }
+});
+
 app.get('/api/historico/fuentes',requireAuth,(req,res)=>{
   const idx=getHistoricalDailyIndex(),records=Array.isArray(historicalWarehouse?.records)?historicalWarehouse.records:[];
   const dates=idx.rows.map(r=>r.fecha).filter(Boolean).sort();
@@ -2836,9 +2877,42 @@ app.get('/api/historico/fuentes',requireAuth,(req,res)=>{
     }
   });
 });
+
+function historicalEndToEndHealth(query={}){
+  const rows=histFilterBase(query);
+  const has=(r,k)=>r?.[k]!==null&&r?.[k]!==undefined;
+  const out={
+    rows:rows.length,
+    operators:new Set(rows.map(r=>r.operadorKey).filter(Boolean)).size,
+    plants:new Set(rows.map(r=>r.planta).filter(p=>p&&p!=='Sin planta')).size,
+    sourceCoverage:{
+      turnos:rows.filter(r=>has(r,'turnoMin')).length,
+      citaciones:rows.filter(r=>has(r,'citacionMin')).length,
+      statusLogin:rows.filter(r=>has(r,'loginMin')).length,
+      statusAsignacion:rows.filter(r=>has(r,'asignacionMin')).length,
+      tam:rows.filter(r=>has(r,'tamIngresoMin')).length
+    },
+    crosses:{
+      turnoLogin:rows.filter(r=>has(r,'turnoMin')&&has(r,'loginMin')).length,
+      citacionLogin:rows.filter(r=>has(r,'citacionMin')&&has(r,'loginMin')).length,
+      turnoTam:rows.filter(r=>has(r,'turnoMin')&&has(r,'tamIngresoMin')).length,
+      tamLogin:rows.filter(r=>has(r,'tamIngresoMin')&&has(r,'loginMin')).length,
+      turnoCitacionStatus:rows.filter(r=>has(r,'turnoMin')&&has(r,'citacionMin')&&has(r,'loginMin')).length,
+      cuatroFuentes:rows.filter(r=>has(r,'turnoMin')&&has(r,'citacionMin')&&has(r,'loginMin')&&has(r,'tamIngresoMin')).length
+    }
+  };
+  out.readyLogeo=out.crosses.turnoLogin>0;
+  out.readyCitacion=out.crosses.citacionLogin>0;
+  out.readyTam=out.crosses.turnoTam>0||out.crosses.tamLogin>0;
+  out.readyDashboard=out.rows>0&&(out.readyLogeo||out.readyCitacion||out.readyTam);
+  out.reason=out.readyDashboard?'Modelo histórico cruzado y calculable.':'No existen cruces suficientes en el período seleccionado.';
+  return out;
+}
+
 app.get('/api/historico/dashboard-enterprise',requireAuth,(req,res)=>{
   try{
     const cfg=histCfg(req.query),rows=histFilterBase(req.query),from=safeText(req.query.from),to=safeText(req.query.to);
+    const e2eHealth=historicalEndToEndHealth(req.query);
     const mode=String(req.query.mode||'logeo')==='citacion'?'citacion':'logeo';
     const coverage=historicalCoverage(req.query);
     const integrity=validateHistoricalDashboardModel(rows,mode);
@@ -2887,7 +2961,7 @@ app.get('/api/historico/dashboard-enterprise',requireAuth,(req,res)=>{
     return res.json({
       ok:true,source:'historicalWarehouse:file-attachments-only',from,to,previousRange:prevRange,granularity,cfg,mode,empty:rows.length===0,
       mensaje:rows.length?'':'NO SE ENCONTRARON DATOS PARA EL PERÍODO SELECCIONADO',
-      metrics,trend,rankings,operatorRanking,advancedRankings,plants,zones,byPlant,heatmap,findings,coverage,integrity,filesUsed,
+      metrics,trend,rankings,operatorRanking,advancedRankings,plants,zones,byPlant,heatmap,findings,coverage,integrity,filesUsed,e2eHealth,
       recommendedDate:latestCommonHistoricalDate(),
       sourceRanges:historicalSourceRanges(),
       detailed:rows.slice(0,5000).map(r=>({...r,crossLabel:histCrossLabel(r)})),totalDetailed:rows.length,
@@ -3320,7 +3394,7 @@ app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 if (require.main === module && process.env.CCO_TEST_MODE !== '1') {
   server.listen(PORT, () => {
-    console.log(`[CCO][startup] CCO Intelligence v4.1.2 activo en puerto ${PORT}`);
+    console.log(`[CCO][startup] CCO Intelligence v4.2.0 activo en puerto ${PORT}`);
     console.log(`[CCO][startup] Diccionario plantas: ${PLANT_DICTIONARY.plants.length} plantas, ${PLANT_DICTIONARY_LOOKUP.size} alias resolubles, ${Object.keys(PLANT_DICTIONARY.conflicts||{}).length} alias ambiguos`);
     if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producción.');
   });
