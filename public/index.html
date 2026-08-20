@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CCO Intelligence v3.3.3 · Centro de Control Operacional</title>
+<title>CCO Intelligence v4.3.0 · Centro de Control Operacional</title>
 <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4/dist/socket.io.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
@@ -976,12 +976,63 @@ function salir(){
 
 function authHeaders(){ return {'Content-Type':'application/json','Authorization':'Bearer '+token}; }
 
+
+const realtimeSync={
+  connectedOnce:false,
+  timers:new Map(),
+  seen:new Map(),
+  lastGenericAt:0
+};
+function realtimeEventId(payload){return payload?._realtime?.eventId||payload?.eventId||'';}
+function realtimeWasSeen(payload){
+  const id=realtimeEventId(payload);if(!id)return false;
+  const now=Date.now();
+  for(const [k,t] of realtimeSync.seen)if(now-t>60000)realtimeSync.seen.delete(k);
+  if(realtimeSync.seen.has(id))return true;
+  realtimeSync.seen.set(id,now);return false;
+}
+function scheduleRealtime(domain,fn,delay=180){
+  clearTimeout(realtimeSync.timers.get(domain));
+  realtimeSync.timers.set(domain,setTimeout(async()=>{
+    realtimeSync.timers.delete(domain);
+    try{await fn();}catch(err){console.error(`[CCO][REALTIME][${domain}]`,err);}
+  },delay));
+}
+async function refreshOperacionRealtime(){
+  await cargarEstadoIngesta();
+  await generarReporte();
+  const box=document.getElementById('tablaOperadoresBox');
+  if(box&&box.style.display!=='none')cargarTablaOperadores();
+}
+async function refreshHistoricoRealtime(){
+  await cargarCatalogoHistorico();
+  renderHistPeriodControls(true);
+  await cargarHistorico();
+}
+async function refreshFlotaRealtime(){await cargarTorreFlota();}
+function applyFleetRealtime(payload){
+  const eq=payload?.equipo;if(!eq?.key)return refreshFlotaRealtime();
+  const i=towerFleet.findIndex(x=>x.key===eq.key);
+  if(i>=0)towerFleet[i]=eq;else towerFleet.push(eq);
+  towerRevision=Number(payload.revision||towerRevision);
+  const rev=document.getElementById('towerRevision');
+  if(rev)rev.textContent=`Rev. ${towerRevision} · ${towerFleet.length} equipos`;
+  renderTorre();
+}
+function realtimeFullCatchup(){
+  scheduleRealtime('operacion',refreshOperacionRealtime,80);
+  scheduleRealtime('historico',refreshHistoricoRealtime,120);
+  scheduleRealtime('flota',refreshFlotaRealtime,160);
+}
+
 function iniciar(){
-  socket = io(API, {transports:['websocket','polling']});
+  socket = io(API, {transports:['websocket','polling'],auth:{token}});
   socket.on('connect', ()=>{
     document.getElementById('connPill').textContent = 'En vivo';
     document.getElementById('connPill').className = 'pill live';
     socket.emit('join', {planta: null});
+    if(realtimeSync.connectedOnce)realtimeFullCatchup();
+    realtimeSync.connectedOnce=true;
   });
   socket.on('disconnect', ()=>{
     document.getElementById('connPill').textContent = 'Desconectado';
@@ -992,9 +1043,35 @@ function iniciar(){
     document.getElementById('connPill').className = 'pill err';
   });
 
-  socket.on('config:actualizada', (planta)=>{ upsertPlantaRow(planta, true); });
-  socket.on('bitacora:nueva', (registro)=>{ prependBitacora(registro, true); });
-  socket.on('ingesta:actualizada', (info)=>{ marcarIngestaStatus(info.tipo, info.cantidad, info.subido_por, true); });
+  socket.on('config:actualizada', (planta)=>{
+    realtimeWasSeen(planta);upsertPlantaRow(planta,true);
+    scheduleRealtime('operacion',refreshOperacionRealtime);
+  });
+  socket.on('bitacora:nueva', (registro)=>{ realtimeWasSeen(registro);prependBitacora(registro,true); });
+  socket.on('ingesta:actualizada', (info)=>{
+    realtimeWasSeen(info);marcarIngestaStatus(info.tipo,info.cantidad,info.subido_por,true);
+    scheduleRealtime('operacion',refreshOperacionRealtime);
+  });
+  socket.on('flota:actualizada', payload=>{
+    realtimeWasSeen(payload);scheduleRealtime('flota',refreshFlotaRealtime,80);
+  });
+  socket.on('flota:equipo_actualizado', payload=>{
+    realtimeWasSeen(payload);applyFleetRealtime(payload);
+  });
+  socket.on('historico:actualizado', payload=>{
+    realtimeWasSeen(payload);scheduleRealtime('historico',refreshHistoricoRealtime,120);
+  });
+  socket.on('historico:snapshot_creado', payload=>{
+    realtimeWasSeen(payload);scheduleRealtime('historico',refreshHistoricoRealtime,120);
+  });
+  // Evento genérico de respaldo para futuras mutaciones. Los eventos específicos
+  // se procesan primero y eventId evita refrescos duplicados.
+  socket.on('cco:actualizado', evt=>{
+    if(realtimeWasSeen(evt))return;
+    if(evt.domain==='operacion'||evt.domain==='configuracion')scheduleRealtime('operacion',refreshOperacionRealtime);
+    else if(evt.domain==='historico')scheduleRealtime('historico',refreshHistoricoRealtime);
+    else if(evt.domain==='flota')scheduleRealtime('flota',refreshFlotaRealtime);
+  });
 
   cargarPlantas();
   cargarBitacora();
@@ -1364,11 +1441,12 @@ function marcarIngestaStatus(tipo, cantidad, subidoPor, remoto){
 }
 
 function cargarEstadoIngesta(){
-  fetch(API+'/api/ingesta/estado',{headers:authHeaders()}).then(r=>r.json()).then(estado=>{
+  return fetch(API+'/api/ingesta/estado',{headers:authHeaders()}).then(r=>r.json()).then(estado=>{
     Object.entries(estado).forEach(([tipo, info])=>{
       if(info.cantidad>0) marcarIngestaStatus(tipo, info.cantidad, info.subido_por, false);
     });
-  }).catch(err=>{ registrarErrorDetalladoUI('ingesta','cargarEstadoIngesta',err); });
+    return estado;
+  }).catch(err=>{ registrarErrorDetalladoUI('ingesta','cargarEstadoIngesta',err);return null; });
 }
 
 // --- Tabla completa de operadores (id, nombre, planta, turno, citación, logeo, asignación, tiempo muerto, estado) ---
@@ -1524,7 +1602,7 @@ async function generarReporte(){
       document.getElementById('repRankingTiempoMuerto').innerHTML='<tr><td colspan="8" style="text-align:center;padding:14px">Sin información disponible para el período seleccionado</td></tr>';
       alertas.innerHTML=`<div class="alert-card info"><span class="alert-icon">ℹ️</span><div class="alert-text"><b>${escapeHtml(rep.mensaje||'Sin información disponible para el período seleccionado')}</b></div></div>`;
       if(repChartInstance){ repChartInstance.destroy(); repChartInstance=null; }
-      return;
+      return rep;
     }
 
     try {
@@ -1534,6 +1612,7 @@ async function generarReporte(){
         const extra=rep.advertencias.map(a=>`<div class="alert-card medio"><span class="alert-icon">⚠️</span><div class="alert-text"><b>Advertencia de operación:</b> ${escapeHtml(a.mensaje||a.codigo||'dato incompleto')}.</div></div>`).join('');
         document.getElementById('repAlertas').insertAdjacentHTML('afterbegin',extra);
       }
+      return rep;
     } catch(renderErr) {
       registrarErrorDetalladoUI('reporte','renderReporte',renderErr,{fecha:rep?.fecha||''});
       alertas.innerHTML = `<div class="alert-card critico"><span class="alert-icon">⚠️</span><div class="alert-text"><b>No fue posible visualizar el reporte.</b> Información incompleta o inválida. Revise los archivos cargados.</div></div>`;
@@ -1950,15 +2029,19 @@ document.getElementById('cfgPlanta')?.addEventListener?.('change', cargarConfigE
 
 function guardarConfig(){
   const nombre = document.getElementById('cfgPlanta').value;
+  const currentCfg=plantasCache.find(x=>x.nombre===nombre);
   const body = {
     tol_v: +document.getElementById('cfgV').value,
     tol_a: +document.getElementById('cfgA').value,
     tol_asig: +document.getElementById('cfgAsig').value,
-    citacion: document.getElementById('cfgCitacion').value
+    citacion: document.getElementById('cfgCitacion').value,
+    _expectedVersion:Number(currentCfg?._version||1)
   };
   fetch(API+'/api/plantas/'+encodeURIComponent(nombre)+'/config',{method:'PUT',headers:authHeaders(),body:JSON.stringify(body)})
-    .then(r=>r.json()).then(p=>{
-      if(p.error){ document.getElementById('cfgMsg').textContent = 'Error: '+p.error; return; }
+    .then(async r=>({ok:r.ok,status:r.status,data:await r.json()})).then(async x=>{
+      const p=x.data||{};
+      if(x.status===409){document.getElementById('cfgMsg').textContent='Conflicto: otro usuario modificó esta planta. Se cargó la versión vigente.';await cargarPlantas();return;}
+      if(!x.ok||p.error){ document.getElementById('cfgMsg').textContent = 'Error: '+(p.detalle||p.error||x.status); return; }
       document.getElementById('cfgMsg').textContent = 'Guardado ✓ ('+new Date().toLocaleTimeString()+')';
       upsertPlantaRow(p, false);
     });
@@ -2426,7 +2509,21 @@ async function procesarTowerFleetFile(file){
     towerSetStatus(msg,'err');
   }
 }
-async function actualizarTowerEquipo(key,patch){const r=await fetch(API+'/api/flota/'+encodeURIComponent(key),{method:'PATCH',headers:authHeaders(),body:JSON.stringify(patch)});const data=await leerRespuestaApiSegura(r);const i=towerFleet.findIndex(x=>x.key===key);if(i>=0)towerFleet[i]=data.equipo;towerRevision=Number(data.revision||towerRevision);document.getElementById('towerRevision').textContent=`Rev. ${towerRevision} · ${towerFleet.length} equipos`;return data.equipo;}
+async function actualizarTowerEquipo(key,patch){
+  const local=towerFleet.find(x=>x.key===key);
+  const body={...patch,_expectedVersion:Number(local?.version||1)};
+  const r=await fetch(API+'/api/flota/'+encodeURIComponent(key),{method:'PATCH',headers:authHeaders(),body:JSON.stringify(body)});
+  const data=await leerRespuestaApiSegura(r);
+  if(r.status===409){
+    await cargarTorreFlota();
+    throw new Error(data.detalle||'El equipo fue modificado por otro usuario. Se cargó la versión más reciente.');
+  }
+  if(!r.ok||data.error)throw new Error(data.detalle||data.error||`HTTP ${r.status}`);
+  const i=towerFleet.findIndex(x=>x.key===key);if(i>=0)towerFleet[i]=data.equipo;
+  towerRevision=Number(data.revision||towerRevision);
+  document.getElementById('towerRevision').textContent=`Rev. ${towerRevision} · ${towerFleet.length} equipos`;
+  return data.equipo;
+}
 function abrirTowerEditor(){const t=towerSelected();if(!t)return;document.getElementById('towerEditTitle').textContent=`Editar · ${t.id||t.number}`;towerEditStatus.value=t.status||'stale';const plants=[...new Set(towerFleet.map(x=>x.plant).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));towerEditPlant.innerHTML=plants.map(x=>`<option value="${towerEsc(x)}">${towerEsc(x)}</option>`).join('');if(!plants.includes(t.plant))towerEditPlant.insertAdjacentHTML('afterbegin',`<option value="${towerEsc(t.plant)}">${towerEsc(t.plant)}</option>`);towerEditPlant.value=t.plant;towerEditWorkshop.value=t.workshop||'';towerEditResponsible.value=t.responsible||'';towerEditEta.value=(t.eta||'').slice(0,16);towerEditProgress.value=Number(t.progress||0);towerEditCause.value=t.cause||'';towerEditObservation.value=t.observation||'';towerEditMsg.textContent='';towerEditModal.classList.add('open');towerEditModal.setAttribute('aria-hidden','false');}
 function cerrarTowerEditor(){towerEditModal.classList.remove('open');towerEditModal.setAttribute('aria-hidden','true');}
 async function guardarTowerEditor(){const t=towerSelected();if(!t)return;try{towerEditMsg.textContent='Guardando...';await actualizarTowerEquipo(t.key,{status:towerEditStatus.value,plant:towerEditPlant.value,workshop:towerEditWorkshop.value,responsible:towerEditResponsible.value,eta:towerEditEta.value,progress:Number(towerEditProgress.value||0),cause:towerEditCause.value,observation:towerEditObservation.value});towerEditMsg.textContent='Cambio guardado.';cerrarTowerEditor();renderTorre();}catch(err){towerEditMsg.textContent='Error: '+(err.message||err);}}
@@ -2977,7 +3074,7 @@ function renderHistFileLists(){
     }
     if(!confirm(`Eliminar "${archivo}" de Trazabilidad? Los KPI se recalcularán.`))return;
     try{
-      const r=await fetch(API+`/api/historico/archivo?source=${encodeURIComponent(source)}&archivo=${encodeURIComponent(archivo)}`,{method:'DELETE',headers:authHeaders()});
+      const r=await fetch(API+`/api/historico/archivo?source=${encodeURIComponent(source)}&archivo=${encodeURIComponent(archivo)}&expectedRevision=${encodeURIComponent(Number(histCatalogo?.revision||0))}`,{method:'DELETE',headers:authHeaders()});
       await leerRespuestaApiSegura(r);await cargarCatalogoHistorico();renderHistPeriodControls(true);await cargarHistorico();
     }catch(err){alert('El archivo no pudo ser eliminado. Intente nuevamente.');console.error('[CCO][TRAZABILIDAD][DELETE]',err);}
   });
