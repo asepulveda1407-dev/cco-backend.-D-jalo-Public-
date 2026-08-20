@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CCO Intelligence v4.3.0 · Centro de Control Operacional</title>
+<title>CCO Intelligence v4.3.1 · Centro de Control Operacional</title>
 <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4/dist/socket.io.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
@@ -347,6 +347,18 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 @media(max-width:760px){
   .hist-detail-controls{width:100%;margin-left:0}
   .hist-detail-controls select{width:100%;max-width:none}
+}
+
+
+/* v4.3.1 · camión reubicado entre plantas */
+.tower-truck.relocated{
+  box-shadow:0 0 0 3px rgba(18,160,202,.22), inset 0 -3px 0 #12a0ca!important;
+  border-color:#12a0ca!important;
+}
+.tower-truck.relocated::after{
+  content:'R'; position:absolute; top:-6px; right:-5px; min-width:14px; height:14px; padding:0 3px;
+  border-radius:8px; display:flex; align-items:center; justify-content:center;
+  background:#12a0ca; color:#fff; font-size:7px; font-weight:900; line-height:1; border:2px solid #fff;
 }
 
 </style>
@@ -972,6 +984,8 @@ function salir(){
   document.getElementById('app').style.display='none';
   document.getElementById('gate').style.display='block';
   if(socket) socket.disconnect();
+  clearInterval(realtimeSync.operationWatchdog);
+  realtimeSync.operationWatchdog=null;
 }
 
 function authHeaders(){ return {'Content-Type':'application/json','Authorization':'Bearer '+token}; }
@@ -981,7 +995,10 @@ const realtimeSync={
   connectedOnce:false,
   timers:new Map(),
   seen:new Map(),
-  lastGenericAt:0
+  lastGenericAt:0,
+  operationRevision:'',
+  operationWatchdog:null,
+  operationRefreshing:false
 };
 function realtimeEventId(payload){return payload?._realtime?.eventId||payload?.eventId||'';}
 function realtimeWasSeen(payload){
@@ -999,10 +1016,41 @@ function scheduleRealtime(domain,fn,delay=180){
   },delay));
 }
 async function refreshOperacionRealtime(){
-  await cargarEstadoIngesta();
-  await generarReporte();
-  const box=document.getElementById('tablaOperadoresBox');
-  if(box&&box.style.display!=='none')cargarTablaOperadores();
+  if(realtimeSync.operationRefreshing)return;
+  realtimeSync.operationRefreshing=true;
+  try{
+    await cargarEstadoIngesta();
+    await cargarPlantas();
+    await generarReporte();
+    const box=document.getElementById('tablaOperadoresBox');
+    if(box&&box.style.display!=='none')await cargarTablaOperadores();
+    await syncOperationRevision();
+  }finally{
+    realtimeSync.operationRefreshing=false;
+  }
+}
+async function syncOperationRevision(){
+  try{
+    const qs=user?.fecha?`?fecha=${encodeURIComponent(user.fecha)}`:'';
+    const r=await fetch(API+'/api/operacion/revision'+qs,{headers:authHeaders(),cache:'no-store'});
+    if(!r.ok)return null;
+    const data=await r.json();
+    const prev=realtimeSync.operationRevision;
+    realtimeSync.operationRevision=data.revision||'';
+    return {changed:!!prev&&prev!==realtimeSync.operationRevision,data};
+  }catch(err){
+    console.warn('[CCO][REALTIME][OPERACION][REVISION]',err);
+    return null;
+  }
+}
+function startOperationWatchdog(){
+  clearInterval(realtimeSync.operationWatchdog);
+  syncOperationRevision();
+  realtimeSync.operationWatchdog=setInterval(async()=>{
+    if(!token||document.hidden)return;
+    const result=await syncOperationRevision();
+    if(result?.changed)scheduleRealtime('operacion',refreshOperacionRealtime,50);
+  },3000);
 }
 async function refreshHistoricoRealtime(){
   await cargarCatalogoHistorico();
@@ -1033,6 +1081,7 @@ function iniciar(){
     socket.emit('join', {planta: null});
     if(realtimeSync.connectedOnce)realtimeFullCatchup();
     realtimeSync.connectedOnce=true;
+    syncOperationRevision();
   });
   socket.on('disconnect', ()=>{
     document.getElementById('connPill').textContent = 'Desconectado';
@@ -1051,6 +1100,11 @@ function iniciar(){
   socket.on('ingesta:actualizada', (info)=>{
     realtimeWasSeen(info);marcarIngestaStatus(info.tipo,info.cantidad,info.subido_por,true);
     scheduleRealtime('operacion',refreshOperacionRealtime);
+  });
+  socket.on('operacion:actualizada', payload=>{
+    realtimeWasSeen(payload);
+    if(payload?.revision)realtimeSync.operationRevision=payload.revision;
+    scheduleRealtime('operacion',refreshOperacionRealtime,50);
   });
   socket.on('flota:actualizada', payload=>{
     realtimeWasSeen(payload);scheduleRealtime('flota',refreshFlotaRealtime,80);
@@ -1077,6 +1131,7 @@ function iniciar(){
   cargarBitacora();
   cargarEstadoIngesta();
   initModuleTabs();
+  startOperationWatchdog();
 }
 
 // --- Carga de Excel (Turnos / Citaciones / Logeo), con selección de hoja ---
@@ -2438,6 +2493,17 @@ const TOWER_MAINT_STATUS=new Set(['preventive','internal','external','parts']);
 function towerEsc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function towerSetStatus(text,cls=''){const el=document.getElementById('towerFleetStatus');if(el){el.textContent=text;el.className='tower-upload-status '+cls;}}
 function towerSelected(){return towerFleet.find(x=>x.key===towerSelectedKey)||null;}
+
+function towerRelocationRecent(t){
+  const at=t?.lastRelocation?.at;if(!at)return false;
+  const ms=Date.now()-new Date(at).getTime();
+  return Number.isFinite(ms)&&ms>=0&&ms<=12*60*60*1000;
+}
+function towerRelocationTitle(t){
+  const r=t?.lastRelocation;if(!r)return '';
+  return ` · Reubicado: ${r.from||'—'} → ${r.to||'—'} · ${r.user||'CCO'} · ${new Date(r.at).toLocaleString('es-CL')}`;
+}
+
 function towerFiltered(){
   const z=document.getElementById('towerZoneFilter')?.value||'all',p=document.getElementById('towerPlantFilter')?.value||'all',st=document.getElementById('towerStatusFilter')?.value||'all',q=(document.getElementById('towerSearch')?.value||'').toLowerCase().trim();
   return towerFleet.filter(t=>(z==='all'||t.zone===z)&&(p==='all'||t.plant===p)&&(st==='all'||t.status===st)&&(!q||[t.id,t.number,t.plate,t.brand,t.plant].join(' ').toLowerCase().includes(q)));
@@ -2456,11 +2522,11 @@ async function towerDrop(ev,plant){ev.preventDefault();ev.currentTarget.classLis
 function renderTowerPlants(){
   const list=towerFiltered(),box=document.getElementById('towerPlants');document.getElementById('towerVisibleCount').textContent=`${list.length} equipos visibles`;
   if(!list.length){box.innerHTML='<div class="tower-detail-empty">No hay equipos para los filtros seleccionados.</div>';return;}
-  const groups={};list.forEach(t=>(groups[t.plant||'Sin planta asignada']??=[]).push(t));box.innerHTML=Object.entries(groups).sort((a,b)=>a[0].localeCompare(b[0],'es')).map(([plant,arr])=>{const c=towerCounts(arr);return `<div class="tower-plant" ondragover="towerDragOver(event)" ondragleave="towerDragLeave(event)" ondrop="towerDrop(event,'${String(plant).replace(/'/g,"\\'")}')"><div class="tower-plant-h"><b>${towerEsc(plant)}</b><small>${arr.length} mixer · ${c.pct.toFixed(0)}%</small></div><div class="tower-trucks">${arr.map(t=>`<div class="tower-truck ${t.status} ${t.key===towerSelectedKey?'sel':''}" draggable="true" ondragstart="towerDragStart(event,'${String(t.key).replace(/'/g,"\\'")}')" onclick="seleccionarTowerEquipo('${String(t.key).replace(/'/g,"\\'")}')" title="${towerEsc(t.id)} · ${towerEsc(t.plate)} · ${towerEsc(TOWER_STATUS_LABELS[t.status]||t.status)}">${towerEsc(t.number||t.id)}</div>`).join('')}</div></div>`}).join('');
+  const groups={};list.forEach(t=>(groups[t.plant||'Sin planta asignada']??=[]).push(t));box.innerHTML=Object.entries(groups).sort((a,b)=>a[0].localeCompare(b[0],'es')).map(([plant,arr])=>{const c=towerCounts(arr);return `<div class="tower-plant" ondragover="towerDragOver(event)" ondragleave="towerDragLeave(event)" ondrop="towerDrop(event,'${String(plant).replace(/'/g,"\\'")}')"><div class="tower-plant-h"><b>${towerEsc(plant)}</b><small>${arr.length} mixer · ${c.pct.toFixed(0)}%</small></div><div class="tower-trucks">${arr.map(t=>`<div class="tower-truck ${t.status} ${towerRelocationRecent(t)?'relocated':''} ${t.key===towerSelectedKey?'sel':''}" draggable="true" ondragstart="towerDragStart(event,'${String(t.key).replace(/'/g,"\\'")}')" onclick="seleccionarTowerEquipo('${String(t.key).replace(/'/g,"\\'")}')" title="${towerEsc(t.id)} · ${towerEsc(t.plate)} · ${towerEsc(TOWER_STATUS_LABELS[t.status]||t.status)}${towerEsc(towerRelocationTitle(t))}">${towerEsc(t.number||t.id)}</div>`).join('')}</div></div>`}).join('');
 }
 function renderTowerDetail(){
   const t=towerSelected(),box=document.getElementById('towerDetail'),badge=document.getElementById('towerDetailBadge');if(!t){badge.textContent='—';box.innerHTML='<div class="tower-detail-empty">Seleccione un mixer para ver su detalle.</div>';return;}badge.textContent=TOWER_STATUS_LABELS[t.status]||t.status;
-  const hist=(Array.isArray(t.history)?t.history:[]).slice().reverse().slice(0,8);box.innerHTML=`<div class="tower-truck-hero"><div class="ico">🚛</div><div class="id">${towerEsc(t.id||t.number||'Equipo')}</div><div class="state">${towerEsc(TOWER_STATUS_LABELS[t.status]||t.status)}</div></div><div class="tower-info"><div class="k">Número</div><div class="val">${towerEsc(t.number||'—')}</div><div class="k">Patente</div><div class="val">${towerEsc(t.plate||'—')}</div><div class="k">Marca / modelo / año</div><div class="val">${towerEsc([t.brand,t.model,t.year].filter(Boolean).join(' · ')||'—')}</div><div class="k">Origen</div><div class="val">${towerEsc(t.sourceSheet||'Flota')}</div><div class="k">Compañía</div><div class="val">${towerEsc(t.company||'—')}</div><div class="k">Zona</div><div class="val">${towerEsc(t.zone||'—')}</div><div class="k">Planta</div><div class="val">${towerEsc(t.plant||'—')}</div><div class="k">Estado registro</div><div class="val">${towerEsc(t.sourceStatus||'—')}</div><div class="k">Taller</div><div class="val">${towerEsc(t.workshop||'—')}</div><div class="k">Responsable</div><div class="val">${towerEsc(t.responsible||'—')}</div><div class="k">ETA</div><div class="val">${towerEsc(t.eta||'—')}</div><div class="k">Avance</div><div class="val">${Number(t.progress||0)}%</div><div class="k">Causa</div><div class="val">${towerEsc(t.cause||'—')}</div><div class="k">Observación</div><div class="val">${towerEsc(t.observation||'—')}</div></div><div class="tower-detail-actions"><button type="button" onclick="abrirTowerEditor()">Editar estado</button></div><div class="tower-history">${hist.length?hist.map(h=>`<div class="tower-history-item"><b>${new Date(h.timestamp).toLocaleString('es-CL')}</b> · ${towerEsc(h.usuario||'CCO')}<br>${towerEsc(Object.entries(h.cambios||{}).map(([k,v])=>`${k}: ${v.antes||'—'} → ${v.despues||'—'}`).join(' · '))}</div>`).join(''):'<div class="small" style="padding:8px">Sin cambios registrados.</div>'}</div>`;
+  const hist=(Array.isArray(t.history)?t.history:[]).slice().reverse().slice(0,8);box.innerHTML=`<div class="tower-truck-hero"><div class="ico">🚛</div><div class="id">${towerEsc(t.id||t.number||'Equipo')}</div><div class="state">${towerEsc(TOWER_STATUS_LABELS[t.status]||t.status)}</div></div><div class="tower-info"><div class="k">Número</div><div class="val">${towerEsc(t.number||'—')}</div><div class="k">Patente</div><div class="val">${towerEsc(t.plate||'—')}</div><div class="k">Marca / modelo / año</div><div class="val">${towerEsc([t.brand,t.model,t.year].filter(Boolean).join(' · ')||'—')}</div><div class="k">Origen</div><div class="val">${towerEsc(t.sourceSheet||'Flota')}</div><div class="k">Compañía</div><div class="val">${towerEsc(t.company||'—')}</div><div class="k">Zona</div><div class="val">${towerEsc(t.zone||'—')}</div><div class="k">Planta</div><div class="val">${towerEsc(t.plant||'—')}</div><div class="k">Estado registro</div><div class="val">${towerEsc(t.sourceStatus||'—')}</div><div class="k">Taller</div><div class="val">${towerEsc(t.workshop||'—')}</div><div class="k">Responsable</div><div class="val">${towerEsc(t.responsible||'—')}</div><div class="k">ETA</div><div class="val">${towerEsc(t.eta||'—')}</div><div class="k">Avance</div><div class="val">${Number(t.progress||0)}%</div><div class="k">Causa</div><div class="val">${towerEsc(t.cause||'—')}</div><div class="k">Observación</div><div class="val">${towerEsc(t.observation||'—')}</div>${t.lastRelocation?`<div class="k">Última reubicación</div><div class="val">${towerEsc(t.lastRelocation.from||'—')} → ${towerEsc(t.lastRelocation.to||'—')} · ${towerEsc(t.lastRelocation.user||'CCO')} · ${towerEsc(new Date(t.lastRelocation.at).toLocaleString('es-CL'))}</div>`:''}</div><div class="tower-detail-actions"><button type="button" onclick="abrirTowerEditor()">Editar estado</button></div><div class="tower-history">${hist.length?hist.map(h=>`<div class="tower-history-item"><b>${new Date(h.timestamp).toLocaleString('es-CL')}</b> · ${towerEsc(h.usuario||'CCO')}<br>${towerEsc(Object.entries(h.cambios||{}).map(([k,v])=>`${k}: ${v.antes||'—'} → ${v.despues||'—'}`).join(' · '))}</div>`).join(''):'<div class="small" style="padding:8px">Sin cambios registrados.</div>'}</div>`;
 }
 function renderTowerTables(){
   const groups={};towerFleet.forEach(t=>(groups[t.plant||'Sin planta asignada']??=[]).push(t));const rows=Object.entries(groups).sort((a,b)=>a[0].localeCompare(b[0],'es'));document.getElementById('towerPlantCount').textContent=`${rows.length} plantas`;document.getElementById('towerPlantTable').innerHTML=rows.map(([plant,arr])=>{const c=towerCounts(arr);return `<tr><td>${towerEsc(arr[0]?.zone||'—')}</td><td><b>${towerEsc(plant)}</b></td><td>${c.total}</td><td>${c.available}</td><td>${c.maint}</td><td>${c.oos}</td><td>${c.pct.toFixed(1)}%</td></tr>`}).join('')||'<tr><td colspan="7" class="history-empty">Sin flota cargada.</td></tr>';
