@@ -163,6 +163,32 @@ function registrarErrorDetallado({ modulo='desconocido', funcion='desconocida', 
   return entry;
 }
 
+
+function realtimeMeta(domain,action,user=null,extra={}){
+  return {
+    eventId:crypto.randomUUID(),
+    domain:safeText(domain),
+    action:safeText(action),
+    revision:{
+      state:Number(state?.version||1),
+      fleet:Number(state?.fleet?.revision||0),
+      historical:Number(historicalWarehouse?.revision||0)
+    },
+    user:safeText(user?.nombre||user||'Sistema'),
+    timestamp:nowIso(),
+    ...extra
+  };
+}
+function emitRealtime(eventName,payload,domain,action,user=null,extra={}){
+  const meta=realtimeMeta(domain,action,user,extra);
+  const enriched=(payload&&typeof payload==='object'&&!Array.isArray(payload))
+    ? {...payload,_realtime:meta}
+    : {value:payload,_realtime:meta};
+  io.emit(eventName,enriched);
+  io.emit('cco:actualizado',{...meta,event:eventName,payload:enriched});
+  return enriched;
+}
+
 function respuestaSinDatos(res, mensaje='Sin información disponible para el período seleccionado', extra={}) {
   return res.json({ ok:true, empty:true, mensaje, ...extra });
 }
@@ -1060,7 +1086,7 @@ function datasetPlantCount(type, planta) {
 app.get('/health', (req, res) => res.json({
   ok: true,
   service: 'CCO Intelligence',
-  version: '3.0.0',
+  version: '4.3.0',
   plant_dictionary: { loaded: PLANT_DICTIONARY.plants.length, conflicts: Object.keys(PLANT_DICTIONARY.conflicts || {}).length, source: PLANT_DICTIONARY.source_file },
   env: NODE_ENV,
   timestamp: nowIso(),
@@ -1181,7 +1207,7 @@ app.post('/api/ingesta', requireAuth, (req, res) => {
       fechas_detectadas: dateProfile.fechas,
       fecha_unica: dateProfile.fecha_unica,
     };
-    if (esUltimoLote) io.emit('ingesta:actualizada', info);
+    if (esUltimoLote) emitRealtime('ingesta:actualizada',info,'operacion','ingesta_actualizada',req.user,{tipo});
     return res.json({ ok:true, ...info, errores: result.errors.slice(0,5) });
   } catch (err) {
     registrarErrorDetallado({
@@ -1244,6 +1270,11 @@ app.get('/api/plantas', requireAuth, (req, res) => {
 app.put('/api/plantas/:nombre/config', requireAuth, (req, res) => {
   const nombre = safeText(decodeURIComponent(req.params.nombre));
   const p = ensurePlant(nombre);
+  const currentVersion=Number(p._version||1);
+  const expectedRaw=req.body?._expectedVersion;
+  if(expectedRaw!==undefined&&expectedRaw!==null&&Number(expectedRaw)!==currentVersion){
+    return res.status(409).json({error:'CONFLICTO_CONCURRENCIA',detalle:'La configuración fue modificada por otro usuario.',currentVersion,planta:p});
+  }
   const tol_v = Number(req.body?.tol_v), tol_a = Number(req.body?.tol_a), tol_asig = Number(req.body?.tol_asig);
   if (![tol_v,tol_a,tol_asig].every(Number.isFinite)) return res.status(400).json({ error:'Las tolerancias deben ser numéricas' });
   if (tol_v < 0 || tol_a < tol_v || tol_asig < 0) return res.status(400).json({ error:'Configuración de tolerancias inválida' });
@@ -1254,9 +1285,10 @@ app.put('/api/plantas/:nombre/config', requireAuth, (req, res) => {
     citacion: req.body?.citacion === 'si' ? 'si' : 'no',
     actualizado_por: req.user.nombre,
     actualizado_en: nowIso(),
+    _version: currentVersion+1,
   });
   persistState();
-  io.emit('config:actualizada', p);
+  emitRealtime('config:actualizada',p,'configuracion','config_actualizada',req.user,{planta:nombre});
   res.json(p);
 });
 
@@ -1321,7 +1353,7 @@ function normalizeFleetRow(row, index){
   const plantType=fleetPick(row,['Tipo planta','Tipo Planta','Tipo']);
   const sourceSheet=fleetPick(row,['__source_sheet']) || '';
   const key=(id||number||plate||`ROW${index+1}`)+'-'+(plate||number||index+1);
-  return {key,id:id||number||plate||`Equipo ${index+1}`,number,brand,model,plate,year,zone,plantCode,plantType,plant,company,sourceSheet,sourceStatus,activeFlag,observation,status:fleetStatusFromSource(sourceStatus,activeFlag),workshop:'',responsible:'',eta:'',progress:0,cause:'',history:[]};
+  return {key,id:id||number||plate||`Equipo ${index+1}`,number,brand,model,plate,year,zone,plantCode,plantType,plant,company,sourceSheet,sourceStatus,activeFlag,observation,status:fleetStatusFromSource(sourceStatus,activeFlag),workshop:'',responsible:'',eta:'',progress:0,cause:'',history:[],version:1};
 }
 function sanitizeFleetItem(item){
   const x={...item};
@@ -1345,10 +1377,10 @@ app.post('/api/flota/ingesta', requireAuth, (req,res)=>{
     const oldByKey=new Map((state.fleet?.datos||[]).map(x=>[x.key,x]));
     const merged=normalized.map(n=>{
       const old=oldByKey.get(n.key);
-      return old?{...n,status:old.status||n.status,workshop:old.workshop||'',responsible:old.responsible||'',eta:old.eta||'',progress:Number(old.progress||0),cause:old.cause||'',observation:old.observation||n.observation||'',history:Array.isArray(old.history)?old.history:[]}:n;
+      return old?{...n,status:old.status||n.status,workshop:old.workshop||'',responsible:old.responsible||'',eta:old.eta||'',progress:Number(old.progress||0),cause:old.cause||'',observation:old.observation||n.observation||'',history:Array.isArray(old.history)?old.history:[],version:Number(old.version||1)}:{...n,version:Number(n.version||1)};
     });
     state.fleet={datos:merged,revision:Number(state.fleet?.revision||0)+1,metadatos:{archivo:safeText(req.body?.archivo||'Flota'),hoja:safeText(req.body?.hoja||''),cargado_en:nowIso(),usuario:req.user.nombre,filas_recibidas:rows.length,equipos_validos:merged.length}};
-    persistState();io.emit('flota:actualizada',{revision:state.fleet.revision,cantidad:merged.length,metadatos:state.fleet.metadatos});
+    persistState();emitRealtime('flota:actualizada',{revision:state.fleet.revision,cantidad:merged.length,metadatos:state.fleet.metadatos},'flota','flota_actualizada',req.user);
     res.json({ok:true,revision:state.fleet.revision,cantidad:merged.length,metadatos:state.fleet.metadatos});
   }catch(err){registrarErrorDetallado({modulo:'flota',funcion:'POST /api/flota/ingesta',error:err?.message||String(err),stack:err?.stack});res.status(422).json({error:'No fue posible procesar el archivo de flota',detalle:err?.message||String(err)});}
 });
@@ -1358,6 +1390,17 @@ app.patch('/api/flota/:key', requireAuth, (req,res)=>{
     const idx=data.findIndex(x=>x.key===req.params.key);
     if(idx<0) return res.status(404).json({error:'Equipo no encontrado'});
     const before={...data[idx]};
+    const currentVersion=Number(before.version||1);
+    const expectedRaw=req.body?._expectedVersion;
+    if(expectedRaw!==undefined&&expectedRaw!==null&&Number(expectedRaw)!==currentVersion){
+      return res.status(409).json({
+        error:'CONFLICTO_CONCURRENCIA',
+        detalle:'El equipo fue modificado por otro usuario. Se actualizó la vista con la versión más reciente.',
+        revision:Number(state.fleet?.revision||0),
+        currentVersion,
+        equipo:sanitizeFleetItem(before)
+      });
+    }
     const allowed=['status','plant','zone','workshop','responsible','eta','progress','cause','observation'];
     const next={...before};
     allowed.forEach(k=>{if(Object.prototype.hasOwnProperty.call(req.body||{},k))next[k]=req.body[k];});
@@ -1368,13 +1411,14 @@ app.patch('/api/flota/:key', requireAuth, (req,res)=>{
       try{next.zone=ensurePlant(canon)?.zona||next.zone;}catch{}
     }
     const changes=allowed.filter(k=>String(before[k]??'')!==String(next[k]??''));
+    next.version=changes.length?currentVersion+1:currentVersion;
     if(changes.length){
       next.history=Array.isArray(before.history)?[...before.history]:[];
       next.history.push({timestamp:nowIso(),usuario:req.user.nombre,cambios:changes.reduce((o,k)=>(o[k]={antes:before[k]??'',despues:next[k]??''},o),{})});
       next.history=next.history.slice(-100);
     }
     data[idx]=next;state.fleet.datos=data;state.fleet.revision=Number(state.fleet?.revision||0)+1;persistState();
-    io.emit('flota:equipo_actualizado',{equipo:sanitizeFleetItem(next),revision:state.fleet.revision});
+    emitRealtime('flota:equipo_actualizado',{equipo:sanitizeFleetItem(next),revision:state.fleet.revision},'flota','equipo_actualizado',req.user,{key:next.key});
     res.json({ok:true,equipo:sanitizeFleetItem(next),revision:state.fleet.revision});
   }catch(err){registrarErrorDetallado({modulo:'flota',funcion:'PATCH /api/flota/:key',error:err?.message||String(err),stack:err?.stack});res.status(422).json({error:'No fue posible actualizar el equipo',detalle:err?.message||String(err)});}
 });
@@ -1417,7 +1461,7 @@ app.post('/api/bitacora', requireAuth, (req, res) => {
   state.bitacora.unshift(entry);
   state.bitacora = state.bitacora.slice(0,5000);
   persistState();
-  io.emit('bitacora:nueva', entry);
+  emitRealtime('bitacora:nueva',entry,'bitacora','bitacora_nueva',req.user,{id:entry.id});
   res.status(201).json(entry);
 });
 
@@ -2047,11 +2091,11 @@ async function processHistoricalUploadJob(job){
       diag.columnCount=Number(cached.columnCount||0);diag.columns=cached.columns||[];diag.sheet=cached.sheet||null;
       diag.reason=`Archivo ya procesado. Resultado recuperado desde caché MD5 (${diag.md5}).`;
       diag.finishedAt=nowIso();finalizeDiagRuntime(diag);etlLog(diag,'No se reprocesó el archivo.');
-      etlStoreDiagnostic(publicDiagnostic(diag));etlUpdateJob(job,100,'Finalizado desde caché',diag);persistHistoricalWarehouse();return;
+      etlStoreDiagnostic(publicDiagnostic(diag));etlUpdateJob(job,100,'Finalizado desde caché',diag);persistHistoricalWarehouse();emitRealtime('historico:actualizado',{source,archivo:file.originalname,revision:Number(historicalWarehouse?.revision||0),cache:true},'historico','archivo_cache',job.user,{source});return;
     }
     if(ext==='pdf'){
       diag.status='parcial';diag.reason='PDF registrado como lectura informativa. No se usa para KPI estructurados.';diag.finishedAt=nowIso();
-      finalizeDiagRuntime(diag);etlStoreDiagnostic(publicDiagnostic(diag));etlUpdateJob(job,100,'PDF registrado',diag);persistHistoricalWarehouse();return;
+      finalizeDiagRuntime(diag);etlStoreDiagnostic(publicDiagnostic(diag));etlUpdateJob(job,100,'PDF registrado',diag);persistHistoricalWarehouse();emitRealtime('historico:actualizado',{source,archivo:file.originalname,revision:Number(historicalWarehouse?.revision||0),pdf:true},'historico','pdf_registrado',job.user,{source});return;
     }
     etlUpdateJob(job,20,'Etapa 3/4 · validando columnas',diag);
     const useFastTamXlsx=ext==='xlsx'&&source==='tam'&&Number(file.size||0)<=5*1024*1024;
@@ -2071,6 +2115,7 @@ async function processHistoricalUploadJob(job){
     historicalWarehouse.fileCache[cacheKey]={source,md5:diag.md5,file:file.originalname,rowsFound:diag.rowsFound,rowsStored:diag.rowsStored,columnCount:diag.columnCount,columns:diag.columns,sheet:diag.sheet,createdAt:nowIso()};
     etlStoreDiagnostic(publicDiagnostic(diag));persistHistoricalWarehouse();
     etlUpdateJob(job,100,'Finalizado',diag);
+    emitRealtime('historico:actualizado',{source,archivo:file.originalname,revision:Number(historicalWarehouse?.revision||0),rowsStored:Number(diag.rowsStored||0)},'historico','archivo_procesado',job.user,{source});
   }catch(err){
     diag.status='error';
     diag.failedStage=diag.currentStage||job.stage||'Procesamiento';
@@ -2582,18 +2627,22 @@ app.post('/api/historico/ingesta',requireAuth,(req,res)=>{
     historicalDailyCache.revision=-1;
     // Para cargas grandes se persiste al finalizar archivo/lote final, evitando reescribir
     // todo el warehouse por cada bloque.
-    if(finalizar)persistHistoricalWarehouse();
+    if(finalizar){
+      persistHistoricalWarehouse();
+      emitRealtime('historico:actualizado',{source,archivo,revision:Number(historicalWarehouse?.revision||0),records:historicalWarehouse.sources[source]?.records||0},'historico','ingesta_finalizada',req.user,{source});
+    }
     return res.json({ok:true,source,archivo,loteRecibido:normalized.length,loteGuardado:valid.length,expandidos:expanded,ignorados:ignored,duplicados:duplicates,rechazados:errors.length,meta:historicalWarehouse.sources[source]});
   }catch(err){
     registrarErrorDetallado({modulo:'historico',funcion:'POST /api/historico/ingesta',error:err?.message||String(err),stack:err?.stack});
     return res.status(422).json({error:'No fue posible consolidar el archivo histórico',detalle:err?.message||String(err)});
   }
 });
-app.post('/api/historico/finalizar',requireAuth,(req,res)=>{try{persistHistoricalWarehouse();return res.json({ok:true,revision:Number(historicalWarehouse?.revision||0)});}catch(err){return res.status(500).json({error:'No se pudo persistir la base histórica',detalle:err?.message||String(err)});}});
+app.post('/api/historico/finalizar',requireAuth,(req,res)=>{try{persistHistoricalWarehouse();emitRealtime('historico:actualizado',{revision:Number(historicalWarehouse?.revision||0)},'historico','finalizado',req.user);return res.json({ok:true,revision:Number(historicalWarehouse?.revision||0)});}catch(err){return res.status(500).json({error:'No se pudo persistir la base histórica',detalle:err?.message||String(err)});}});
 app.delete('/api/historico/fuente/:source',requireAuth,(req,res)=>{
   const source=safeText(req.params.source);if(!HISTORICAL_SOURCES[source])return res.status(400).json({error:'Fuente inválida'});
   historicalWarehouse.records=(historicalWarehouse.records||[]).filter(r=>(r.source||r.fuente)!==source);
   historicalWarehouse.sources[source]={};historicalWarehouse.revision=Number(historicalWarehouse.revision||0)+1;historicalDailyCache.revision=-1;persistHistoricalWarehouse();
+  emitRealtime('historico:actualizado',{source,revision:Number(historicalWarehouse.revision||0)},'historico','fuente_eliminada',req.user,{source});
   return res.json({ok:true,source});
 });
 
@@ -2627,6 +2676,11 @@ app.delete('/api/historico/archivo',requireAuth,(req,res)=>{
     const source=safeText(req.query.source),archivo=safeText(req.query.archivo);
     if(!HISTORICAL_SOURCES[source])return res.status(400).json({error:'Fuente histórica inválida'});
     if(!archivo)return res.status(400).json({error:'Debe indicar el archivo a eliminar'});
+    const expectedRevision=req.query.expectedRevision!==undefined?Number(req.query.expectedRevision):null;
+    const currentRevision=Number(historicalWarehouse?.revision||0);
+    if(Number.isFinite(expectedRevision)&&expectedRevision!==currentRevision){
+      return res.status(409).json({error:'CONFLICTO_CONCURRENCIA',detalle:'La base histórica cambió antes de eliminar el archivo. Actualice la vista e intente nuevamente.',currentRevision});
+    }
     const before=(historicalWarehouse.records||[]).length;
     historicalWarehouse.records=(historicalWarehouse.records||[]).filter(r=>!((r.source||r.fuente)===source&&safeText(r.archivo)===archivo));
     const removed=before-historicalWarehouse.records.length;
@@ -2636,7 +2690,8 @@ app.delete('/api/historico/archivo',requireAuth,(req,res)=>{
     recomputeHistoricalSourceMeta(source);
     historicalWarehouse.revision=Number(historicalWarehouse.revision||0)+1;
     historicalWarehouse.loaded_at=nowIso();historicalDailyCache.revision=-1;persistHistoricalWarehouse();
-    return res.json({ok:true,source,archivo,removed,meta:historicalWarehouse.sources[source]});
+    emitRealtime('historico:actualizado',{source,archivo,removed,revision:Number(historicalWarehouse.revision||0)},'historico','archivo_eliminado',req.user,{source});
+    return res.json({ok:true,source,archivo,removed,meta:historicalWarehouse.sources[source],revision:Number(historicalWarehouse.revision||0)});
   }catch(err){return res.status(422).json({error:'No fue posible eliminar el archivo histórico',detalle:err?.message||String(err)});}
 });
 
@@ -3283,7 +3338,7 @@ app.post('/api/historico/snapshot', requireAuth, (req,res) => {
     const result=saveHistorySnapshot(payload,req);
     state.audit.unshift({id:crypto.randomUUID(),action:'snapshot_historico_creado',fecha,snapshot_id:result.snapshotId,user:req.user?.nombre||'Sistema',timestamp:nowIso()});
     persistState();
-    io.emit('historico:snapshot_creado',{fecha,snapshotId:result.snapshotId});
+    emitRealtime('historico:snapshot_creado',{fecha,snapshotId:result.snapshotId,revision:Number(historicalWarehouse?.revision||0)},'historico','snapshot_creado',req.user,{fecha});
     return res.json({ok:true,...result,mensaje:`Snapshot histórico ${fecha} guardado correctamente`});
   } catch(err) {
     registrarErrorDetallado({modulo:'historico',funcion:'POST /api/historico/snapshot',error:err?.message||String(err),stack:err?.stack,contexto:{fecha:req.body?.fecha||req.query?.fecha||''}});
@@ -3395,6 +3450,17 @@ app.use('/api', (req, res) => {
   });
 });
 
+
+io.use((socket,next)=>{
+  try{
+    const raw=safeText(socket.handshake?.auth?.token || socket.handshake?.headers?.authorization || '').replace(/^Bearer\s+/i,'');
+    const user=decodeToken(raw);
+    if(!user)return next(new Error('UNAUTHORIZED_SOCKET'));
+    socket.data.user=user;
+    return next();
+  }catch(err){return next(new Error('UNAUTHORIZED_SOCKET'));}
+});
+
 io.on('connection', (socket) => {
   socket.on('join', ({ planta } = {}) => { if (planta) socket.join(`planta:${planta}`); });
 });
@@ -3403,7 +3469,7 @@ app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 if (require.main === module && process.env.CCO_TEST_MODE !== '1') {
   server.listen(PORT, () => {
-    console.log(`[CCO][startup] CCO Intelligence v4.2.8 activo en puerto ${PORT}`);
+    console.log(`[CCO][startup] CCO Intelligence v4.3.0 activo en puerto ${PORT}`);
     console.log(`[CCO][startup] Diccionario plantas: ${PLANT_DICTIONARY.plants.length} plantas, ${PLANT_DICTIONARY_LOOKUP.size} alias resolubles, ${Object.keys(PLANT_DICTIONARY.conflicts||{}).length} alias ambiguos`);
     if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producción.');
   });
