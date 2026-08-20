@@ -333,6 +333,17 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
   .hist-two-col .history-table{min-width:820px}
 }
 
+
+/* ===== v4.2.3 · filtro semanal independiente tabla detallada ===== */
+.hist-detail-header{align-items:end!important;gap:12px;flex-wrap:wrap}
+.hist-detail-controls{display:flex;align-items:end;gap:8px;margin-left:auto;flex-wrap:wrap}
+.hist-detail-controls label{margin:0;font-size:9px;color:#60778c}
+.hist-detail-controls select{min-width:270px;max-width:390px}
+@media(max-width:760px){
+  .hist-detail-controls{width:100%;margin-left:0}
+  .hist-detail-controls select{width:100%;max-width:none}
+}
+
 </style>
 </head>
 <body>
@@ -372,11 +383,11 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v4.2.2</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v4.2.3</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
     <div id="opDateControl" class="pill" style="margin:0">Operación de hoy · <b id="scopeFechaLabel">—</b><input id="scopeFecha" type="hidden"></div>
-    <span id="appVersion" class="pill">v4.2.2</span><span id="connPill" class="pill">Conectando…</span>
+    <span id="appVersion" class="pill">v4.2.3</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
 <div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
@@ -638,7 +649,16 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
       <div class="hist-alert-box"><h3>🚨 Alertas Operacionales</h3><ul id="histAlerts"></ul></div>
     </div>
 
-    <div class="rep-header"><span class="rep-titulo">Tabla Detallada Exportable</span><span class="rep-meta" id="histDetailCount"></span></div>
+    <div class="rep-header hist-detail-header">
+      <span class="rep-titulo">Tabla Detallada Exportable</span>
+      <div class="hist-detail-controls">
+        <label for="histDetailWeek">Semana tabla</label>
+        <select id="histDetailWeek">
+          <option value="">Todas las semanas del período</option>
+        </select>
+        <span class="rep-meta" id="histDetailCount"></span>
+      </div>
+    </div>
     <div class="history-table-wrap hist-detail-table"><table class="history-table">
       <thead><tr><th>Fecha</th><th>Zona</th><th>Planta</th><th>Operador</th><th>Turno</th><th>Citación</th><th>Ingreso TAM</th><th>Logeo</th><th>1ª Asignación</th><th>1ª Carga</th><th>Salida TAM</th><th>Cruce</th></tr></thead>
       <tbody id="histDetailBody"><tr><td colspan="9" class="history-empty">Cargue archivos históricos para comenzar.</td></tr></tbody>
@@ -3255,12 +3275,52 @@ function renderFindings(data){
   document.getElementById('histInsights').innerHTML=(data.findings?.insights||[]).map(x=>`<li>${escapeHtml(x)}</li>`).join('');
   document.getElementById('histAlerts').innerHTML=(data.findings?.alerts||[]).map(x=>`<li>${escapeHtml(x)}</li>`).join('');
 }
+let histDetailWeekSelected='';
+function detailWeekKey(fecha){
+  if(!fecha)return '';
+  const d=new Date(`${fecha}T12:00:00`);
+  if(Number.isNaN(d.getTime()))return '';
+  const w=String(isoWeekNumber(d)).padStart(2,'0');
+  const y=new Date(d);
+  y.setDate(d.getDate()+4-(d.getDay()||7));
+  return `${y.getFullYear()}-W${w}`;
+}
+function syncHistDetailWeekOptions(rows){
+  const sel=document.getElementById('histDetailWeek');if(!sel)return;
+  const weeks=[...new Set((rows||[]).map(r=>detailWeekKey(r.fecha)).filter(Boolean))].sort().reverse();
+  const current=histDetailWeekSelected;
+  sel.innerHTML='<option value="">Todas las semanas del período</option>'+weeks.map(w=>{
+    const m=w.match(/^(\d{4})-W(\d{2})$/);
+    let label=w;
+    if(m){
+      const s=isoWeekStart(Number(m[1]),Number(m[2])),e=isoWeekEnd(Number(m[1]),Number(m[2]));
+      label=`${m[1]} · Semana ${Number(m[2])} · ${dateKeyLocal(s)} → ${dateKeyLocal(e)}`;
+    }
+    return `<option value="${w}">${label}</option>`;
+  }).join('');
+  if(current&&weeks.includes(current)){sel.value=current;}
+  else{histDetailWeekSelected='';sel.value='';}
+}
 function renderDetail(data){
-  const allRows=data.detailed||[],rows=allRows.slice(0,500);document.getElementById('histDetailCount').textContent=`Mostrando ${rows.length.toLocaleString('es-CL')} de ${Number(data.totalDetailed||0).toLocaleString('es-CL')} operador/día`;
-  document.getElementById('histDetailBody').innerHTML=rows.length?rows.map(r=>`<tr><td>${r.fecha}</td><td>${escapeHtml(r.zona||'')}</td><td>${escapeHtml(r.planta||'')}</td><td><b>${escapeHtml(r.operadorNombre||r.operadorId||'')}</b><div class="small">${escapeHtml(r.operadorId||'')}</div></td><td>${htime(r.turnoMin)}</td><td>${htime(r.citacionMin)}</td><td>${htime(r.tamIngresoMin)}</td><td>${htime(r.loginMin)}</td><td>${htime(r.asignacionMin)}</td><td>${htime(r.primeraCargaMin)}</td><td>${htime(r.tamSalidaMin)}</td><td>${escapeHtml(r.crossLabel||'')}</td></tr>`).join(''):'<tr><td colspan="12" class="history-empty">NO SE ENCONTRARON DATOS PARA EL PERÍODO SELECCIONADO</td></tr>';
+  const allRows=data.detailed||[];
+  syncHistDetailWeekOptions(allRows);
+  const filtered=histDetailWeekSelected
+    ? allRows.filter(r=>detailWeekKey(r.fecha)===histDetailWeekSelected)
+    : allRows;
+  const rows=filtered.slice(0,500);
+  const totalShown=filtered.length;
+  const globalTotal=Number(data.totalDetailed||allRows.length);
+  document.getElementById('histDetailCount').textContent=histDetailWeekSelected
+    ? `Mostrando ${rows.length.toLocaleString('es-CL')} de ${totalShown.toLocaleString('es-CL')} operador/día en la semana seleccionada`
+    : `Mostrando ${rows.length.toLocaleString('es-CL')} de ${globalTotal.toLocaleString('es-CL')} operador/día`;
+  document.getElementById('histDetailBody').innerHTML=rows.length
+    ? rows.map(r=>`<tr><td>${r.fecha}</td><td>${escapeHtml(r.zona||'')}</td><td>${escapeHtml(r.planta||'')}</td><td><b>${escapeHtml(r.operadorNombre||r.operadorId||'')}</b><div class="small">${escapeHtml(r.operadorId||'')}</div></td><td>${htime(r.turnoMin)}</td><td>${htime(r.citacionMin)}</td><td>${htime(r.tamIngresoMin)}</td><td>${htime(r.loginMin)}</td><td>${htime(r.asignacionMin)}</td><td>${htime(r.primeraCargaMin)}</td><td>${htime(r.tamSalidaMin)}</td><td>${escapeHtml(r.crossLabel||'')}</td></tr>`).join('')
+    : '<tr><td colspan="12" class="history-empty">SIN INFORMACIÓN PARA LA SEMANA SELECCIONADA</td></tr>';
 }
 function exportarHistoricoCSV(){
-  const rows=historicoUltimo?.detailed||[];if(!rows.length){alert('No hay datos detallados para exportar.');return;}
+  const baseRows=historicoUltimo?.detailed||[];
+  const rows=histDetailWeekSelected?baseRows.filter(r=>detailWeekKey(r.fecha)===histDetailWeekSelected):baseRows;
+  if(!rows.length){alert('No hay datos detallados para exportar en la semana seleccionada.');return;}
   const head=['Fecha','Zona','Planta','Operador','ID','Turno','Citacion','Ingreso TAM','Logeo','Primera Asignacion','Primera Carga','Salida TAM','Cruce'];
   const data=[head,...rows.map(r=>[r.fecha,r.zona,r.planta,r.operadorNombre,r.operadorId,htime(r.turnoMin),htime(r.citacionMin),htime(r.tamIngresoMin),htime(r.loginMin),htime(r.asignacionMin),htime(r.primeraCargaMin),htime(r.tamSalidaMin),r.crossLabel||''])];
   const csv=data.map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='trazabilidad_cco_intelligence.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),500);
@@ -3275,6 +3335,10 @@ function initHistIntelligence(){
   ['histTolTurnCitation','histTolAssignment','histTolTurn','histTolCitation','histAtrasoLeve','histAtrasoModerado'].forEach(id=>document.getElementById(id)?.addEventListener('change',cargarHistorico));
   document.getElementById('histRankingMetric')?.addEventListener('change',renderRankingOperacional);
   document.getElementById('histPlantDetail')?.addEventListener('change',renderPlantDetail);
+  document.getElementById('histDetailWeek')?.addEventListener('change',e=>{
+    histDetailWeekSelected=e.target.value||'';
+    if(historicoUltimo)renderDetail(historicoUltimo);
+  });
   renderHistPeriodControls();
 }
 
