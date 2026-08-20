@@ -350,11 +350,11 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v4.1.2</h1>
+  <div><h1>CCO Intelligence · Centro de Control Operacional v4.2</h1>
   <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
   <div style="display:flex;align-items:center;gap:8px">
     <div id="opDateControl" class="pill" style="margin:0">Operación de hoy · <b id="scopeFechaLabel">—</b><input id="scopeFecha" type="hidden"></div>
-    <span id="appVersion" class="pill">v4.1.2</span><span id="connPill" class="pill">Conectando…</span>
+    <span id="appVersion" class="pill">v4.2</span><span id="connPill" class="pill">Conectando…</span>
   </div>
 </header>
 <div id="moduleSwitcher" class="module-switcher" aria-label="Cambiar vista CCO">
@@ -560,6 +560,10 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
     <div class="rep-header"><span class="rep-titulo">Cobertura y Cruce de Fuentes</span><span class="rep-meta">El KPI solo se calcula cuando existen fuentes compatibles en el mismo período</span></div>
     <div id="histCoveragePanel" class="hist-coverage-grid"></div>
     <div id="histCrossWarning" class="history-note"></div>
+    <div id="histE2EHealth" class="history-note">
+      Cargue las fuentes históricas para ejecutar la validación extremo a extremo.
+    </div>
+
 
 
     <div class="rep-header"><span class="rep-titulo">Dashboard Ejecutivo</span><span class="rep-meta" id="histGeneralClass">Sin datos</span></div>
@@ -2603,6 +2607,8 @@ function renderHistDiagnostics(){
         <div class="hist-diag-k">Columnas detectadas</div><div class="hist-diag-v">${Number(d.columnCount||0)}</div>
         <div class="hist-diag-k">Filas válidas / recuperadas</div><div class="hist-diag-v">${Number(d.rowsStored||0).toLocaleString('es-CL')}</div>
         <div class="hist-diag-k">Filas rechazadas/filtradas</div><div class="hist-diag-v">${Number(d.rowsDiscarded||0).toLocaleString('es-CL')}</div>
+        <div class="hist-diag-k">Duplicados omitidos</div><div class="hist-diag-v">${Number(d.duplicates||0).toLocaleString('es-CL')}</div>
+        <div class="hist-diag-k">Registros anteriores reemplazados</div><div class="hist-diag-v">${Number(d.replacedPreviousRecords||0).toLocaleString('es-CL')}</div>
         <div class="hist-diag-k">Tiempo proceso</div><div class="hist-diag-v">${d.durationMs?`${(Number(d.durationMs)/1000).toFixed(1)} s`:'—'}</div>
         <div class="hist-diag-k">Memoria servidor</div><div class="hist-diag-v">${d.memoryMb?`${Number(d.memoryMb).toFixed(1)} MB`:'—'}</div>
         <div class="hist-diag-k">Cache MD5</div><div class="hist-diag-v">${d.fromCache?'✅ Reutilizada':(d.md5?escapeHtml(d.md5.slice(0,12))+'…':'—')}</div>
@@ -2706,7 +2712,7 @@ async function histProcessWorkbook(source,file,wb,diag){
 
 function histDiagFromServer(source,fileName,d){
   const diag={
-    id:`srv-${Date.now()}-${Math.random()}`,file:fileName,source,
+    id:d?.id||`srv-${source}-${fileName}`,file:fileName,source,
     sourceLabel:source==='turnos'?'Turnos':source==='citaciones'?'Citaciones':source==='tam'?'Marcaje TAM':'StatusBreakdown',
     startedAt:d?.startedAt||new Date().toISOString(),status:d?.status||'procesando',
     rowsFound:Number(d?.rowsFound||0),rowsStored:Number(d?.rowsStored||0),
@@ -2770,32 +2776,59 @@ function histUploadOne(source,file){
   });
 }
 async function histPollJob(source,fileName,jobId,diag){
-  const deadline=Date.now()+10_000;
-  let pollDelay=350,lastProgress=-1;
-  while(Date.now()<deadline){
+  const hardDeadline=Date.now()+10*60*1000;
+  let lastActivityAt=Date.now(),lastProgress=-1,lastRows=-1,lastStage='',pollDelay=350,lastServerDiag=diag;
+  while(Date.now()<hardDeadline){
     await new Promise(r=>setTimeout(r,pollDelay));
     const r=await fetch(API+'/api/historico/job/'+encodeURIComponent(jobId),{headers:authHeaders()});
     const data=await leerRespuestaApiSegura(r);
     const p=Math.max(20,Math.min(100,Number(data.progress||20)));
+    const rows=Number(data.diagnostic?.rowsFound||0);
     const stage=data.queuePosition?`En cola · posición ${data.queuePosition}`:(data.stage||'Procesando archivo');
+
+    const advanced=p!==lastProgress||rows!==lastRows||stage!==lastStage;
+    if(advanced)lastActivityAt=Date.now();
+
     histProgress(source,p,stage);
-    updateSystemStatus({module:'Trazabilidad',stage,file:fileName,rows:Number(data.diagnostic?.rowsFound||0),valid:Number(data.diagnostic?.rowsStored||0),rejected:Number(data.diagnostic?.rowsRejected||0)+Number(data.diagnostic?.rowsFiltered||0),columns:Number(data.diagnostic?.columnCount||0),time:data.diagnostic?.durationMs?`${(Number(data.diagnostic.durationMs)/1000).toFixed(1)} s`:'—',errors:data.error?1:0,errorDetail:data.error||''});
+    updateSystemStatus({
+      module:'Trazabilidad',stage,file:fileName,
+      rows,valid:Number(data.diagnostic?.rowsStored||0),
+      rejected:Number(data.diagnostic?.rowsRejected||0)+Number(data.diagnostic?.rowsFiltered||0),
+      columns:Number(data.diagnostic?.columnCount||0),
+      time:data.diagnostic?.durationMs?`${(Number(data.diagnostic.durationMs)/1000).toFixed(1)} s`:'—',
+      errors:data.error?1:0,errorDetail:data.error||''
+    });
+
     if(data.diagnostic){
-      diag=histDiagFromServer(source,fileName,data.diagnostic);histSetDiagnostic(source,diag);
-      histFileStatus(source,`${fileName} · ${diag.rowsFound.toLocaleString('es-CL')} filas leídas · ${diag.rowsStored.toLocaleString('es-CL')} registros recuperados`,'busy');
+      lastServerDiag=histDiagFromServer(source,fileName,data.diagnostic);
+      histSetDiagnostic(source,lastServerDiag);
+      histFileStatus(source,`${fileName} · ${lastServerDiag.rowsFound.toLocaleString('es-CL')} filas leídas · ${lastServerDiag.rowsStored.toLocaleString('es-CL')} válidos${lastServerDiag.duplicates?` · ${lastServerDiag.duplicates.toLocaleString('es-CL')} duplicados`:''}`,'busy');
     }
-    if(data.done)return {data,diag};
-    const current=Number(data.progress||0);
-    // Si hay progreso, refresca rápido; si permanece igual, evita saturar frontend/API.
-    pollDelay=current!==lastProgress?450:Math.min(1200,pollDelay+150);
-    lastProgress=current;
+    if(data.done)return {data,diag:lastServerDiag};
+
+    // Regla correcta: cancelar solo si durante 10 s no cambia etapa,
+    // porcentaje ni cantidad de filas. Un archivo que sigue avanzando NO se cancela.
+    if(Date.now()-lastActivityAt>10_000){
+      try{await fetch(API+'/api/historico/job/'+encodeURIComponent(jobId)+'/cancel',{method:'POST',headers:authHeaders()});}catch{}
+      const msg=`La carga quedó sin progreso durante más de 10 segundos en la etapa "${stage}". Verifique el archivo y vuelva a intentar.`;
+      histProgress(source,100,'ERROR · Sin progreso > 10 s');
+      const failed={...lastServerDiag,status:'error',reason:msg};
+      histSetDiagnostic(source,failed);
+      updateSystemStatus({module:'Trazabilidad',stage:`ERROR DETECTADO EN: ${stage}`,file:fileName,errors:1,errorDetail:msg});
+      const err=new Error(msg);err.lastDiagnostic=failed;throw err;
+    }
+
+    pollDelay=advanced?350:Math.min(1000,pollDelay+100);
+    lastProgress=p;lastRows=rows;lastStage=stage;
   }
+
   try{await fetch(API+'/api/historico/job/'+encodeURIComponent(jobId)+'/cancel',{method:'POST',headers:authHeaders()});}catch{}
-  const msg='La carga excedió el tiempo permitido. Verifique el archivo y vuelva a intentar.';
-  histProgress(source,100,'ERROR · Timeout 10 segundos');
-  updateSystemStatus({module:'Trazabilidad',stage:'ERROR DETECTADO EN: Procesamiento',file:fileName,errors:1,errorDetail:msg});
-  throw new Error(msg);
+  const msg='El procesamiento superó el límite de seguridad de 10 minutos.';
+  const failed={...lastServerDiag,status:'error',reason:msg};
+  histSetDiagnostic(source,failed);
+  throw Object.assign(new Error(msg),{lastDiagnostic:failed});
 }
+
 async function histReadFile(source,file,diag){
   if(!file.size)throw new Error('El archivo está vacío.');
   const ext=(file.name.split('.').pop()||'').toLowerCase();
@@ -2829,9 +2862,10 @@ async function procesarArchivosHistoricos(source,files){
       histSetDiagnostic(source,d);
     }catch(err){
       errors++;console.error('[CCO][TRAZABILIDAD][ARCHIVO]',file.name,err);
-      diag.status='error';diag.reason=err?.message||'No fue posible procesar el archivo.';
-      histAddLog(diag,`Error: ${err.message||err}`);histSetDiagnostic(source,diag);histProgress(source,100,'Error diagnosticado');
-      updateSystemStatus({module:'Trazabilidad',stage:'ERROR DETECTADO EN: Carga / ETL',file:file.name,errors:1,errorDetail:diag.reason});
+      const failed=err?.lastDiagnostic||diag;
+      failed.status='error';failed.reason=err?.message||'No fue posible procesar el archivo.';
+      histAddLog(failed,`Error: ${err.message||err}`);histSetDiagnostic(source,failed);histProgress(source,100,'Error diagnosticado');
+      updateSystemStatus({module:'Trazabilidad',stage:'ERROR DETECTADO EN: Carga / ETL',file:file.name,errors:1,errorDetail:failed.reason});
     }
   });
   await Promise.allSettled(tasks);
@@ -2850,7 +2884,7 @@ async function cargarCatalogoHistorico(){
       ['Registros analíticos',Number(data.totalRecords||0).toLocaleString('es-CL')],
       ['Operador/día',Number(data.totalDays||0).toLocaleString('es-CL')],
       ['Cobertura',`${histDateFmt(data.minDate)} → ${histDateFmt(data.maxDate)}`],
-      ['Fuentes cargadas',(data.sources||[]).filter(x=>x.records>0).length+' / 3']
+      ['Fuentes cargadas',(data.sources||[]).filter(x=>x.records>0).length+' / 4']
     ].map(x=>`<div class="hist-audit-mini"><span>${x[0]}</span><b>${x[1]}</b></div>`).join('');
     (data.sources||[]).forEach(s=>{
       const pdf=(histFilesReadOnly[s.source]||[]).length;
@@ -2963,6 +2997,27 @@ function histMetricCard(title,value,sub){
   return `<div class="kpi-card"><div class="kpi-label">${title}</div><div class="kpi-valor ${cls}">${shown}</div><div class="kpi-sub">${sub|| (noData?'No existen registros suficientes para calcular este KPI.':'')}</div></div>`;
 }
 
+
+function renderHistoricalE2E(data){
+  const h=data?.e2eHealth||{},box=document.getElementById('histE2EHealth');if(!box)return;
+  if(!h.rows){
+    box.innerHTML='⚠ <b>Sin registros consolidados para el período.</b> Revise la semana seleccionada y las fuentes cargadas.';
+    return;
+  }
+  const c=h.crosses||{},s=h.sourceCoverage||{};
+  const state=h.readyDashboard?'✅':'⚠';
+  box.innerHTML=`${state} <b>Validación extremo a extremo:</b>
+    ${Number(h.rows||0).toLocaleString('es-CL')} operador/día ·
+    ${Number(h.operators||0).toLocaleString('es-CL')} operadores ·
+    ${Number(h.plants||0).toLocaleString('es-CL')} plantas ·
+    Turno↔LOGIN <b>${Number(c.turnoLogin||0).toLocaleString('es-CL')}</b> ·
+    Citación↔LOGIN <b>${Number(c.citacionLogin||0).toLocaleString('es-CL')}</b> ·
+    Turno↔TAM <b>${Number(c.turnoTam||0).toLocaleString('es-CL')}</b> ·
+    TAM↔LOGIN <b>${Number(c.tamLogin||0).toLocaleString('es-CL')}</b> ·
+    4 fuentes <b>${Number(c.cuatroFuentes||0).toLocaleString('es-CL')}</b>.
+    <span class="small">${escapeHtml(h.reason||'')}</span>`;
+}
+
 function renderHistoricalCoverage(data){
   const c=data?.coverage||{},sr=c.sourceRows||{},od=c.operatorDays||{},x=c.crosses||{},u=c.unmatched||{};
   const cards=[
@@ -3010,6 +3065,7 @@ async function cargarHistorico(){
   try{
     const p=histParams(),r=await fetch(API+'/api/historico/dashboard-enterprise?'+p.toString(),{headers:authHeaders()}),data=await leerRespuestaApiSegura(r);historicoUltimo=data;
     renderHistoricalCoverage(data);
+    renderHistoricalE2E(data);
     const diag=document.getElementById('histDiagnostico');
     if(data.empty){diag.textContent=`NO SE ENCONTRARON DATOS PARA EL PERÍODO SELECCIONADO · ${data.from||'—'} → ${data.to||'—'} · Fuente: archivos adjuntos de Trazabilidad`;renderHistoricoDashboard(data);return;}
     diag.textContent=`Análisis ${data.from} → ${data.to} · ${data.metrics.registros} operador/día · ${data.metrics.operadores} operadores · ${data.metrics.plantas} plantas · cálculo tiempo muerto desde ${data.cfg.sourceStart}`;
@@ -3042,6 +3098,12 @@ function renderProcessedFiles(data){
 }
 
 function renderHistoricoDashboard(data){
+  if(data?.e2eHealth && !data.e2eHealth.readyDashboard){
+    const msg=`SIN INFORMACIÓN CALCULABLE PARA LOS FILTROS SELECCIONADOS · ${escapeHtml(data.e2eHealth.reason||'Sin cruces')}`;
+    const top=document.getElementById('histTopOps'),crit=document.getElementById('histCriticalOps');
+    if(top)top.innerHTML=`<tr><td colspan="8" class="history-empty">${msg}</td></tr>`;
+    if(crit)crit.innerHTML=`<tr><td colspan="8" class="history-empty">${msg}</td></tr>`;
+  }
   const issues=validarDashboardHistorico(data),diag=document.getElementById('histDiagnostico');if(issues.length&&diag)diag.innerHTML=`⚠ <b>Validación:</b> ${issues.map(escapeHtml).join(' · ')}`;
   renderProcessedFiles(data);
   const integrity=data.integrity||{};
