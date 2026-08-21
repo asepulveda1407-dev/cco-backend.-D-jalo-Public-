@@ -3112,6 +3112,65 @@ app.post('/api/historico/read-assistant',requireAuth,express.json({limit:'64kb'}
   catch(err){return res.status(422).json({error:'No fue posible responder la consulta de solo lectura',detalle:err?.message||String(err)});}
 });
 
+
+app.get('/api/historico/detail-export',requireAuth,(req,res)=>{
+  try{
+    const cfg=histCfg(req.query);
+    let rows=histFilterBase(req.query);
+    const week=safeText(req.query.week||'');
+    if(week)rows=rows.filter(r=>historicalPeriodKey(r.fecha,'week')===week);
+
+    const mode=String(req.query.mode||'logeo')==='citacion'?'citacion':'logeo';
+    const sourceStart=mode==='citacion'?'citacionMin':'loginMin';
+
+    const csvCell=(v)=>{
+      const s=v===null||v===undefined?'':String(v);
+      return `"${s.replace(/"/g,'""')}"`;
+    };
+    const yesNo=(v)=>v!==null&&v!==undefined?'SI':'NO';
+    const diff=(a,b)=>{
+      if(a===null||a===undefined||b===null||b===undefined)return null;
+      return histMinutesDiff(a,b);
+    };
+    const dead=(r)=>{
+      const start=r[sourceStart];
+      if(start===null||start===undefined||r.asignacionMin===null||r.asignacionMin===undefined)return null;
+      const d=histMinutesDiff(r.asignacionMin,start);
+      return d!==null&&d>=0&&d<=720?d:null;
+    };
+
+    const head=[
+      'Fecha','Zona','Planta','Operador','ID',
+      'Turno','Citacion','Ingreso TAM','Logeo','Primera Asignacion','Primera Carga','Salida TAM','Cruce',
+      'Tiene Turno','Tiene Citacion','Tiene TAM','Tiene Logeo','Tiene Asignacion','Tiene Primera Carga',
+      'Dif Logeo-Turno min','Dif Logeo-Citacion min','Dif Asignacion-Turno min',
+      mode==='citacion'?'Tiempo Muerto Citacion→Asignacion min':'Tiempo Muerto Logeo→Asignacion min',
+      'Dif Logeo-TAM min'
+    ];
+
+    const lines=[head.map(csvCell).join(';')];
+    for(const r of rows){
+      const values=[
+        r.fecha,r.zona,r.planta,r.operadorNombre,r.operadorId,
+        fmtMinutes(r.turnoMin),fmtMinutes(r.citacionMin),fmtMinutes(r.tamIngresoMin),fmtMinutes(r.loginMin),
+        fmtMinutes(r.asignacionMin),fmtMinutes(r.primeraCargaMin),fmtMinutes(r.tamSalidaMin),histCrossLabel(r),
+        yesNo(r.turnoMin),yesNo(r.citacionMin),yesNo(r.tamIngresoMin),yesNo(r.loginMin),yesNo(r.asignacionMin),yesNo(r.primeraCargaMin),
+        diff(r.loginMin,r.turnoMin),diff(r.loginMin,r.citacionMin),diff(r.asignacionMin,r.turnoMin),dead(r),diff(r.loginMin,r.tamIngresoMin)
+      ];
+      lines.push(values.map(csvCell).join(';'));
+    }
+
+    const filename=`trazabilidad_cco_${mode}_${safeText(req.query.from||'inicio')}_${safeText(req.query.to||'fin')}${week?'_'+week:''}.csv`;
+    res.setHeader('Content-Type','text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition',`attachment; filename="${filename.replace(/[^a-zA-Z0-9._-]/g,'_')}"`);
+    res.setHeader('Cache-Control','no-store');
+    return res.send('\uFEFF'+lines.join('\n'));
+  }catch(err){
+    registrarErrorDetallado({modulo:'historico',funcion:'GET /api/historico/detail-export',error:err?.message||String(err),stack:err?.stack});
+    return res.status(422).json({error:'No fue posible exportar el detalle histórico',detalle:err?.message||String(err)});
+  }
+});
+
 app.get('/api/historico/dashboard-enterprise',requireAuth,(req,res)=>{
   try{
     const cfg=histCfg(req.query),rows=histFilterBase(req.query),from=safeText(req.query.from),to=safeText(req.query.to);
