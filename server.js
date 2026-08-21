@@ -2562,6 +2562,75 @@ function histFilterBase(query={},rangeOverride=null){
   const operators=String(query.operators||query.operator||'').split(',').map(safeText).filter(Boolean);
   return idx.rows.filter(r=>(!from||r.fecha>=from)&&(!to||r.fecha<=to)&&(!zones.length||zones.includes(r.zona))&&(!plants.length||plants.includes(r.planta))&&(!operators.length||operators.includes(r.operadorKey)));
 }
+function histReadOnlyAdapterQuery(query={}){
+  const q={...query};delete q.plantas;
+  const mode=String(q.mode||'logeo')==='citacion'?'citacion':'logeo';
+  const idx=getHistoricalDailyIndex(),from=safeText(q.from),to=safeText(q.to);
+  const zones=String(q.zonas||q.zona||'').split(',').map(safeText).filter(Boolean);
+  const operators=String(q.operators||q.operator||'').split(',').map(safeText).filter(Boolean);
+  const base=idx.rows.filter(r=>(!from||r.fecha>=from)&&(!to||r.fecha<=to)&&(!zones.length||zones.includes(r.zona))&&(!operators.length||operators.includes(r.operadorKey)));
+  const eventRows=base.filter(r=>mode==='citacion'?(r.citacionMin!==null&&r.citacionMin!==undefined):(r.loginMin!==null&&r.loginMin!==undefined));
+  const m=new Map();
+  for(const r of eventRows){if(!r.planta||r.planta==='Sin planta')continue;if(!m.has(r.planta))m.set(r.planta,{planta:r.planta,zona:r.zona||inferZona(r.planta),registros:0,operadores:new Set(),dias:new Set()});const x=m.get(r.planta);x.registros++;x.operadores.add(r.operadorKey);x.dias.add(r.fecha);}
+  const eligiblePlants=[...m.values()].map(x=>({planta:x.planta,zona:x.zona,registros:x.registros,operadores:x.operadores.size,dias:x.dias.size})).sort((a,b)=>a.zona.localeCompare(b.zona,'es')||a.planta.localeCompare(b.planta,'es'));
+  const requested=String(query.aiPlants||'').split(',').map(safeText).filter(Boolean),eligibleNames=new Set(eligiblePlants.map(x=>x.planta));
+  const selectedPlants=requested.filter(p=>eligibleNames.has(p));
+  const analysisRows=eventRows.filter(r=>!selectedPlants.length||selectedPlants.includes(r.planta));
+  return {mode,base,eventRows,analysisRows,eligiblePlants,selectedPlants};
+}
+function histReadOnlyQuality(rows,mode='logeo'){
+  const total=rows.length,count=k=>rows.filter(r=>r[k]!==null&&r[k]!==undefined&&r[k]!=='').length,keys=new Set(rows.map(r=>`${r.fecha}|${r.operadorKey}`)),eventField=mode==='citacion'?'citacionMin':'loginMin';
+  return {rows:total,uniqueOperatorDays:keys.size,operators:new Set(rows.map(r=>r.operadorKey).filter(Boolean)).size,plants:new Set(rows.map(r=>r.planta).filter(p=>p&&p!=='Sin planta')).size,eventValid:count(eventField),turnoValid:count('turnoMin'),loginValid:count('loginMin'),citacionValid:count('citacionMin'),asignacionValid:count('asignacionMin'),tamValid:count('tamIngresoMin'),duplicatesDetected:Math.max(0,total-keys.size),eventCoveragePct:total?round1(count(eventField)/total*100):null};
+}
+
+function histReadOnlyMetricAudit(rows,cfg,mode='logeo'){
+  const audit={
+    adherenciaTurno:{ok:0,n:0,missing:0},adherenciaCitacion:{ok:0,n:0,missing:0},
+    turnVsCitation:{ok:0,n:0,missing:0},turnVsAssignment:{ok:0,n:0,missing:0},
+    tiempoMuerto:{n:0,missing:0},atrasoTurno:{n:0,late:0,missing:0},
+    atrasoCitacion:{n:0,late:0,missing:0},tamVsLogeo:{n:0,missing:0}
+  };
+  for(const r of rows){
+    if(r.turnoMin!==null&&r.citacionMin!==null){audit.turnVsCitation.n++;const d=histMinutesDiff(r.citacionMin,r.turnoMin);if(d!==null&&d>=-cfg.tolTurnCitationBefore&&d<=cfg.tolTurnCitationAfter)audit.turnVsCitation.ok++;}else audit.turnVsCitation.missing++;
+    if(r.turnoMin!==null&&r.asignacionMin!==null){audit.turnVsAssignment.n++;const d=histMinutesDiff(r.asignacionMin,r.turnoMin);if(d!==null&&d>=-cfg.tolAssignmentBefore&&d<=cfg.tolAssignmentAfter)audit.turnVsAssignment.ok++;}else audit.turnVsAssignment.missing++;
+    if(r.turnoMin!==null&&r.loginMin!==null){audit.adherenciaTurno.n++;audit.atrasoTurno.n++;const d=histMinutesDiff(r.loginMin,r.turnoMin);if(d!==null&&d>=-cfg.tolTurnBefore&&d<=cfg.tolTurnAfter)audit.adherenciaTurno.ok++;if(d!==null&&d>0)audit.atrasoTurno.late++;}else{audit.adherenciaTurno.missing++;audit.atrasoTurno.missing++;}
+    if(r.citacionMin!==null&&r.loginMin!==null){audit.adherenciaCitacion.n++;audit.atrasoCitacion.n++;const d=histMinutesDiff(r.loginMin,r.citacionMin);if(d!==null&&d>=-cfg.tolCitationBefore&&d<=cfg.tolCitationAfter)audit.adherenciaCitacion.ok++;if(d!==null&&d>0)audit.atrasoCitacion.late++;}else{audit.adherenciaCitacion.missing++;audit.atrasoCitacion.missing++;}
+    const start=cfg.sourceStart==='citacion'?r.citacionMin:r.loginMin;
+    if(start!==null&&r.asignacionMin!==null){const d=histMinutesDiff(r.asignacionMin,start);if(d!==null&&d>=0&&d<=720)audit.tiempoMuerto.n++;else audit.tiempoMuerto.missing++;}else audit.tiempoMuerto.missing++;
+    if(r.tamIngresoMin!==null&&r.loginMin!==null){const d=histMinutesDiff(r.loginMin,r.tamIngresoMin);if(d!==null)audit.tamVsLogeo.n++;else audit.tamVsLogeo.missing++;}else audit.tamVsLogeo.missing++;
+  }
+  return audit;
+}
+function histReadOnlyMetricRowsAudited(metrics,audit,quality,mode='logeo'){
+  const total=Number(quality?.rows||0);
+  const pct=(ok,n)=>n?round1(ok/n*100):null,coverage=n=>total?round1(n/total*100):null;
+  const row=(key,label,value,unit,a)=>{const n=Number(a?.n||0),ok=a?.ok!==undefined?Number(a.ok):null;return {key,label,value,unit,numerator:ok,denominator:n,missing:Math.max(0,total-n),coveragePct:coverage(n),auditedPct:ok!==null?pct(ok,n):null,exactMatch:ok===null||value==null?true:pct(ok,n)===value};};
+  if(mode==='citacion')return [
+    row('adherenciaCitacion','Adherencia a la Citación',metrics.adherenciaCitacion,'%',audit.adherenciaCitacion),
+    row('turnVsCitation','Turno vs Citación',metrics.turnVsCitation,'%',audit.turnVsCitation),
+    {...row('tiempoMuerto','Tiempo Muerto',metrics.tiempoMuerto?.promedio,' min',audit.tiempoMuerto),numerator:null,auditedPct:null,exactMatch:true},
+    {...row('atrasoCitacion','Atraso a la Citación',metrics.atrasoCitacion?.promedio,' min',audit.atrasoCitacion),numerator:audit.atrasoCitacion?.late??null,auditedPct:null,exactMatch:true}
+  ];
+  return [
+    row('adherenciaTurno','Adherencia al Turno',metrics.adherenciaTurno,'%',audit.adherenciaTurno),
+    row('turnVsAssignment','Turno vs Asignación',metrics.turnVsAssignment,'%',audit.turnVsAssignment),
+    {...row('tiempoMuerto','Tiempo Muerto',metrics.tiempoMuerto?.promedio,' min',audit.tiempoMuerto),numerator:null,auditedPct:null,exactMatch:true},
+    {...row('atrasoTurno','Atraso al Turno',metrics.atrasoTurno?.promedio,' min',audit.atrasoTurno),numerator:audit.atrasoTurno?.late??null,auditedPct:null,exactMatch:true},
+    {...row('tamVsLogeo','TAM vs Logeo',metrics.tamVsLogeo?.promedio,' min',audit.tamVsLogeo),numerator:null,auditedPct:null,exactMatch:true}
+  ];
+}
+
+function histReadOnlyMetricRows(metrics,mode='logeo'){
+  const rows=[],push=(key,label,value,n,unit='%')=>rows.push({key,label,value,n:Number(n||0),unit});
+  if(mode==='logeo'){push('adherenciaTurno','Adherencia al Turno',metrics.adherenciaTurno,metrics.adherenciaTurnoN);push('turnVsAssignment','Turno vs Asignación',metrics.turnVsAssignment,metrics.turnVsAssignmentN);push('tiempoMuerto','Tiempo Muerto',metrics.tiempoMuerto?.promedio,metrics.tiempoMuerto?.n,' min');push('atrasoTurno','Atraso al Turno',metrics.atrasoTurno?.promedio,metrics.atrasoTurno?.n,' min');push('tamVsLogeo','TAM vs Logeo',metrics.tamVsLogeo?.promedio,metrics.tamVsLogeo?.n,' min');}
+  else{push('adherenciaCitacion','Adherencia a la Citación',metrics.adherenciaCitacion,metrics.adherenciaCitacionN);push('turnVsCitation','Turno vs Citación',metrics.turnVsCitation,metrics.turnVsCitationN);push('tiempoMuerto','Tiempo Muerto',metrics.tiempoMuerto?.promedio,metrics.tiempoMuerto?.n,' min');push('atrasoCitacion','Atraso a la Citación',metrics.atrasoCitacion?.promedio,metrics.atrasoCitacion?.n,' min');}
+  return rows;
+}
+function histReadOnlyEvidence(query,adapter,metrics,quality){const from=safeText(query.from),to=safeText(query.to);return {revision:Number(historicalWarehouse?.revision||0),generatedAt:nowIso(),filters:{from,to,mode:adapter.mode,zonas:String(query.zonas||'').split(',').filter(Boolean),operators:String(query.operators||'').split(',').filter(Boolean),plants:adapter.selectedPlants},files:historicalFilesUsed(from,to),recordsUsed:adapter.analysisRows.length,metricBase:histReadOnlyMetricRows(metrics,adapter.mode),quality};}
+function histReadOnlySummary(metrics,adapter,quality,plants,zones,prevMetrics){const primary=adapter.mode==='citacion'?'adherenciaCitacion':'adherenciaTurno',label=adapter.mode==='citacion'?'adherencia a la citación':'adherencia al turno',cur=metrics[primary],prev=prevMetrics?.[primary],delta=cur!=null&&prev!=null?round1(cur-prev):null,bp=[...(plants||[])].filter(x=>x[primary]!=null).sort((a,b)=>b[primary]-a[primary])[0]||null,bz=[...(zones||[])].filter(x=>x[primary]!=null).sort((a,b)=>b[primary]-a[primary])[0]||null,out=[];out.push(cur==null?`No existen comparaciones suficientes para calcular ${label} en el alcance seleccionado.`:`El resultado agregado de ${label} es ${cur}% sobre ${Number(metrics[primary+'N']||0).toLocaleString('es-CL')} comparaciones válidas.`);if(delta!=null)out.push(`La variación frente al período anterior equivalente es ${delta>0?'+':''}${delta} puntos porcentuales.`);if(bp)out.push(`La planta con mayor resultado agregado dentro del filtro es ${bp.name} (${bp[primary]}%).`);if(bz)out.push(`La zona con mayor resultado agregado es ${bz.name} (${bz[primary]}%).`);out.push(`La cobertura del evento ${adapter.mode.toUpperCase()} es ${quality.eventCoveragePct==null?'sin base':quality.eventCoveragePct+'%'} sobre ${quality.rows.toLocaleString('es-CL')} operador/día analizados.`);return out;}
+function histReadOnlyAlerts(metrics,adapter,quality,plants){const out=[],primary=adapter.mode==='citacion'?'adherenciaCitacion':'adherenciaTurno';if(!quality.rows)out.push('No existen registros para el alcance seleccionado.');if(quality.eventCoveragePct!=null&&quality.eventCoveragePct<100)out.push(`Cobertura ${adapter.mode.toUpperCase()}: ${quality.eventCoveragePct}% (${Number(quality.eventValid||0).toLocaleString('es-CL')} de ${quality.rows.toLocaleString('es-CL')} operador/día). Los registros sin evento se informan y no se convierten en cumplimiento ni incumplimiento.`);const noMetric=(plants||[]).filter(x=>x[primary]==null).length;if(noMetric)out.push(`${noMetric} planta(s) con evento disponible no tienen cruces suficientes para calcular la adherencia principal.`);if(quality.duplicatesDetected>0)out.push(`Se detectaron ${quality.duplicatesDetected} claves operador/día repetidas en el adaptador de lectura.`);return out;}
+function histReadOnlyQuestionAnswer(question,ctx){const q=safeText(question).toLowerCase(),primary=ctx.mode==='citacion'?'adherenciaCitacion':'adherenciaTurno',label=ctx.mode==='citacion'?'adherencia a la citación':'adherencia al turno',plants=(ctx.plants||[]).filter(x=>x[primary]!=null),zones=(ctx.zones||[]).filter(x=>x[primary]!=null);if(!q)return {answer:'Escriba una consulta sobre los resultados filtrados.',evidence:[]};if(q.includes('mejor planta')||q.includes('mayor planta')){const x=[...plants].sort((a,b)=>b[primary]-a[primary])[0];return x?{answer:`La planta con mayor ${label} en el alcance seleccionado es ${x.name}, con ${x[primary]}%.`,evidence:[`Planta=${x.name}`,`${label}=${x[primary]}%`]}:{answer:'No existen plantas con cruces suficientes para responder.',evidence:[]};}if(q.includes('menor planta')||q.includes('peor planta')){const x=[...plants].sort((a,b)=>a[primary]-b[primary])[0];return x?{answer:`La planta con menor ${label} en el alcance seleccionado es ${x.name}, con ${x[primary]}%. El dato se presenta para revisión del proceso, no como evaluación laboral.`,evidence:[`Planta=${x.name}`,`${label}=${x[primary]}%`]}:{answer:'No existen plantas con cruces suficientes para responder.',evidence:[]};}if(q.includes('zona')){const x=[...zones].sort((a,b)=>b[primary]-a[primary]);return x.length?{answer:`Por zona, ${x.map(v=>`${v.name}: ${v[primary]}%`).join(' · ')}.`,evidence:x.map(v=>`${v.name}=${v[primary]}%`)}:{answer:'No existen zonas con cruces suficientes para responder.',evidence:[]};}if(q.includes('tiempo muerto')){const m=ctx.metrics.tiempoMuerto;return m?.n?{answer:`El tiempo muerto promedio es ${m.promedio} min, mediana ${m.mediana} min y P90 ${m.p90} min, sobre ${m.n} registros válidos.`,evidence:[`n=${m.n}`,`promedio=${m.promedio}`,`mediana=${m.mediana}`,`P90=${m.p90}`]}:{answer:'No existen registros válidos suficientes para tiempo muerto.',evidence:[]};}if(q.includes('calidad')||q.includes('cobertura'))return {answer:`La cobertura ${ctx.mode.toUpperCase()} es ${ctx.quality.eventCoveragePct==null?'sin base':ctx.quality.eventCoveragePct+'%'}. Se analizaron ${ctx.quality.rows} operador/día, ${ctx.quality.operators} operadores y ${ctx.quality.plants} plantas.`,evidence:[`filas=${ctx.quality.rows}`,`operadores=${ctx.quality.operators}`,`plantas=${ctx.quality.plants}`,`cobertura=${ctx.quality.eventCoveragePct}`]};if(q.includes('adherencia')){const v=ctx.metrics[primary],a=ctx.metricAudit?.[primary],n=Number(a?.n||ctx.metrics[primary+'N']||0),ok=a?.ok;return v!=null?{answer:`La ${label} agregada es ${v}%. Cumplen ${Number(ok??0).toLocaleString('es-CL')} de ${n.toLocaleString('es-CL')} comparaciones válidas. Los registros sin cruce no se clasifican como cumplimiento ni incumplimiento.`,evidence:[`${label}=${v}%`,`cumplen=${ok??0}`,`comparaciones_validas=${n}`,`sin_base=${a?.missing??0}`]}:{answer:`No existen comparaciones suficientes para calcular ${label}.`,evidence:[]};}if(q.includes('archiv')||q.includes('fuente')){const names=(ctx.evidence?.files||[]).map(f=>`${f.source}: ${f.archivo}`).slice(0,12);return {answer:names.length?`Fuentes utilizadas: ${names.join(' · ')}.`:'No hay archivos asociados al período filtrado.',evidence:names};}return {answer:'La consulta no coincide con una intención analítica soportada. Puede preguntar por adherencia, mejor/menor planta, zonas, tiempo muerto, cobertura/calidad o archivos fuente.',evidence:[]};}
+
 function histPreviousRange(from,to){
   if(!from||!to)return null;
   const a=new Date(`${from}T12:00:00`),b=new Date(`${to}T12:00:00`);
@@ -3033,6 +3102,15 @@ function historicalEndToEndHealth(query={}){
   out.reason=out.readyDashboard?'Modelo histórico cruzado y calculable.':'No existen cruces suficientes en el período seleccionado.';
   return out;
 }
+
+app.get('/api/historico/read-adapter',requireAuth,(req,res)=>{
+  try{const cfg=histCfg(req.query),adapter=histReadOnlyAdapterQuery(req.query),metrics=histMetrics(adapter.analysisRows,cfg),prevRange=histPreviousRange(safeText(req.query.from),safeText(req.query.to)),prevQuery={...req.query,from:prevRange?.from||'',to:prevRange?.to||''},prevAdapter=prevRange?histReadOnlyAdapterQuery(prevQuery):{analysisRows:[]},prevMetrics=histMetrics(prevAdapter.analysisRows,cfg),plants=histGroupMetrics(adapter.analysisRows,'planta',cfg,prevAdapter.analysisRows,adapter.mode),zones=histGroupMetrics(adapter.analysisRows,'zona',cfg,prevAdapter.analysisRows,adapter.mode),operators=histOperatorGroups(adapter.analysisRows,cfg,prevAdapter.analysisRows,adapter.mode),quality=histReadOnlyQuality(adapter.analysisRows,adapter.mode),metricAudit=histReadOnlyMetricAudit(adapter.analysisRows,cfg,adapter.mode),auditedMetricRows=histReadOnlyMetricRowsAudited(metrics,metricAudit,quality,adapter.mode),evidence=histReadOnlyEvidence(req.query,adapter,metrics,quality),summary=histReadOnlySummary(metrics,adapter,quality,plants,zones,prevMetrics),alerts=histReadOnlyAlerts(metrics,adapter,quality,plants),primary=adapter.mode==='citacion'?'adherenciaCitacion':'adherenciaTurno',cur=metrics[primary],prev=prevMetrics[primary];return res.json({ok:true,readOnly:true,mode:adapter.mode,eligiblePlants:adapter.eligiblePlants,selectedPlants:adapter.selectedPlants,metrics,metricRows:histReadOnlyMetricRows(metrics,adapter.mode),auditedMetricRows,metricAudit,adherence:{primary,current:cur,previous:prev,delta:cur!=null&&prev!=null?round1(cur-prev):null},comparisons:{plants:plants.sort((a,b)=>(b[primary]??-1)-(a[primary]??-1)),zones:zones.sort((a,b)=>(b[primary]??-1)-(a[primary]??-1)),operators:operators.sort((a,b)=>(b[primary]??-1)-(a[primary]??-1)).slice(0,25)},quality,summary,alerts,evidence,previousRange:prevRange});}
+  catch(err){registrarErrorDetallado({modulo:'historico-readonly',funcion:'GET /api/historico/read-adapter',error:err?.message||String(err),stack:err?.stack});return res.status(422).json({error:'No fue posible construir el adaptador histórico de solo lectura',detalle:err?.message||String(err)});}
+});
+app.post('/api/historico/read-assistant',requireAuth,express.json({limit:'64kb'}),(req,res)=>{
+  try{const query=req.body?.query||{},question=safeText(req.body?.question||''),cfg=histCfg(query),adapter=histReadOnlyAdapterQuery(query),metrics=histMetrics(adapter.analysisRows,cfg),plants=histGroupMetrics(adapter.analysisRows,'planta',cfg,[],adapter.mode),zones=histGroupMetrics(adapter.analysisRows,'zona',cfg,[],adapter.mode),quality=histReadOnlyQuality(adapter.analysisRows,adapter.mode),metricAudit=histReadOnlyMetricAudit(adapter.analysisRows,cfg,adapter.mode),evidence=histReadOnlyEvidence(query,adapter,metrics,quality),result=histReadOnlyQuestionAnswer(question,{mode:adapter.mode,metrics,plants,zones,quality,evidence,metricAudit});return res.json({ok:true,readOnly:true,question,answer:result.answer,evidence:result.evidence,audit:{revision:evidence.revision,generatedAt:evidence.generatedAt,recordsUsed:evidence.recordsUsed,filters:evidence.filters}});}
+  catch(err){return res.status(422).json({error:'No fue posible responder la consulta de solo lectura',detalle:err?.message||String(err)});}
+});
 
 app.get('/api/historico/dashboard-enterprise',requireAuth,(req,res)=>{
   try{
