@@ -603,7 +603,7 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
     </details>
     <div class="row hist-actions">
       <button type="button" id="histConsultar">Actualizar análisis</button>
-      <button type="button" class="secondary" id="histExportar">Exportar detalle CSV</button>
+      <button type="button" class="secondary" id="histExportar">Exportar detalle CSV</button><span class="history-note">La exportación usa el universo completo del filtro actual y conserva vacíos reales para Logeo, TAM, Asignación y Carga.</span>
       <span class="small" id="histAlcance"></span>
     </div>
     <div id="histDiagnostico" class="history-note"></div>
@@ -3554,13 +3554,27 @@ function renderDetail(data){
     if(bodyEl)bodyEl.innerHTML='<tr><td colspan="12" class="history-empty">Error renderizando tabla detallada. Recargue la página.</td></tr>';
   }
 }
-function exportarHistoricoCSV(){
-  const baseRows=historicoUltimo?.detailed||[];
-  const rows=histDetailWeekSelected?baseRows.filter(r=>detailWeekKey(r.fecha)===histDetailWeekSelected):baseRows;
-  if(!rows.length){alert('No hay datos detallados para exportar en la semana seleccionada.');return;}
-  const head=['Fecha','Zona','Planta','Operador','ID','Turno','Citacion','Ingreso TAM','Logeo','Primera Asignacion','Primera Carga','Salida TAM','Cruce'];
-  const data=[head,...rows.map(r=>[r.fecha,r.zona,r.planta,r.operadorNombre,r.operadorId,htime(r.turnoMin),htime(r.citacionMin),htime(r.tamIngresoMin),htime(r.loginMin),htime(r.asignacionMin),htime(r.primeraCargaMin),htime(r.tamSalidaMin),r.crossLabel||''])];
-  const csv=data.map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='trazabilidad_cco_intelligence.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),500);
+async function exportarHistoricoCSV(){
+  try{
+    const params=histParams();
+    if(histDetailWeekSelected)params.set('week',histDetailWeekSelected);
+    const r=await fetch(API+'/api/historico/detail-export?'+params.toString(),{headers:authHeaders(),cache:'no-store'});
+    if(!r.ok){
+      let msg=`HTTP ${r.status}`;
+      try{const j=await r.json();msg=j.detalle||j.error||msg;}catch{}
+      throw new Error(msg);
+    }
+    const blob=await r.blob();
+    if(!blob.size){alert('No hay datos detallados para exportar con los filtros seleccionados.');return;}
+    const cd=r.headers.get('content-disposition')||'';
+    const m=cd.match(/filename="([^"]+)"/i);
+    const name=m?.[1]||'trazabilidad_cco_intelligence.csv';
+    const url=URL.createObjectURL(blob),a=document.createElement('a');
+    a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),500);
+  }catch(err){
+    console.error('[exportarHistoricoCSV]',err);
+    alert('No fue posible exportar la trazabilidad completa: '+(err.message||err));
+  }
 }
 function initHistIntelligence(){
   renderHistDiagnostics();
