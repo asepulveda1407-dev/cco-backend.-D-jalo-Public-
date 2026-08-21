@@ -1391,7 +1391,7 @@ function normalizeFleetRow(row, index){
   const plantType=fleetPick(row,['Tipo planta','Tipo Planta','Tipo']);
   const sourceSheet=fleetPick(row,['__source_sheet']) || '';
   const key=(id||number||plate||`ROW${index+1}`)+'-'+(plate||number||index+1);
-  return {key,id:id||number||plate||`Equipo ${index+1}`,number,brand,model,plate,year,zone,plantCode,plantType,plant,company,sourceSheet,sourceStatus,activeFlag,observation,status:fleetStatusFromSource(sourceStatus,activeFlag),workshop:'',responsible:'',eta:'',progress:0,cause:'',history:[],version:1};
+  return {key,id:id||number||plate||`Equipo ${index+1}`,number,brand,model,plate,year,zone,plantCode,plantType,plant,homePlant:plant,company,sourceSheet,sourceStatus,activeFlag,observation,status:fleetStatusFromSource(sourceStatus,activeFlag),workshop:'',responsible:'',eta:'',progress:0,cause:'',history:[],version:1};
 }
 function sanitizeFleetItem(item){
   const x={...item};
@@ -1415,7 +1415,7 @@ app.post('/api/flota/ingesta', requireAuth, (req,res)=>{
     const oldByKey=new Map((state.fleet?.datos||[]).map(x=>[x.key,x]));
     const merged=normalized.map(n=>{
       const old=oldByKey.get(n.key);
-      return old?{...n,status:old.status||n.status,workshop:old.workshop||'',responsible:old.responsible||'',eta:old.eta||'',progress:Number(old.progress||0),cause:old.cause||'',observation:old.observation||n.observation||'',history:Array.isArray(old.history)?old.history:[],version:Number(old.version||1),lastRelocation:old.lastRelocation||null}:{...n,version:Number(n.version||1),lastRelocation:null};
+      return old?{...n,status:old.status||n.status,workshop:old.workshop||'',responsible:old.responsible||'',eta:old.eta||'',progress:Number(old.progress||0),cause:old.cause||'',observation:old.observation||n.observation||'',history:Array.isArray(old.history)?old.history:[],version:Number(old.version||1),homePlant:old.homePlant||n.homePlant||n.plant,lastRelocation:old.lastRelocation||null}:{...n,version:Number(n.version||1),homePlant:n.homePlant||n.plant,lastRelocation:null};
     });
     state.fleet={datos:merged,revision:Number(state.fleet?.revision||0)+1,metadatos:{archivo:safeText(req.body?.archivo||'Flota'),hoja:safeText(req.body?.hoja||''),cargado_en:nowIso(),usuario:req.user.nombre,filas_recibidas:rows.length,equipos_validos:merged.length}};
     persistState();emitRealtime('flota:actualizada',{revision:state.fleet.revision,cantidad:merged.length,metadatos:state.fleet.metadatos},'flota','flota_actualizada',req.user);
@@ -1451,12 +1451,27 @@ app.patch('/api/flota/:key', requireAuth, (req,res)=>{
     const changes=allowed.filter(k=>String(before[k]??'')!==String(next[k]??''));
     next.version=changes.length?currentVersion+1:currentVersion;
     if(changes.includes('plant')){
-      next.lastRelocation={
-        at:nowIso(),
-        from:safeText(before.plant||'Sin planta asignada'),
-        to:safeText(next.plant||'Sin planta asignada'),
-        user:req.user?.nombre||'Sistema'
-      };
+      const rawHome=before.homePlant||before.lastRelocation?.homePlant||before.plant||'Sin planta asignada';
+      const homePlant=(rawHome&&rawHome!=='Sin planta asignada')?(canonicalPlantName(rawHome)||rawHome):rawHome;
+      next.homePlant=homePlant;
+
+      const returnedHome=homePlant!=='Sin planta asignada' && safeText(next.plant)===safeText(homePlant);
+      if(returnedHome){
+        // Regla visual: al volver a su planta de origen, elimina la marca de reubicación
+        // y recupera inmediatamente el color natural correspondiente a su estado.
+        next.lastRelocation=null;
+      }else{
+        next.lastRelocation={
+          at:nowIso(),
+          from:safeText(before.plant||'Sin planta asignada'),
+          to:safeText(next.plant||'Sin planta asignada'),
+          homePlant:safeText(homePlant),
+          user:req.user?.nombre||'Sistema'
+        };
+      }
+    }else if(!next.homePlant){
+      // Compatibilidad con registros creados antes de v4.3.2.
+      next.homePlant=before.homePlant||before.plant||'Sin planta asignada';
     }
     if(changes.length){
       next.history=Array.isArray(before.history)?[...before.history]:[];
@@ -3515,7 +3530,7 @@ app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 if (require.main === module && process.env.CCO_TEST_MODE !== '1') {
   server.listen(PORT, () => {
-    console.log(`[CCO][startup] CCO Intelligence v4.3.1 activo en puerto ${PORT}`);
+    console.log(`[CCO][startup] CCO Intelligence v4.3.2 activo en puerto ${PORT}`);
     console.log(`[CCO][startup] Diccionario plantas: ${PLANT_DICTIONARY.plants.length} plantas, ${PLANT_DICTIONARY_LOOKUP.size} alias resolubles, ${Object.keys(PLANT_DICTIONARY.conflicts||{}).length} alias ambiguos`);
     if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producción.');
   });
