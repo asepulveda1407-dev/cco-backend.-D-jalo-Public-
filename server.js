@@ -2974,16 +2974,70 @@ function historicalSourceProcessingAudit(source){
   return {source,label:HISTORICAL_SOURCES[source]?.label||source,files:[...new Set(raw.map(r=>safeText(r.archivo)).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es')),processed:sum('rowsFound'),valid:sum('rowsStored'),rejected:sum('rowsRejected'),filtered:sum('rowsFiltered'),partial:sum('rowsPartial'),duplicates:sum('duplicates'),recordsStored:raw.length,minDate:dates[0]||meta.minDate||null,maxDate:dates.at(-1)||meta.maxDate||null,plants:[...new Set(raw.map(r=>r.planta).filter(p=>p&&p!=='Sin planta'))].sort((a,b)=>a.localeCompare(b,'es')),operators:new Set(raw.map(r=>r.operadorKey).filter(Boolean)).size,reasons:[...reasons.values()].sort((a,b)=>b.count-a.count),status:meta.status||'sin_datos',lastLoadedAt:meta.lastLoadedAt||null};
 }
 function historicalValidPlantsByMode(mode='logeo',from='',to=''){
-  const source=mode==='citacion'?'citaciones':'status';
-  const rows=(historicalWarehouse.records||[]).filter(r=>{
+  const normalizedMode=String(mode||'logeo')==='citacion'?'citacion':'logeo';
+  const idx=getHistoricalDailyIndex();
+
+  // Regla:
+  // - CITACIÓN: la existencia del registro proviene exclusivamente de la fuente Citaciones.
+  //   La planta se obtiene del registro consolidado operador+fecha, porque Citaciones puede no traer planta.
+  // - LOGEO: la existencia del registro proviene exclusivamente de Status con LOGIN real.
+  //
+  // Esto evita que una planta aparezca solo por existir en Turnos/Status sin tener el evento seleccionado,
+  // pero permite mostrar la planta correctamente cuando la fuente del evento no contiene esa columna.
+  const source=normalizedMode==='citacion'?'citaciones':'status';
+
+  const raw=(historicalWarehouse.records||[]).filter(r=>{
     if((r.source||r.fuente)!==source)return false;
-    if(from&&r.fecha<from)return false;if(to&&r.fecha>to)return false;
-    if(!r.planta||r.planta==='Sin planta')return false;
-    return mode==='citacion'?(r.citacionMin!==null&&r.citacionMin!==undefined):(r.loginMin!==null&&r.loginMin!==undefined);
+    if(from&&r.fecha<from)return false;
+    if(to&&r.fecha>to)return false;
+    if(!r.fecha||!r.operadorKey)return false;
+    return normalizedMode==='citacion'
+      ? (r.citacionMin!==null&&r.citacionMin!==undefined)
+      : (r.loginMin!==null&&r.loginMin!==undefined);
   });
+
+  const eventKeys=new Set(raw.map(r=>`${r.fecha}|${r.operadorKey}`));
+  const filesByKey=new Map();
+  for(const r of raw){
+    const k=`${r.fecha}|${r.operadorKey}`;
+    if(!filesByKey.has(k))filesByKey.set(k,new Set());
+    if(r.archivo)filesByKey.get(k).add(r.archivo);
+  }
+
   const map=new Map();
-  for(const r of rows){if(!map.has(r.planta))map.set(r.planta,{planta:r.planta,zona:r.zona||inferZona(r.planta),registros:0,operadores:new Set(),archivos:new Set()});const x=map.get(r.planta);x.registros++;x.operadores.add(r.operadorKey);if(r.archivo)x.archivos.add(r.archivo);}
-  return [...map.values()].map(x=>({planta:x.planta,zona:x.zona,registros:x.registros,operadores:x.operadores.size,archivos:[...x.archivos]})).sort((a,b)=>a.zona.localeCompare(b.zona,'es')||a.planta.localeCompare(b.planta,'es'));
+  for(const d of idx.rows){
+    const key=`${d.fecha}|${d.operadorKey}`;
+    if(!eventKeys.has(key))continue;
+    if(from&&d.fecha<from)continue;
+    if(to&&d.fecha>to)continue;
+
+    const plant=safeText(d.planta);
+    if(!plant||plant==='Sin planta')continue;
+
+    if(!map.has(plant)){
+      map.set(plant,{
+        planta:plant,
+        zona:d.zona||inferZona(plant),
+        registros:0,
+        operadores:new Set(),
+        archivos:new Set()
+      });
+    }
+    const x=map.get(plant);
+    x.registros++;
+    x.operadores.add(d.operadorKey);
+    for(const f of (filesByKey.get(key)||[]))x.archivos.add(f);
+  }
+
+  return [...map.values()]
+    .map(x=>({
+      planta:x.planta,
+      zona:x.zona,
+      registros:x.registros,
+      operadores:x.operadores.size,
+      archivos:[...x.archivos].sort((a,b)=>a.localeCompare(b,'es'))
+    }))
+    .sort((a,b)=>a.zona.localeCompare(b.zona,'es')||a.planta.localeCompare(b.planta,'es'));
 }
 function historicalRawFilesForKeys(source,keys,from='',to=''){
   const set=new Set(keys);
