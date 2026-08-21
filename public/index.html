@@ -361,6 +361,153 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
   background:#12a0ca; color:#fff; font-size:7px; font-weight:900; line-height:1; border:2px solid #fff;
 }
 
+
+/* =========================================================
+   v4.5.0 · UX/UI CORPORATIVO GLOBAL
+   Intervención exclusivamente visual.
+   ========================================================= */
+:root{
+  --cco-bg:#eef4f9;--cco-surface:#fff;--cco-surface-soft:#f7fafc;
+  --cco-border:#d5e2ed;--cco-border-strong:#bdd0df;
+  --cco-ink:#102f49;--cco-muted:#71879a;
+  --cco-blue:#1577c8;--cco-blue-deep:#075a9c;--cco-blue-soft:#eaf4fc;
+  --cco-shadow:0 8px 24px rgba(25,61,91,.07);--cco-radius:14px;--cco-gap:14px;
+}
+html{background:var(--cco-bg)}
+body{
+  background:radial-gradient(circle at 0 0,rgba(21,119,200,.035),transparent 34%),
+             linear-gradient(180deg,#f5f9fc 0,#eef4f9 320px,#eef4f9 100%);
+  color:var(--cco-ink);
+}
+#app{min-height:100vh}
+main{width:min(1920px,calc(100% - 28px));max-width:none;margin:0 auto 32px;padding:0}
+.card{border:1px solid var(--cco-border)!important;border-radius:var(--cco-radius)!important;background:#fff!important;box-shadow:var(--cco-shadow)!important}
+main>.card{margin:0 0 var(--cco-gap)!important;padding:16px!important}
+
+/* Header */
+header{
+  width:min(1920px,calc(100% - 28px));margin:12px auto 8px;padding:14px 16px!important;
+  border:1px solid var(--cco-border)!important;border-radius:16px!important;
+  background:rgba(255,255,255,.96)!important;box-shadow:var(--cco-shadow)!important;
+  backdrop-filter:blur(8px);align-items:center!important;gap:18px!important;
+}
+.cco-brand-block{min-width:340px;flex:1}
+.cco-brand-block h1{margin:0!important;font-size:18px!important;line-height:1.15!important;font-weight:850!important;letter-spacing:.02em!important;color:#0a385e!important}
+.cco-brand-subtitle{margin:5px 0 0!important;font-size:10px!important;color:var(--cco-muted)!important;letter-spacing:.035em}
+.cco-header-right{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px}
+.cco-live-strip{display:flex;align-items:stretch;gap:6px;margin-left:auto}
+.cco-live-item{min-width:92px;padding:7px 9px;border:1px solid var(--cco-border);border-radius:10px;background:var(--cco-surface-soft)}
+.cco-live-item span{display:block;font-size:7px;text-transform:uppercase;letter-spacing:.06em;color:var(--cco-muted);margin-bottom:2px}
+.cco-live-item b{display:block;font-size:10px;color:var(--cco-ink);white-space:nowrap}
+
+/* Navegación */
+.module-switcher{
+  width:min(1920px,calc(100% - 28px));margin:0 auto 8px!important;padding:6px!important;
+  border:1px solid var(--cco-border)!important;border-radius:13px!important;background:#fff!important;
+  box-shadow:0 3px 12px rgba(25,61,91,.045);gap:6px!important;
+}
+.module-switcher-label{min-width:74px;padding:0 8px;align-self:center;color:var(--cco-muted)!important;font-size:8px!important}
+.module-switcher button{min-height:34px;border-radius:9px!important;border:1px solid transparent!important;font-size:10px!important;font-weight:750!important;letter-spacing:.01em;box-shadow:none!important}
+.module-switcher button.active{background:linear-gradient(180deg,#1786dc,#096ab7)!important;color:#fff!important;border-color:#096ab7!important}
+.module-switcher button.secondary:not(.active){background:#f5f8fb!important;color:#31536c!important}
+.module-tabs{position:sticky;top:0;z-index:20;padding:5px!important;margin:0 0 10px!important;border:1px solid var(--cco-border)!important;border-radius:12px!important;background:rgba(255,255,255,.96)!important;backdrop-filter:blur(8px);box-shadow:0 3px 10px rgba(25,61,91,.045)}
+.module-tab{border-radius:8px!important;padding:8px 13px!important;font-size:9px!important;font-weight:750!important}
+.module-tab.active{background:var(--cco-blue-soft)!important;color:var(--cco-blue-deep)!important;box-shadow:inset 0 0 0 1px #a8cae8!important}
+
+/* Estado global */
+.global-system-status{width:min(1920px,calc(100% - 28px));margin:0 auto 8px!important;border:1px solid var(--cco-border)!important;border-radius:12px!important;background:#fff!important;box-shadow:0 3px 10px rgba(25,61,91,.04)}
+.global-system-status summary{min-height:34px;padding:7px 12px!important;display:flex!important;align-items:center;gap:9px}
+.sys-grid{grid-template-columns:repeat(6,minmax(120px,1fr))!important;gap:6px!important;padding:8px 10px 10px!important}
+.sys-grid>div{min-height:42px!important;padding:6px 8px!important;border:1px solid #e2ebf2!important;border-radius:8px!important;background:#f9fbfd!important}
+
+/* Tipografía/secciones */
+h2{color:#123d5c!important;font-size:13px!important;letter-spacing:.005em}
+.rep-header{min-height:34px!important;margin-top:14px!important;padding:8px 10px!important;border-radius:9px!important;border:1px solid #e0e9f1!important;background:linear-gradient(180deg,#fbfdff,#f5f9fc)!important;align-items:center!important}
+.rep-titulo{font-weight:800!important;color:#173d5a!important}.rep-meta{color:var(--cco-muted)!important}
+
+/* Controles */
+input,select,textarea{border:1px solid var(--cco-border-strong)!important;border-radius:8px!important;background:#fff!important;min-height:34px}
+input:focus,select:focus,textarea:focus{border-color:#6eacd9!important;box-shadow:0 0 0 3px rgba(21,119,200,.10)!important;outline:none!important}
+label{color:#47677e!important;font-weight:700!important}.row,.upload-row{gap:10px!important}
+button{border-radius:8px!important;box-shadow:none!important}
+
+/* KPI */
+.kpi-grid,.tower-kpis,.history-kpis,.hist-kpi-row{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))!important;gap:10px!important;align-items:stretch!important}
+.kpi-card,.tower-kpi,.history-kpi{min-height:88px!important;height:100%!important;border:1px solid var(--cco-border)!important;border-radius:12px!important;box-shadow:0 4px 14px rgba(25,61,91,.05)!important;background:#fff!important;overflow:hidden}
+.kpi-card{padding:11px 12px!important}
+.kpi-label,.tower-kpi .l,.history-kpi .l{text-transform:uppercase;letter-spacing:.04em!important;font-size:7.5px!important;color:var(--cco-muted)!important;font-weight:800!important}
+.kpi-valor,.tower-kpi .v,.history-kpi .v{font-size:21px!important;line-height:1.05!important;color:#0b3658!important;font-weight:850!important}
+.kpi-sub,.tower-kpi .s,.history-kpi .s{font-size:8px!important;line-height:1.3!important;color:#71879a!important}
+
+/* Tablas */
+table{border-collapse:separate!important;border-spacing:0!important}
+.rep-tabla,.op-tabla,.history-table,.tower-table-wrap table{width:100%!important;border:1px solid var(--cco-border)!important;border-radius:10px!important;overflow:hidden;background:#fff}
+.rep-tabla thead th,.op-tabla thead th,.history-table thead th,.tower-table-wrap thead th{position:sticky;top:0;z-index:2;background:#edf5fb!important;color:#345a76!important;font-size:8px!important;font-weight:800!important;letter-spacing:.015em;border-bottom:1px solid #cbdce9!important;padding:8px 9px!important;white-space:nowrap}
+.rep-tabla td,.op-tabla td,.history-table td,.tower-table-wrap td{padding:7px 9px!important;border-bottom:1px solid #e8eef4!important;vertical-align:middle!important}
+.rep-tabla tbody tr:nth-child(even),.op-tabla tbody tr:nth-child(even),.history-table tbody tr:nth-child(even),.tower-table-wrap tbody tr:nth-child(even){background:#fbfdff!important}
+.rep-tabla tbody tr:hover,.op-tabla tbody tr:hover,.history-table tbody tr:hover,.tower-table-wrap tbody tr:hover{background:#f2f8fc!important}
+.history-table-wrap,.tower-table-wrap{border-radius:10px!important;overflow:auto!important;scrollbar-gutter:stable}
+
+/* Gráficos y paneles */
+.chart-wrap,.hist-chart-box,.hist-chart-panel{border:1px solid var(--cco-border)!important;border-radius:12px!important;background:#fff!important;padding:10px!important;box-shadow:0 3px 12px rgba(25,61,91,.04)!important}
+.hist-dashboard-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:12px!important;align-items:stretch!important}
+
+/* Operación Nacional */
+#reporteBox{margin-top:10px!important;padding-top:2px}
+#repAlertas{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:8px}
+#repAlertas .alert-card{margin:0!important;height:100%}
+#tablaOperadoresBox>div:first-child{background:#f7fafc;border:1px solid var(--cco-border)!important;border-radius:10px;padding:8px!important}
+#repNarrativaTexto{border:1px solid var(--cco-border)!important;border-radius:10px!important;background:#f8fbfd!important}
+
+/* Torre */
+.tower-panel{padding:16px!important}.tower-head{margin-bottom:12px!important;padding-bottom:10px!important;border-bottom:1px solid #e4edf4}
+.tower-upload{background:#f8fbfd!important;border-color:#b8cee0!important;border-radius:12px!important}
+.tower-grid{grid-template-columns:minmax(0,1.65fr) minmax(320px,.75fr)!important;gap:12px!important}
+.tower-bottom{grid-template-columns:minmax(0,1.45fr) minmax(300px,.65fr)!important;gap:12px!important}
+.tower-card{border:1px solid var(--cco-border)!important;border-radius:12px!important;box-shadow:0 4px 14px rgba(25,61,91,.045)!important;overflow:hidden}
+.tower-card-h{min-height:38px!important;padding:9px 11px!important;background:#f6fafd!important;border-bottom:1px solid var(--cco-border)!important}
+.tower-card-b{padding:11px!important}
+.tower-toolbar{display:grid!important;grid-template-columns:repeat(4,minmax(130px,1fr)) auto!important;gap:8px!important;align-items:end!important}
+.tower-legend{padding:7px 9px!important;border-radius:8px;background:#f7fafc;border:1px solid #e3ebf2}
+
+/* Trazabilidad */
+.hist-intelligence{padding:16px!important}.hist-title-row{padding-bottom:10px;margin-bottom:12px;border-bottom:1px solid #e4edf4}
+.hist-upload-grid{gap:10px!important;grid-template-columns:repeat(4,minmax(180px,1fr))!important}
+.hist-drop-card{min-height:142px!important;border-radius:12px!important;padding:12px!important;background:#fbfdff!important;box-shadow:none!important}
+.hist-filter-grid{grid-template-columns:repeat(4,minmax(150px,1fr))!important;gap:8px!important;align-items:end!important}
+.hist-period-controls{grid-column:span 2!important}
+.hist-two-col{gap:12px!important;align-items:start!important}
+.hist-audit-strip{gap:8px!important}.hist-insight-box,.hist-alert-box,.history-note{border-radius:10px!important}
+
+/* Responsive */
+@media (min-width:1600px){
+  main,header,.module-switcher,.global-system-status{width:min(1920px,calc(100% - 40px))}
+  .kpi-grid,.tower-kpis{grid-template-columns:repeat(6,minmax(0,1fr))!important}
+}
+@media (max-width:1280px){
+  .cco-live-strip{display:grid;grid-template-columns:repeat(3,minmax(92px,1fr))}
+  .sys-grid{grid-template-columns:repeat(4,minmax(120px,1fr))!important}
+  .tower-grid,.tower-bottom{grid-template-columns:1fr!important}
+  .tower-toolbar{grid-template-columns:repeat(3,minmax(130px,1fr))!important}
+  .hist-upload-grid{grid-template-columns:repeat(2,minmax(200px,1fr))!important}
+  .hist-filter-grid{grid-template-columns:repeat(3,minmax(150px,1fr))!important}
+}
+@media (max-width:900px){
+  header{align-items:flex-start!important;flex-direction:column!important}
+  .cco-header-right{width:100%;justify-content:flex-start}.cco-live-strip{width:100%;grid-template-columns:repeat(3,1fr)}
+  .module-switcher{overflow-x:auto;white-space:nowrap}.sys-grid{grid-template-columns:repeat(2,minmax(120px,1fr))!important}
+  .hist-dashboard-grid{grid-template-columns:1fr!important}.hist-dashboard-grid .hist-wide{grid-column:auto!important}
+  .hist-filter-grid{grid-template-columns:repeat(2,minmax(140px,1fr))!important}.hist-period-controls{grid-column:1/-1!important}
+  .tower-toolbar{grid-template-columns:repeat(2,minmax(130px,1fr))!important}
+}
+@media (max-width:620px){
+  main,header,.module-switcher,.global-system-status{width:calc(100% - 16px)}
+  .cco-live-strip{grid-template-columns:repeat(2,1fr)}
+  .hist-upload-grid,.hist-filter-grid,.tower-toolbar{grid-template-columns:1fr!important}
+  .kpi-grid,.tower-kpis,.history-kpis,.hist-kpi-row{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  #repAlertas{grid-template-columns:1fr}
+}
+
 </style>
 </head>
 <body>
@@ -400,9 +547,19 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 <div id="app" style="display:none">
 <header>
-  <div><h1>CCO Intelligence · Centro de Control Operacional v4.2.8</h1>
-  <p>Backend: <span id="apiShown"></span> · <span id="userInfo"></span></p></div>
-  <div style="display:flex;align-items:center;gap:8px">
+  <div class="cco-brand-block">
+    <h1>CONTROL DE FLOTA NACIONAL</h1>
+    <p class="cco-brand-subtitle">Monitoreo Operacional | KPIs | Trazabilidad | Analítica Inteligente</p>
+    <p>CCO Intelligence · <span id="apiShown"></span> · <span id="userInfo"></span></p>
+  </div>
+  <div class="cco-header-right">
+    <div class="cco-live-strip" aria-label="Estado ejecutivo">
+      <div class="cco-live-item"><span>Fecha actual</span><b id="ccoUiDate">—</b></div>
+      <div class="cco-live-item"><span>Hora actual</span><b id="ccoUiTime">—</b></div>
+      <div class="cco-live-item"><span>Última actualización</span><b id="ccoUiUpdated">—</b></div>
+      <div class="cco-live-item"><span>Registros procesados</span><b id="ccoUiRows">0</b></div>
+      <div class="cco-live-item"><span>Plantas analizadas</span><b id="ccoUiPlants">0</b></div>
+    </div>
     <div id="opDateControl" class="pill" style="margin:0">Operación de hoy · <b id="scopeFechaLabel">—</b><input id="scopeFecha" type="hidden"></div>
     <span id="appVersion" class="pill">v4.2.8</span><span id="connPill" class="pill">Conectando…</span>
   </div>
@@ -1170,6 +1327,7 @@ function iniciar(){
   cargarEstadoIngesta();
   initModuleTabs();
   startOperationWatchdog();
+  ccoUiInitCorporateHeader();
 }
 
 // --- Carga de Excel (Turnos / Citaciones / Logeo), con selección de hoja ---
@@ -3345,6 +3503,36 @@ function validarDashboardHistorico(data){
   for(const [k,v] of Object.entries(data?.rankings||{}))if(Array.isArray(v)&&dup(v))issues.push(`Ranking ${k} contiene duplicados`);
   for(const p of (data?.byPlant||[])){if(dup(p.mejores)||dup(p.criticos))issues.push(`Ranking de ${p.planta} contiene duplicados internos`);const a=new Set((p.mejores||[]).map(x=>x.key).filter(Boolean));if((p.criticos||[]).some(x=>x?.key&&a.has(x.key)))issues.push(`Operadores repetidos entre Top y Críticos en ${p.planta}`);}
   return issues;
+}
+
+
+/* v4.5.0 · metadatos visuales del encabezado.
+   Solo refleja valores ya existentes en la interfaz. */
+let ccoUiClockTimer=null;
+function ccoUiUpdateClock(){
+  const now=new Date(),d=document.getElementById('ccoUiDate'),t=document.getElementById('ccoUiTime');
+  if(d)d.textContent=now.toLocaleDateString('es-CL');
+  if(t)t.textContent=now.toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+function ccoUiMirrorSystemStatus(){
+  const up=document.getElementById('ccoUiUpdated'),rr=document.getElementById('ccoUiRows'),pp=document.getElementById('ccoUiPlants');
+  if(up)up.textContent=document.getElementById('sysUpdated')?.textContent||'—';
+  if(rr)rr.textContent=document.getElementById('sysRows')?.textContent||'0';
+  let plants=0;
+  if(document.getElementById('historicoPanel')?.style.display!=='none'){
+    plants=Number(historicoUltimo?.metrics?.plantas||historicoUltimo?.plants?.length||0);
+  }else if(document.getElementById('towerPanel')?.style.display!=='none'){
+    plants=new Set((towerFleet||[]).map(x=>x.plant).filter(Boolean)).size;
+  }else{
+    plants=Array.isArray(window._ultimoReporte?.rep?.porPlanta)?window._ultimoReporte.rep.porPlanta.length:(Array.isArray(plantasCache)?plantasCache.length:0);
+  }
+  if(pp)pp.textContent=Number(plants||0).toLocaleString('es-CL');
+}
+function ccoUiInitCorporateHeader(){
+  ccoUiUpdateClock();clearInterval(ccoUiClockTimer);ccoUiClockTimer=setInterval(ccoUiUpdateClock,1000);
+  const status=document.getElementById('globalSystemStatus');
+  if(status)new MutationObserver(ccoUiMirrorSystemStatus).observe(status,{subtree:true,childList:true,characterData:true});
+  setInterval(ccoUiMirrorSystemStatus,2500);ccoUiMirrorSystemStatus();
 }
 
 const systemStatusState={module:'Operación Nacional',stage:'Listo',file:'—',rows:0,valid:0,rejected:0,columns:0,kpis:0,rankings:0,time:'—',errors:0,errorDetail:''};
