@@ -2955,6 +2955,65 @@ function historicalCoverage(query={}){
   };
 }
 
+
+function historicalCurrentFileDiagnostics(source){
+  const currentFiles=new Set((historicalWarehouse.records||[]).filter(r=>(r.source||r.fuente)===source).map(r=>safeText(r.archivo)).filter(Boolean));
+  const latest=new Map();
+  for(const d of (historicalWarehouse.diagnostics||[])){
+    if(d?.source!==source)continue;
+    const file=safeText(d.file||d.archivo);
+    if(!file||!currentFiles.has(file)||latest.has(file))continue;
+    latest.set(file,d);
+  }
+  return [...latest.values()];
+}
+function historicalSourceProcessingAudit(source){
+  const meta=historicalSourceMeta(source),diags=historicalCurrentFileDiagnostics(source),sum=k=>diags.reduce((n,d)=>n+Number(d?.[k]||0),0),reasons=new Map();
+  for(const d of diags)for(const [code,count] of Object.entries(d?.ruleCounts||{})){if(!reasons.has(code))reasons.set(code,{code,count:0,reason:''});const x=reasons.get(code);x.count+=Number(count||0);if(!x.reason){const sample=(d?.samples||[]).find(s=>s?.code===code);x.reason=sample?.reason||code;}}
+  const raw=(historicalWarehouse.records||[]).filter(r=>(r.source||r.fuente)===source),dates=raw.map(r=>r.fecha).filter(Boolean).sort();
+  return {source,label:HISTORICAL_SOURCES[source]?.label||source,files:[...new Set(raw.map(r=>safeText(r.archivo)).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es')),processed:sum('rowsFound'),valid:sum('rowsStored'),rejected:sum('rowsRejected'),filtered:sum('rowsFiltered'),partial:sum('rowsPartial'),duplicates:sum('duplicates'),recordsStored:raw.length,minDate:dates[0]||meta.minDate||null,maxDate:dates.at(-1)||meta.maxDate||null,plants:[...new Set(raw.map(r=>r.planta).filter(p=>p&&p!=='Sin planta'))].sort((a,b)=>a.localeCompare(b,'es')),operators:new Set(raw.map(r=>r.operadorKey).filter(Boolean)).size,reasons:[...reasons.values()].sort((a,b)=>b.count-a.count),status:meta.status||'sin_datos',lastLoadedAt:meta.lastLoadedAt||null};
+}
+function historicalValidPlantsByMode(mode='logeo',from='',to=''){
+  const source=mode==='citacion'?'citaciones':'status';
+  const rows=(historicalWarehouse.records||[]).filter(r=>{
+    if((r.source||r.fuente)!==source)return false;
+    if(from&&r.fecha<from)return false;if(to&&r.fecha>to)return false;
+    if(!r.planta||r.planta==='Sin planta')return false;
+    return mode==='citacion'?(r.citacionMin!==null&&r.citacionMin!==undefined):(r.loginMin!==null&&r.loginMin!==undefined);
+  });
+  const map=new Map();
+  for(const r of rows){if(!map.has(r.planta))map.set(r.planta,{planta:r.planta,zona:r.zona||inferZona(r.planta),registros:0,operadores:new Set(),archivos:new Set()});const x=map.get(r.planta);x.registros++;x.operadores.add(r.operadorKey);if(r.archivo)x.archivos.add(r.archivo);}
+  return [...map.values()].map(x=>({planta:x.planta,zona:x.zona,registros:x.registros,operadores:x.operadores.size,archivos:[...x.archivos]})).sort((a,b)=>a.zona.localeCompare(b.zona,'es')||a.planta.localeCompare(b.planta,'es'));
+}
+function historicalRawFilesForKeys(source,keys,from='',to=''){
+  const set=new Set(keys);
+  const rows=(historicalWarehouse.records||[]).filter(r=>(r.source||r.fuente)===source&&(!from||r.fecha>=from)&&(!to||r.fecha<=to)&&set.has(`${r.fecha}|${r.operadorKey}`));
+  return [...new Set(rows.map(r=>safeText(r.archivo)).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
+}
+function historicalKpiAudit(query={},cfg=histCfg(query)){
+  const rows=histFilterBase(query),from=safeText(query.from),to=safeText(query.to),mode=String(query.mode||'logeo')==='citacion'?'citacion':'logeo',sourceAudit=Object.fromEntries(Object.keys(HISTORICAL_SOURCES).map(s=>[s,historicalSourceProcessingAudit(s)])),diff=(a,b)=>histMinutesDiff(a,b);
+  const defs={
+    adherenciaTurno:{label:'Adherencia al Turno',sources:['turnos','status'],marks:['turnoMin','loginMin'],formula:`Cumplen / comparaciones válidas × 100; cumple si LOGIN−TURNO está entre -${cfg.tolTurnBefore} y +${cfg.tolTurnAfter} min.`,calc(rs){let ok=0,n=0;for(const r of rs){const d=diff(r.loginMin,r.turnoMin);if(d===null)continue;n++;if(d>=-cfg.tolTurnBefore&&d<=cfg.tolTurnAfter)ok++;}return {value:n?round1(ok/n*100):null,used:n,numerator:ok};}},
+    turnVsAssignment:{label:'Turno vs Asignación',sources:['turnos','status'],marks:['turnoMin','asignacionMin'],formula:`Cumplen / comparaciones válidas × 100; cumple si ASIGNACIÓN−TURNO está entre -${cfg.tolAssignmentBefore} y +${cfg.tolAssignmentAfter} min.`,calc(rs){let ok=0,n=0;for(const r of rs){const d=diff(r.asignacionMin,r.turnoMin);if(d===null)continue;n++;if(d>=-cfg.tolAssignmentBefore&&d<=cfg.tolAssignmentAfter)ok++;}return {value:n?round1(ok/n*100):null,used:n,numerator:ok};}},
+    tiempoMuerto:{label:'Tiempo Muerto',sources:mode==='citacion'?['citaciones','status']:['status'],marks:[mode==='citacion'?'citacionMin':'loginMin','asignacionMin'],formula:`Promedio de ${mode==='citacion'?'ASIGNACIÓN−CITACIÓN':'ASIGNACIÓN−LOGEO'} para diferencias entre 0 y 720 min.`,calc(rs){const vals=[];for(const r of rs){const d=diff(r.asignacionMin,r[mode==='citacion'?'citacionMin':'loginMin']);if(d!==null&&d>=0&&d<=720)vals.push(d);}return {value:histStats(vals).promedio,used:vals.length,numerator:null};}},
+    atrasoTurno:{label:'Atraso al Turno',sources:['turnos','status'],marks:['turnoMin','loginMin'],formula:'Promedio de LOGIN−TURNO únicamente para diferencias positivas (atrasos).',calc(rs){const vals=[];let cross=0;for(const r of rs){const d=diff(r.loginMin,r.turnoMin);if(d===null)continue;cross++;if(d>0)vals.push(d);}return {value:histStats(vals).promedio,used:vals.length,validCrosses:cross,numerator:null};}},
+    adherenciaCitacion:{label:'Adherencia a la Citación',sources:['citaciones','status'],marks:['citacionMin','loginMin'],formula:`Cumplen / comparaciones válidas × 100; cumple si LOGIN−CITACIÓN está entre -${cfg.tolCitationBefore} y +${cfg.tolCitationAfter} min.`,calc(rs){let ok=0,n=0;for(const r of rs){const d=diff(r.loginMin,r.citacionMin);if(d===null)continue;n++;if(d>=-cfg.tolCitationBefore&&d<=cfg.tolCitationAfter)ok++;}return {value:n?round1(ok/n*100):null,used:n,numerator:ok};}},
+    turnVsCitation:{label:'Turno vs Citación',sources:['turnos','citaciones'],marks:['turnoMin','citacionMin'],formula:`Cumplen / comparaciones válidas × 100; cumple si CITACIÓN−TURNO está entre -${cfg.tolTurnCitationBefore} y +${cfg.tolTurnCitationAfter} min.`,calc(rs){let ok=0,n=0;for(const r of rs){const d=diff(r.citacionMin,r.turnoMin);if(d===null)continue;n++;if(d>=-cfg.tolTurnCitationBefore&&d<=cfg.tolTurnCitationAfter)ok++;}return {value:n?round1(ok/n*100):null,used:n,numerator:ok};}},
+    atrasoCitacion:{label:'Atraso a la Citación',sources:['citaciones','status'],marks:['citacionMin','loginMin'],formula:'Promedio de LOGIN−CITACIÓN únicamente para diferencias positivas (atrasos).',calc(rs){const vals=[];let cross=0;for(const r of rs){const d=diff(r.loginMin,r.citacionMin);if(d===null)continue;cross++;if(d>0)vals.push(d);}return {value:histStats(vals).promedio,used:vals.length,validCrosses:cross,numerator:null};}},
+    tamVsLogeo:{label:'TAM vs Logeo',sources:['tam','status'],marks:['tamIngresoMin','loginMin'],formula:'Promedio de LOGIN−INGRESO TAM sobre cruces válidos del mismo operador + fecha.',calc(rs){const vals=[];for(const r of rs){const d=diff(r.loginMin,r.tamIngresoMin);if(d!==null)vals.push(d);}return {value:histStats(vals).promedio,used:vals.length,numerator:null};}}
+  };
+  const out={};
+  for(const [key,def] of Object.entries(defs)){
+    const reasons={SIN_OPERADOR:0,SIN_FECHA:0,SIN_PLANTA:0,MARCA_REQUERIDA_AUSENTE:0},candidates=[];
+    for(const r of rows){if(!r.operadorKey){reasons.SIN_OPERADOR++;continue;}if(!r.fecha){reasons.SIN_FECHA++;continue;}if(!r.planta||r.planta==='Sin planta'){reasons.SIN_PLANTA++;continue;}if(def.marks.some(m=>r[m]===null||r[m]===undefined)){reasons.MARCA_REQUERIDA_AUSENTE++;continue;}candidates.push(r);}
+    const calc=def.calc(candidates),keys=candidates.map(r=>`${r.fecha}|${r.operadorKey}`),sourceFiles={};
+    for(const s of def.sources)sourceFiles[s]=historicalRawFilesForKeys(s,keys,from,to);
+    const sourceExists=def.sources.every(s=>(sourceAudit[s]?.recordsStored||0)>0),filesExist=def.sources.every(s=>(sourceFiles[s]||[]).length>0),ready=sourceExists&&filesExist&&calc.used>0,validRows=calc.validCrosses??calc.used,dates=candidates.map(r=>r.fecha).filter(Boolean).sort();
+    out[key]={key,label:def.label,formula:def.formula,sources:def.sources,sourceFiles,value:ready?calc.value:null,numerator:calc.numerator,recordsUsed:ready?calc.used:0,validCrosses:ready?validRows:0,candidates:rows.length,discarded:Math.max(0,rows.length-validRows),minDate:dates[0]||null,maxDate:dates.at(-1)||null,plants:[...new Set(candidates.map(r=>r.planta).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es')),operators:new Set(candidates.map(r=>r.operadorKey).filter(Boolean)).size,ready,reason:ready?'':(!sourceExists?'Archivo origen no disponible.':!filesExist?'No existe evidencia de archivo origen para los cruces del período.':'KPI no calculado por ausencia de datos válidos.'),discardedReasons:Object.entries(reasons).filter(([,n])=>n>0).map(([code,count])=>({code,count}))};
+  }
+  return {mode,from,to,revision:Number(historicalWarehouse?.revision||0),generatedAt:nowIso(),sourceAudit,kpis:out,tam:sourceAudit.tam||historicalSourceProcessingAudit('tam'),status:sourceAudit.status||historicalSourceProcessingAudit('status'),citationPlants:historicalValidPlantsByMode('citacion',from,to),logeoPlants:historicalValidPlantsByMode('logeo',from,to)};
+}
+
 function historicalFilesUsed(from='',to=''){
   const rows=(historicalWarehouse.records||[]).filter(r=>(!from||r.fecha>=from)&&(!to||r.fecha<=to));
   const map=new Map();
@@ -3047,6 +3106,12 @@ app.get('/api/historico/health-check',requireAuth,(req,res)=>{
   }catch(err){
     return res.status(422).json({ok:false,error:'No fue posible auditar el modelo histórico',detalle:err?.message||String(err)});
   }
+});
+
+
+app.get('/api/historico/plantas-validas',requireAuth,(req,res)=>{
+  try{const mode=String(req.query.mode||'logeo')==='citacion'?'citacion':'logeo',from=safeText(req.query.from),to=safeText(req.query.to),plants=historicalValidPlantsByMode(mode,from,to);return res.json({ok:true,mode,from,to,plants,revision:Number(historicalWarehouse?.revision||0)});}
+  catch(err){return res.status(422).json({error:'No fue posible construir las plantas válidas del modo seleccionado',detalle:err?.message||String(err)});}
 });
 
 app.get('/api/historico/fuentes',requireAuth,(req,res)=>{
@@ -3171,6 +3236,26 @@ app.get('/api/historico/detail-export',requireAuth,(req,res)=>{
   }
 });
 
+
+app.get('/api/historico/audit-export.xlsx',requireAuth,async(req,res)=>{
+  try{
+    const cfg=histCfg(req.query);let rows=histFilterBase(req.query);const week=safeText(req.query.week||'');if(week)rows=rows.filter(r=>historicalPeriodKey(r.fecha,'week')===week);const audit=historicalKpiAudit(req.query,cfg);
+    const wb=new ExcelJS.Workbook();wb.creator='CCO Intelligence';wb.created=new Date();
+    const detail=wb.addWorksheet('TRAZABILIDAD');
+    detail.addRow(['Fecha','Zona','Planta','Operador','ID','Turno','Citación','Ingreso TAM','Logeo','Primera Asignación','Primera Carga','Salida TAM','Cruce','Tiene Turno','Tiene Citación','Tiene TAM','Tiene Logeo','Tiene Asignación','Tiene Primera Carga']);
+    for(const r of rows)detail.addRow([r.fecha,r.zona,r.planta,r.operadorNombre,r.operadorId,fmtMinutes(r.turnoMin),fmtMinutes(r.citacionMin),fmtMinutes(r.tamIngresoMin),fmtMinutes(r.loginMin),fmtMinutes(r.asignacionMin),fmtMinutes(r.primeraCargaMin),fmtMinutes(r.tamSalidaMin),histCrossLabel(r),r.turnoMin!=null?'SI':'NO',r.citacionMin!=null?'SI':'NO',r.tamIngresoMin!=null?'SI':'NO',r.loginMin!=null?'SI':'NO',r.asignacionMin!=null?'SI':'NO',r.primeraCargaMin!=null?'SI':'NO']);
+    const sheet=wb.addWorksheet('AUDITORÍA KPI');
+    sheet.addRow(['KPI','Estado','Valor','Fórmula aplicada','Registros utilizados','Cruces válidos','Registros descartados','Archivo origen','Fecha mínima','Fecha máxima','Plantas encontradas','Operadores encontrados','Fecha cálculo','Motivo descarte / bloqueo']);
+    for(const a of Object.values(audit.kpis)){const files=a.sources.flatMap(s=>(a.sourceFiles?.[s]||[]).map(f=>`${HISTORICAL_SOURCES[s]?.label||s}: ${f}`)),discard=(a.discardedReasons||[]).map(x=>`${x.code}: ${x.count}`).join(' · ');sheet.addRow([a.label,a.ready?'CALCULADO':'NO CALCULADO',a.ready&&a.value!=null?a.value:'',a.formula,a.recordsUsed,a.validCrosses,a.discarded,files.join(' | '),a.minDate||'',a.maxDate||'',a.plants.length,a.operators,audit.generatedAt,a.ready?(discard||'Sin descartes que bloqueen el KPI.'):(a.reason+(discard?` · ${discard}`:''))]);}
+    const srcSheet=wb.addWorksheet('ORIGEN DATOS KPI');
+    srcSheet.addRow(['Fuente','Archivos','Procesados','Válidos','Rechazados','Filtrados','Parciales','Fecha mínima','Fecha máxima','Plantas','Operadores','Motivos']);
+    for(const s of Object.values(audit.sourceAudit))srcSheet.addRow([s.label,s.files.join(' | '),s.processed,s.valid,s.rejected,s.filtered,s.partial,s.minDate||'',s.maxDate||'',s.plants.length,s.operators,(s.reasons||[]).map(x=>`${x.code}: ${x.count} (${x.reason})`).join(' · ')]);
+    [detail,sheet,srcSheet].forEach(ws=>{ws.views=[{state:'frozen',ySplit:1}];ws.getRow(1).font={bold:true};ws.columns.forEach(c=>{c.width=Math.max(12,Math.min(60,Number(c.width||18)));});});
+    const filename=`trazabilidad_auditable_${safeText(req.query.from||'inicio')}_${safeText(req.query.to||'fin')}.xlsx`;
+    res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');res.setHeader('Content-Disposition',`attachment; filename="${filename.replace(/[^a-zA-Z0-9._-]/g,'_')}"`);res.setHeader('Cache-Control','no-store');await wb.xlsx.write(res);res.end();
+  }catch(err){registrarErrorDetallado({modulo:'historico',funcion:'GET /api/historico/audit-export.xlsx',error:err?.message||String(err),stack:err?.stack});if(!res.headersSent)res.status(422).json({error:'No fue posible exportar la auditoría KPI',detalle:err?.message||String(err)});}
+});
+
 app.get('/api/historico/dashboard-enterprise',requireAuth,(req,res)=>{
   try{
     const cfg=histCfg(req.query),rows=histFilterBase(req.query),from=safeText(req.query.from),to=safeText(req.query.to);
@@ -3179,6 +3264,7 @@ app.get('/api/historico/dashboard-enterprise',requireAuth,(req,res)=>{
     const coverage=historicalCoverage(req.query);
     const integrity=validateHistoricalDashboardModel(rows,mode);
     const filesUsed=historicalFilesUsed(from,to);
+    const kpiAudit=historicalKpiAudit(req.query,cfg);
     const prevRange=histPreviousRange(from,to),prevRows=prevRange?histFilterBase(req.query,prevRange):[];
     const granularity=['day','week','month','quarter','year'].includes(String(req.query.granularity))?String(req.query.granularity):'week';
     const metrics=histMetricsForMode(rows,cfg,mode),operators=histOperatorGroups(rows,cfg,prevRows,mode);
@@ -3223,7 +3309,7 @@ app.get('/api/historico/dashboard-enterprise',requireAuth,(req,res)=>{
     return res.json({
       ok:true,source:'historicalWarehouse:file-attachments-only',from,to,previousRange:prevRange,granularity,cfg,mode,empty:rows.length===0,
       mensaje:rows.length?'':'NO SE ENCONTRARON DATOS PARA EL PERÍODO SELECCIONADO',
-      metrics,trend,rankings,operatorRanking,advancedRankings,plants,zones,byPlant,heatmap,findings,coverage,integrity,filesUsed,e2eHealth,
+      metrics,trend,rankings,operatorRanking,advancedRankings,plants,zones,byPlant,heatmap,findings,coverage,integrity,filesUsed,e2eHealth,kpiAudit,
       recommendedDate:latestCommonHistoricalDate(),
       sourceRanges:historicalSourceRanges(),
       detailed:rows.slice(0,2500).map(r=>({...r,crossLabel:histCrossLabel(r)})),totalDetailed:rows.length,
