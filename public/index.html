@@ -3398,8 +3398,18 @@ function poblarFiltrosHistoricos(){
   createHistMultiSelect('histPlantaMs',plantItems,histSelections.plantas,()=>{poblarFiltrosHistoricos();cargarHistorico()},'Todas las plantas');
   createHistMultiSelect('histOperadorMs',ops,histSelections.operadores,()=>cargarHistorico(),'Todos los operadores');
 }
+
+function histRecommendedDate(){
+  const byMode=histCatalogo?.recommendedDateByMode||{};
+  const mode=currentHistMode();
+  const candidate=byMode[mode]||histCatalogo?.recommendedDate||histCatalogo?.maxDate||'';
+  const min=histCatalogo?.minDate||'',max=histCatalogo?.maxDate||'';
+  if(candidate&&(!min||candidate>=min)&&(!max||candidate<=max))return candidate;
+  return max||min||dateKeyLocal(new Date());
+}
+
 function histPeriodRange(){
-  const type=document.getElementById('histPeriodoTipo')?.value||'week',today=new Date(),min=histCatalogo.minDate||dateKeyLocal(today),max=histCatalogo.recommendedDate||histCatalogo.maxDate||dateKeyLocal(today);
+  const type=document.getElementById('histPeriodoTipo')?.value||'week',today=new Date(),min=histCatalogo.minDate||dateKeyLocal(today),max=histRecommendedDate();
   const q=id=>document.getElementById(id)?.value||'';
   if(type==='day'){const d=q('histDay')||max;return {from:d,to:d,granularity:'day'};}
   if(type==='week'){const v=q('histWeek');if(v){const m=v.match(/^(\d{4})-W(\d{2})$/);if(m){const s=isoWeekStart(Number(m[1]),Number(m[2])),e=isoWeekEnd(Number(m[1]),Number(m[2]));return {from:dateKeyLocal(s),to:dateKeyLocal(e),granularity:'day'};}}}
@@ -3411,7 +3421,7 @@ function histPeriodRange(){
 }
 function renderHistPeriodControls(keep=false){
   const box=document.getElementById('histPeriodoControls');if(!box)return;
-  const type=document.getElementById('histPeriodoTipo')?.value||'week',max=histCatalogo.recommendedDate||histCatalogo.maxDate||dateKeyLocal(new Date()),year=max.slice(0,4);
+  const type=document.getElementById('histPeriodoTipo')?.value||'week',max=histRecommendedDate(),year=max.slice(0,4);
   if(type==='day')box.innerHTML=`<div><label>Fecha</label><input id="histDay" type="date" value="${max}"></div>`;
   else if(type==='week'){
     const weeks=(histCatalogo.availableWeeks||[]).slice().sort((a,b)=>b.key.localeCompare(a.key));
@@ -3509,18 +3519,55 @@ async function cargarHistorico(){
     renderHistoricalCoverage(data);
     renderHistoricalE2E(data);
     const diag=document.getElementById('histDiagnostico');
-    if(data.empty){diag.textContent=`NO SE ENCONTRARON DATOS PARA EL PERÍODO SELECCIONADO · ${data.from||'—'} → ${data.to||'—'} · Fuente: archivos adjuntos de Trazabilidad`;renderHistoricoDashboard(data);return;}
-    diag.textContent=`Análisis ${data.from} → ${data.to} · ${data.metrics.registros} operador/día · ${data.metrics.operadores} operadores · ${data.metrics.plantas} plantas · cálculo tiempo muerto desde ${data.cfg.sourceStart}`;
+
+    if(data.empty){
+      const availableMin=data?.qaE2E?.coverage?.minDate||histCatalogo.minDate||'';
+      const availableMax=data?.qaE2E?.coverage?.maxDate||histCatalogo.maxDate||'';
+      const completelyOutside=(data.from&&availableMax&&data.from>availableMax)||(data.to&&availableMin&&data.to<availableMin);
+
+      if(completelyOutside && data.recommendedDate && !cargarHistorico._rangeRecovery){
+        cargarHistorico._rangeRecovery=true;
+        renderHistPeriodControls();
+        try{return await cargarHistorico();}
+        finally{cargarHistorico._rangeRecovery=false;}
+      }
+
+      const qaIssues=(data?.qaE2E?.issues||[]).map(x=>x.message).filter(Boolean);
+      diag.textContent=`NO SE ENCONTRARON DATOS PARA EL PERÍODO SELECCIONADO · ${data.from||'—'} → ${data.to||'—'} · Cobertura cargada: ${availableMin||'—'} → ${availableMax||'—'}${data.recommendedDate?` · Fecha compatible recomendada: ${data.recommendedDate}`:''}${qaIssues.length?` · QA: ${qaIssues.slice(0,3).join(' | ')}`:''}`;
+      renderHistoricoDashboard(data);return;
+    }
+
+    const qa=data?.qaE2E||{},qaErrors=(qa.issues||[]).filter(x=>x.severity==='error');
+    diag.textContent=`Análisis ${data.from} → ${data.to} · ${data.metrics.registros} operador/día · ${data.metrics.operadores} operadores · ${data.metrics.plantas} plantas · cálculo tiempo muerto desde ${data.cfg.sourceStart}${qaErrors.length?` · QA: ${qaErrors.length} alerta(s) crítica(s)`:' · QA E2E: consistente'}`;
     document.getElementById('histAlcance').textContent=`${data.from} → ${data.to}`;
     renderHistoricoDashboard(data);
   }catch(err){document.getElementById('histDiagnostico').textContent='Error de trazabilidad: '+(err.message||err);}
 }
 function validarDashboardHistorico(data){
-  const issues=[];if(!data)issues.push('Respuesta vacía');if(!data?.metrics)issues.push('KPI no calculados');if(!Array.isArray(data?.trend))issues.push('Tendencia no generada');if(!data?.coverage)issues.push('Cruces no disponibles');
+  const issues=[];
+  if(!data)issues.push('Respuesta vacía');
+  if(!data?.metrics)issues.push('KPI no calculados');
+  if(!Array.isArray(data?.trend))issues.push('Tendencia no generada');
+  if(!data?.coverage)issues.push('Cruces no disponibles');
+
+  const pctKeys=['turnVsCitation','turnVsAssignment','adherenciaTurno','adherenciaCitacion','adherenciaGeneral'];
+  for(const k of pctKeys){
+    const v=data?.metrics?.[k];
+    if(v!==null&&v!==undefined&&(!Number.isFinite(Number(v))||Number(v)<0||Number(v)>100))issues.push(`KPI ${k} fuera de rango: ${v}`);
+  }
+
   const dup=arr=>{const s=new Set();for(const x of arr||[]){if(!x?.key)continue;if(s.has(x.key))return true;s.add(x.key)}return false};
   for(const [k,v] of Object.entries(data?.rankings||{}))if(Array.isArray(v)&&dup(v))issues.push(`Ranking ${k} contiene duplicados`);
-  for(const p of (data?.byPlant||[])){if(dup(p.mejores)||dup(p.criticos))issues.push(`Ranking de ${p.planta} contiene duplicados internos`);const a=new Set((p.mejores||[]).map(x=>x.key).filter(Boolean));if((p.criticos||[]).some(x=>x?.key&&a.has(x.key)))issues.push(`Operadores repetidos entre Top y Críticos en ${p.planta}`);}
-  return issues;
+  for(const p of (data?.byPlant||[])){
+    if(dup(p.mejores)||dup(p.criticos))issues.push(`Ranking de ${p.planta} contiene duplicados internos`);
+    const a=new Set((p.mejores||[]).map(x=>x.key).filter(Boolean));
+    if((p.criticos||[]).some(x=>x?.key&&a.has(x.key)))issues.push(`Operadores repetidos entre Top y Críticos en ${p.planta}`);
+  }
+
+  for(const x of (data?.qaE2E?.issues||[])){
+    if(x.severity==='error')issues.push(`QA ${x.code}: ${x.message}`);
+  }
+  return [...new Set(issues)];
 }
 
 
@@ -3847,7 +3894,7 @@ function initHistIntelligence(){
   document.getElementById('histExportar')?.addEventListener('click',exportarHistoricoCSV);
   document.getElementById('histExportarAuditoria')?.addEventListener('click',exportarHistoricoAuditoriaXLSX);
   document.getElementById('histPeriodoTipo')?.addEventListener('change',()=>{renderHistPeriodControls();cargarHistorico();});
-  document.querySelectorAll('#histModeSegment button').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('#histModeSegment button').forEach(x=>x.classList.toggle('active',x===btn));histModePlantCacheKey='';histCatalogo.modePlantCatalog=null;histSelections.plantas.clear();syncRankingMetricOptions();cargarHistorico();}));
+  document.querySelectorAll('#histModeSegment button').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('#histModeSegment button').forEach(x=>x.classList.toggle('active',x===btn));histModePlantCacheKey='';histCatalogo.modePlantCatalog=null;histSelections.plantas.clear();renderHistPeriodControls();syncRankingMetricOptions();cargarHistorico();}));
   ['histTolTurnCitation','histTolAssignment','histTolTurn','histTolCitation','histAtrasoLeve','histAtrasoModerado'].forEach(id=>document.getElementById(id)?.addEventListener('change',cargarHistorico));
   document.getElementById('histRankingMetric')?.addEventListener('change',renderRankingOperacional);
   document.getElementById('histPlantDetail')?.addEventListener('change',renderPlantDetail);
