@@ -2034,7 +2034,8 @@ async function etlProcessXlsx(filePath,source,archivo,job,diag){
           const h=etlHeaderScore(vals,source),score=h.score-rowNumber*.2;
           if(!bestHeader||score>bestHeader.score)bestHeader={...h,score,rowNumber,values:vals};
         }
-        if(bestHeader && bestHeader.requiredHits===bestHeader.requiredTotal && bestHeader.score>=250){
+        const turnosHasShift = source!=='turnos' || bestHeader?.recognized?.has('turno');
+        if(bestHeader && bestHeader.requiredHits===bestHeader.requiredTotal && bestHeader.score>=250 && turnosHasShift){
           selected=true;diag.sheet=ws.name;diag.headerRow=bestHeader.rowNumber;
           diag.columns=bestHeader.values.map(v=>safeText(v)).filter(Boolean);diag.columnCount=diag.columns.length;
           if(source==='tam' && normalizeKey(bestHeader.values?.[0])!=='id'){
@@ -2079,7 +2080,9 @@ async function etlProcessXlsx(filePath,source,archivo,job,diag){
     const entry=diag.sheetsDetected.find(x=>x.name===ws.name);if(entry)entry.rows=rowNumber;
     if(selected)break;
   }
-  if(!selected)throw new Error('No se encontró una tabla con las columnas mínimas durante los primeros 10 segundos de validación.');
+  if(!selected)throw new Error(source==='turnos'
+    ? 'No se encontró una hoja de Turnos con Operador/ID, Fecha/Semana y Hora de ingreso/Turno. Revise que exista la hoja de detalle operacional.'
+    : 'No se encontró una tabla con las columnas mínimas durante los primeros 10 segundos de validación.');
   if(source==='status'){
     for(const rec of statusAcc.values()){
       const dk=etlDedupeKey(rec);if(existing.has(dk)){diag.duplicates++;continue;}existing.add(dk);
@@ -2962,16 +2965,147 @@ function historicalAvailableWeeks(){
   })).sort((a,b)=>a.key.localeCompare(b.key));
 }
 
-function latestCommonHistoricalDate(){
-  const sets=historicalSourceDateSets();
-  const loaded=Object.entries(sets).filter(([,s])=>s.size>0);
-  if(!loaded.length)return null;
-  // Prioridad: fecha más reciente con las 3 fuentes. Si aún falta una fuente,
-  // usa la intersección de las fuentes efectivamente cargadas.
-  const base=[...loaded[0][1]].sort();
-  const common=base.filter(d=>loaded.every(([,s])=>s.has(d)));
-  return common.at(-1)||null;
+function latestCommonHistoricalDate(mode='logeo'){
+  const idx=getHistoricalDailyIndex();
+  const rows=idx.rows||[];
+  if(!rows.length)return null;
+
+  const normalizedMode=String(mode||'logeo')==='citacion'?'citacion':'logeo';
+  const byDate=new Map();
+
+  for(const r of rows){
+    if(!r?.fecha)continue;
+    if(!byDate.has(r.fecha))byDate.set(r.fecha,{rows:0,turno:0,citacion:0,login:0,asignacion:0,tam:0});
+    const x=byDate.get(r.fecha);x.rows++;
+    if(r.turnoMin!==null&&r.turnoMin!==undefined)x.turno++;
+    if(r.citacionMin!==null&&r.citacionMin!==undefined)x.citacion++;
+    if(r.loginMin!==null&&r.loginMin!==undefined)x.login++;
+    if(r.asignacionMin!==null&&r.asignacionMin!==undefined)x.asignacion++;
+    if(r.tamIngresoMin!==null&&r.tamIngresoMin!==undefined)x.tam++;
+  }
+
+  const dates=[...byDate.keys()].sort();
+  const compatible=dates.filter(d=>{
+    const x=byDate.get(d);
+    return normalizedMode==='citacion'
+      ? x.citacion>0 && x.login>0
+      : x.turno>0 && x.login>0;
+  });
+  if(compatible.length)return compatible.at(-1);
+
+  // Fallback: última fecha con registros consolidados del modo.
+  const relevant=dates.filter(d=>{
+    const x=byDate.get(d);
+    return normalizedMode==='citacion' ? x.citacion>0 : (x.turno>0||x.login>0);
+  });
+  return relevant.at(-1)||dates.at(-1)||null;
 }
+
+function historicalQaE2E(query={}){
+  const cfg=histCfg(query);
+  const rows=histFilterBase(query);
+  const idx=getHistoricalDailyIndex();
+  const mode=String(query.mode||'logeo')==='citacion'?'citacion':'logeo';
+  const from=safeText(query.from),to=safeText(query.to);
+  const metrics=histMetricsForMode(rows,cfg,mode);
+
+  const finitePct=(v)=>v===null||v===undefined||(Number.isFinite(Number(v))&&Number(v)>=0&&Number(v)<=100);
+  const sourceAudit=Object.fromEntries(Object.keys(HISTORICAL_SOURCES).map(s=>[s,historicalSourceProcessingAudit(s)]));
+  const fieldCounts={
+    turno:rows.filter(r=>r.turnoMin!==null&&r.turnoMin!==undefined).length,
+    citacion:rows.filter(r=>r.citacionMin!==null&&r.citacionMin!==undefined).length,
+    login:rows.filter(r=>r.loginMin!==null&&r.loginMin!==undefined).length,
+    asignacion:rows.filter(r=>r.asignacionMin!==null&&r.asignacionMin!==undefined).length,
+    primeraCarga:rows.filter(r=>r.primeraCargaMin!==null&&r.primeraCargaMin!==undefined).length,
+    tamIngreso:rows.filter(r=>r.tamIngresoMin!==null&&r.tamIngresoMin!==undefined).length,
+    tamSalida:rows.filter(r=>r.tamSalidaMin!==null&&r.tamSalidaMin!==undefined).length,
+    planta:rows.filter(r=>r.planta&&r.planta!=='Sin planta').length,
+    camion:rows.filter(r=>safeText(r.camion)).length
+  };
+  const crosses={
+    turnoLogin:rows.filter(r=>r.turnoMin!=null&&r.loginMin!=null).length,
+    citacionLogin:rows.filter(r=>r.citacionMin!=null&&r.loginMin!=null).length,
+    turnoAsignacion:rows.filter(r=>r.turnoMin!=null&&r.asignacionMin!=null).length,
+    turnoCitacion:rows.filter(r=>r.turnoMin!=null&&r.citacionMin!=null).length,
+    tamLogin:rows.filter(r=>r.tamIngresoMin!=null&&r.loginMin!=null).length,
+    tamTurno:rows.filter(r=>r.tamIngresoMin!=null&&r.turnoMin!=null).length,
+    operadorCamion:rows.filter(r=>r.operadorKey&&safeText(r.camion)).length,
+    operadorPlanta:rows.filter(r=>r.operadorKey&&r.planta&&r.planta!=='Sin planta').length
+  };
+
+  const issues=[];
+  const checks=[];
+
+  const add=(code,ok,message,severity='error',detail={})=>{
+    checks.push({code,ok,message,severity,detail});
+    if(!ok)issues.push({code,message,severity,detail});
+  };
+
+  add('RANGE_HAS_ROWS',rows.length>0,
+    rows.length?`Período con ${rows.length} operador/día consolidados.`:`El período ${from||'—'} → ${to||'—'} no contiene filas consolidadas.`,
+    'error',{from,to,availableMin:idx.rows[0]?.fecha||null,availableMax:idx.rows.at(-1)?.fecha||null});
+
+  for(const [source,a] of Object.entries(sourceAudit)){
+    const loaded=(a.recordsStored||0)>0;
+    add(`SOURCE_${source.toUpperCase()}_READ`,loaded,
+      loaded?`${a.label}: ${a.recordsStored} registros almacenados.`:`${a.label}: sin registros almacenados.`,
+      source==='citaciones'?'warn':'error',{processed:a.processed,valid:a.valid,rejected:a.rejected,reasons:a.reasons});
+  }
+
+  add('OPERATOR_PRESENT',rows.length===0||rows.every(r=>!!r.operadorKey),
+    'Todos los registros del período deben tener operador identificable.','error');
+  add('DATE_PRESENT',rows.length===0||rows.every(r=>!!r.fecha),
+    'Todos los registros del período deben tener fecha válida.','error');
+  add('PLANT_COVERAGE',rows.length===0||fieldCounts.planta>0,
+    fieldCounts.planta?`${fieldCounts.planta} operador/día con planta.`:'No existen plantas conciliadas en el período.','warn');
+
+  add('LOGEO_CROSS',mode!=='logeo'||rows.length===0||crosses.turnoLogin>0,
+    mode!=='logeo'?'No aplica en modo Citación.':`${crosses.turnoLogin} cruces Turno ↔ Logeo.`,
+    'error');
+  add('CITATION_CROSS',mode!=='citacion'||rows.length===0||crosses.citacionLogin>0,
+    mode!=='citacion'?'No aplica en modo Logeo.':`${crosses.citacionLogin} cruces Citación ↔ Logeo.`,
+    'error');
+  add('ASSIGNMENT_CROSS',rows.length===0||fieldCounts.asignacion===0||crosses.turnoAsignacion>0,
+    `${crosses.turnoAsignacion} cruces Turno ↔ Asignación.`,'warn');
+  add('TAM_CROSS',rows.length===0||fieldCounts.tamIngreso===0||crosses.tamLogin>0,
+    `${crosses.tamLogin} cruces TAM ↔ Logeo.`,'warn');
+
+  const pctMetrics={
+    turnVsCitation:metrics.turnVsCitation,
+    turnVsAssignment:metrics.turnVsAssignment,
+    adherenciaTurno:metrics.adherenciaTurno,
+    adherenciaCitacion:metrics.adherenciaCitacion,
+    adherenciaGeneral:metrics.adherenciaGeneral
+  };
+  for(const [k,v] of Object.entries(pctMetrics)){
+    add(`KPI_${k.toUpperCase()}_RANGE`,finitePct(v),
+      finitePct(v)?`${k}: ${v==null?'sin base':v+'%'}.`:`${k}: valor fuera de rango (${v}).`,'error');
+  }
+
+  const expectedRankingBase=mode==='citacion'?crosses.citacionLogin:crosses.turnoLogin;
+  const operatorGroups=histOperatorGroups(rows,cfg,[],mode);
+  const rankingMetric=mode==='citacion'?'adherenciaCitacion':'adherenciaTurno';
+  const eligible=operatorGroups.filter(o=>o[rankingMetric]!==null&&o[rankingMetric]!==undefined);
+  add('RANKING_ELIGIBLE',expectedRankingBase===0||eligible.length>0,
+    expectedRankingBase===0?'Sin base válida para ranking.':`${eligible.length} operadores elegibles para ranking.`,
+    'error',{expectedRankingBase});
+
+  const trend=aggregateHistoricalEnterprise(rows,safeText(query.granularity)||'week',cfg,mode);
+  add('TREND_RENDERABLE',rows.length===0||trend.length>0,
+    rows.length===0?'Sin filas para tendencia.':`${trend.length} puntos de tendencia disponibles.`,'error');
+
+  return {
+    ok:issues.filter(x=>x.severity==='error').length===0,
+    mode,from,to,revision:Number(historicalWarehouse?.revision||0),
+    rows:rows.length,operators:new Set(rows.map(r=>r.operadorKey).filter(Boolean)).size,
+    plants:new Set(rows.map(r=>r.planta).filter(p=>p&&p!=='Sin planta')).size,
+    fieldCounts,crosses,metrics,checks,issues,
+    sourceAudit,
+    recommendedDate:latestCommonHistoricalDate(mode),
+    coverage:{minDate:idx.rows[0]?.fecha||null,maxDate:idx.rows.at(-1)?.fecha||null}
+  };
+}
+
 function historicalSourceRanges(){
   const acc={turnos:{records:0,dates:new Set()},citaciones:{records:0,dates:new Set()},status:{records:0,dates:new Set()},tam:{records:0,dates:new Set()}};
   for(const r of (historicalWarehouse.records||[])){
@@ -3243,6 +3377,12 @@ app.get('/api/historico/health-check',requireAuth,(req,res)=>{
 });
 
 
+
+app.get('/api/historico/qa-e2e',requireAuth,(req,res)=>{
+  try{return res.json({ok:true,qa:historicalQaE2E(req.query)});}
+  catch(err){return res.status(422).json({error:'No fue posible ejecutar QA E2E histórico',detalle:err?.message||String(err)});}
+});
+
 app.get('/api/historico/plantas-validas',requireAuth,(req,res)=>{
   try{const mode=String(req.query.mode||'logeo')==='citacion'?'citacion':'logeo',from=safeText(req.query.from),to=safeText(req.query.to),plants=historicalValidPlantsByMode(mode,from,to);return res.json({ok:true,mode,from,to,plants,revision:Number(historicalWarehouse?.revision||0)});}
   catch(err){return res.status(422).json({error:'No fue posible construir las plantas válidas del modo seleccionado',detalle:err?.message||String(err)});}
@@ -3259,7 +3399,11 @@ app.get('/api/historico/fuentes',requireAuth,(req,res)=>{
     plantCatalog:idx.plants.map(planta=>({planta,zona:(idx.rows.find(r=>r.planta===planta)?.zona)||inferZona(planta)})),
     zones:idx.zones,operators:idx.operators,
     diagnostics:(historicalWarehouse.diagnostics||[]).slice(0,100),
-    recommendedDate:latestCommonHistoricalDate(),
+    recommendedDate:latestCommonHistoricalDate('logeo'),
+    recommendedDateByMode:{
+      logeo:latestCommonHistoricalDate('logeo'),
+      citacion:latestCommonHistoricalDate('citacion')
+    },
     sourceRanges:historicalSourceRanges(),
     availableWeeks:historicalAvailableWeeks(),
     plantDictionary:{
@@ -3398,6 +3542,7 @@ app.get('/api/historico/dashboard-enterprise',requireAuth,(req,res)=>{
     const coverage=historicalCoverage(req.query);
     const integrity=validateHistoricalDashboardModel(rows,mode);
     const filesUsed=historicalFilesUsed(from,to);
+    const qaE2E=historicalQaE2E(req.query);
     const kpiAudit=historicalKpiAudit(req.query,cfg);
     const prevRange=histPreviousRange(from,to),prevRows=prevRange?histFilterBase(req.query,prevRange):[];
     const granularity=['day','week','month','quarter','year'].includes(String(req.query.granularity))?String(req.query.granularity):'week';
@@ -3443,8 +3588,12 @@ app.get('/api/historico/dashboard-enterprise',requireAuth,(req,res)=>{
     return res.json({
       ok:true,source:'historicalWarehouse:file-attachments-only',from,to,previousRange:prevRange,granularity,cfg,mode,empty:rows.length===0,
       mensaje:rows.length?'':'NO SE ENCONTRARON DATOS PARA EL PERÍODO SELECCIONADO',
-      metrics,trend,rankings,operatorRanking,advancedRankings,plants,zones,byPlant,heatmap,findings,coverage,integrity,filesUsed,e2eHealth,kpiAudit,
-      recommendedDate:latestCommonHistoricalDate(),
+      metrics,trend,rankings,operatorRanking,advancedRankings,plants,zones,byPlant,heatmap,findings,coverage,integrity,filesUsed,e2eHealth,kpiAudit,qaE2E,
+      recommendedDate:latestCommonHistoricalDate(mode),
+      recommendedDateByMode:{
+        logeo:latestCommonHistoricalDate('logeo'),
+        citacion:latestCommonHistoricalDate('citacion')
+      },
       sourceRanges:historicalSourceRanges(),
       detailed:rows.slice(0,2500).map(r=>({...r,crossLabel:histCrossLabel(r)})),totalDetailed:rows.length,
       catalog:{plants:getHistoricalDailyIndex().plants,zones:getHistoricalDailyIndex().zones,operators:getHistoricalDailyIndex().operators},
