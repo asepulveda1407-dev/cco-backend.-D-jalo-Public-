@@ -3456,6 +3456,23 @@ app.post('/api/historico/read-assistant',requireAuth,express.json({limit:'64kb'}
 });
 
 
+
+function histAdherenceStatusRow(r,cfg){
+  const evalPair=(login,base,before,after)=>{
+    if(login===null||login===undefined||base===null||base===undefined){
+      return {label:'SIN BASE',ok:null,diff:null};
+    }
+    const d=histMinutesDiff(login,base);
+    if(d===null)return {label:'SIN BASE',ok:null,diff:null};
+    const ok=d>=-before&&d<=after;
+    return {label:ok?'ADHERENTE':'FUERA',ok,diff:d};
+  };
+  return {
+    turno:evalPair(r.loginMin,r.turnoMin,Number(cfg.tolTurnBefore),Number(cfg.tolTurnAfter)),
+    citacion:evalPair(r.loginMin,r.citacionMin,Number(cfg.tolCitationBefore),Number(cfg.tolCitationAfter))
+  };
+}
+
 app.get('/api/historico/detail-export',requireAuth,(req,res)=>{
   try{
     const cfg=histCfg(req.query);
@@ -3484,7 +3501,7 @@ app.get('/api/historico/detail-export',requireAuth,(req,res)=>{
 
     const head=[
       'Fecha','Zona','Planta','Operador','ID',
-      'Turno','Citacion','Ingreso TAM','Logeo','Primera Asignacion','Primera Carga','Salida TAM','Cruce',
+      'Turno','Adherencia Turno','Citacion','Adherencia Citacion','Ingreso TAM','Logeo','Primera Asignacion','Primera Carga','Salida TAM','Cruce',
       'Tiene Turno','Tiene Citacion','Tiene TAM','Tiene Logeo','Tiene Asignacion','Tiene Primera Carga',
       'Dif Logeo-Turno min','Dif Logeo-Citacion min','Dif Asignacion-Turno min',
       mode==='citacion'?'Tiempo Muerto Citacion→Asignacion min':'Tiempo Muerto Logeo→Asignacion min',
@@ -3493,9 +3510,10 @@ app.get('/api/historico/detail-export',requireAuth,(req,res)=>{
 
     const lines=[head.map(csvCell).join(';')];
     for(const r of rows){
+      const adh=histAdherenceStatusRow(r,cfg);
       const values=[
         r.fecha,r.zona,r.planta,r.operadorNombre,r.operadorId,
-        fmtMinutes(r.turnoMin),fmtMinutes(r.citacionMin),fmtMinutes(r.tamIngresoMin),fmtMinutes(r.loginMin),
+        fmtMinutes(r.turnoMin),adh.turno.label,fmtMinutes(r.citacionMin),adh.citacion.label,fmtMinutes(r.tamIngresoMin),fmtMinutes(r.loginMin),
         fmtMinutes(r.asignacionMin),fmtMinutes(r.primeraCargaMin),fmtMinutes(r.tamSalidaMin),histCrossLabel(r),
         yesNo(r.turnoMin),yesNo(r.citacionMin),yesNo(r.tamIngresoMin),yesNo(r.loginMin),yesNo(r.asignacionMin),yesNo(r.primeraCargaMin),
         diff(r.loginMin,r.turnoMin),diff(r.loginMin,r.citacionMin),diff(r.asignacionMin,r.turnoMin),dead(r),diff(r.loginMin,r.tamIngresoMin)
@@ -3514,6 +3532,47 @@ app.get('/api/historico/detail-export',requireAuth,(req,res)=>{
   }
 });
 
+
+
+app.get('/api/historico/adherencia-export',requireAuth,(req,res)=>{
+  try{
+    const cfg=histCfg(req.query);
+    let rows=histFilterBase(req.query);
+    const week=safeText(req.query.week||'');
+    if(week)rows=rows.filter(r=>historicalPeriodKey(r.fecha,'week')===week);
+
+    const csvCell=(v)=>{
+      const s=v===null||v===undefined?'':String(v);
+      return `"${s.replace(/"/g,'""')}"`;
+    };
+
+    const head=[
+      'Fecha','Zona','Planta','Operador','ID',
+      'Turno','Logeo','Dif Logeo-Turno min','Adherencia Turno',
+      'Citacion','Dif Logeo-Citacion min','Adherencia Citacion','Cruce'
+    ];
+    const lines=[head.map(csvCell).join(';')];
+
+    for(const r of rows){
+      const adh=histAdherenceStatusRow(r,cfg);
+      lines.push([
+        r.fecha,r.zona,r.planta,r.operadorNombre,r.operadorId,
+        fmtMinutes(r.turnoMin),fmtMinutes(r.loginMin),adh.turno.diff,adh.turno.label,
+        fmtMinutes(r.citacionMin),adh.citacion.diff,adh.citacion.label,
+        histCrossLabel(r)
+      ].map(csvCell).join(';'));
+    }
+
+    const filename=`trazabilidad_adherencia_${safeText(req.query.from||'inicio')}_${safeText(req.query.to||'fin')}${week?'_'+week:''}.csv`;
+    res.setHeader('Content-Type','text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition',`attachment; filename="${filename.replace(/[^a-zA-Z0-9._-]/g,'_')}"`);
+    res.setHeader('Cache-Control','no-store');
+    return res.send('\uFEFF'+lines.join('\n'));
+  }catch(err){
+    registrarErrorDetallado({modulo:'historico',funcion:'GET /api/historico/adherencia-export',error:err?.message||String(err),stack:err?.stack});
+    return res.status(422).json({error:'No fue posible exportar la adherencia histórica',detalle:err?.message||String(err)});
+  }
+});
 
 app.get('/api/historico/audit-export.xlsx',requireAuth,async(req,res)=>{
   try{
@@ -3595,7 +3654,10 @@ app.get('/api/historico/dashboard-enterprise',requireAuth,(req,res)=>{
         citacion:latestCommonHistoricalDate('citacion')
       },
       sourceRanges:historicalSourceRanges(),
-      detailed:rows.slice(0,2500).map(r=>({...r,crossLabel:histCrossLabel(r)})),totalDetailed:rows.length,
+      detailed:rows.slice(0,2500).map(r=>{
+        const adh=histAdherenceStatusRow(r,cfg);
+        return {...r,crossLabel:histCrossLabel(r),adherenciaTurno:adh.turno,adherenciaCitacion:adh.citacion};
+      }),totalDetailed:rows.length,
       catalog:{plants:getHistoricalDailyIndex().plants,zones:getHistoricalDailyIndex().zones,operators:getHistoricalDailyIndex().operators},
       audit:{revision:Number(historicalWarehouse?.revision||0),records:(historicalWarehouse?.records||[]).length,sources:Object.keys(HISTORICAL_SOURCES).map(k=>({source:k,...historicalSourceMeta(k)}))}
     });
