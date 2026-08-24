@@ -553,6 +553,34 @@ function operatorMatchKeys(row) {
   return [...new Set(keys)];
 }
 
+
+function operatorNameSignature(row){
+  const op=rowOperator(row);
+  const n=normalizeName(op.nombre);
+  if(!n||/^operador\s+\d+$/.test(n)||n==='sin nombre')return '';
+  const tokens=n.split(' ').filter(Boolean);
+  if(tokens.length<2)return '';
+  return tokens.sort((a,b)=>a.localeCompare(b,'es')).join('|');
+}
+function addToNameSignatureIndex(index,row){
+  const sig=operatorNameSignature(row);
+  if(!sig)return;
+  if(!index.has(sig))index.set(sig,[]);
+  index.get(sig).push(row);
+}
+function rowsFromLogIndex(primaryIndex,nameSigIndex,row){
+  const exact=rowsFromMultiIndex(primaryIndex,row);
+  if(exact.length)return exact;
+  const sig=operatorNameSignature(row);
+  if(!sig)return [];
+  const candidates=nameSigIndex.get(sig)||[];
+  if(!candidates.length)return [];
+  // Solo usar fallback si la firma representa un único operador del Status.
+  const ids=new Set(candidates.map(r=>normalizeId(pick(r,FIELDS.id))).filter(Boolean));
+  if(ids.size>1)return [];
+  return [...new Set(candidates)];
+}
+
 function addToMultiIndex(index, row) {
   for (const key of operatorMatchKeys(row)) {
     if (!index.has(key)) index.set(key, []);
@@ -904,11 +932,16 @@ function buildOperatorRecords(fecha = '') {
   let logIndexCached = runtimeIndexCache.get('__log_operator_index');
   if (!logIndexCached || logIndexCached.rev !== logIndexRev) {
     const map = new Map();
-    for (const l of logs) addToMultiIndex(map, l);
-    logIndexCached = { rev: logIndexRev, map };
+    const nameSigMap = new Map();
+    for (const l of logs) {
+      addToMultiIndex(map, l);
+      addToNameSignatureIndex(nameSigMap, l);
+    }
+    logIndexCached = { rev: logIndexRev, map, nameSigMap };
     runtimeIndexCache.set('__log_operator_index', logIndexCached);
   }
   const logsByKey = logIndexCached.map;
+  const logsByNameSignature = logIndexCached.nameSigMap || new Map();
 
   const buildErrors = [];
   const built = shifts.map((t, idx) => {
@@ -934,7 +967,7 @@ function buildOperatorRecords(fecha = '') {
     const referenciaMin = citacionAplicada ? citacionMin : turnoMin;
     const referenciaTipo = citacionAplicada ? 'Citación' : 'Turno';
 
-    const ls = rowsFromMultiIndex(logsByKey, t);
+    const ls = rowsFromLogIndex(logsByKey, logsByNameSignature, t);
 
     // v1.7 — Ventana operacional por turno.
     // Diurno: 05:00–17:59. Se ignoran eventos de madrugada del turno nocturno anterior.
