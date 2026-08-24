@@ -2572,16 +2572,30 @@ function getHistoricalRuntimeIndex(){ return getHistoricalDailyIndex(); }
 
 function histCfg(query={}){
   const num=(v,d,min=0,max=240)=>{const n=Number(v);return Number.isFinite(n)?Math.max(min,Math.min(max,n)):d;};
+  const pair=(simple,before,after,defaultBefore,defaultAfter,min,max)=>{
+    const hasSimple=simple!==undefined&&simple!==null&&String(simple)!=='';
+    const symmetric=hasSimple?num(simple,defaultAfter,min,max):null;
+    return {
+      before:(before!==undefined&&before!==null&&String(before)!=='')?num(before,defaultBefore,min,max):(hasSimple?symmetric:defaultBefore),
+      after:(after!==undefined&&after!==null&&String(after)!=='')?num(after,defaultAfter,min,max):(hasSimple?symmetric:defaultAfter)
+    };
+  };
+
+  const turnCitation=pair(query.tolTurnCitation,query.tolTurnCitationBefore,query.tolTurnCitationAfter,20,40,0,120);
+  const assignment=pair(query.tolAssignment,query.tolAssignmentBefore,query.tolAssignmentAfter,15,40,0,180);
+  const turn=pair(query.tolTurn,query.tolTurnBefore,query.tolTurnAfter,15,40,0,120);
+  const citation=pair(query.tolCitation,query.tolCitationBefore,query.tolCitationAfter,15,40,0,120);
+
   return {
     sourceStart:String(query.sourceStart||'logeo')==='citacion'?'citacion':'logeo',
-    tolTurnCitationBefore:num(query.tolTurnCitationBefore,20,0,120),
-    tolTurnCitationAfter:num(query.tolTurnCitationAfter,40,0,120),
-    tolAssignmentBefore:num(query.tolAssignmentBefore,15,0,180),
-    tolAssignmentAfter:num(query.tolAssignmentAfter,40,0,180),
-    tolTurnBefore:num(query.tolTurnBefore,15,0,120),
-    tolTurnAfter:num(query.tolTurnAfter,40,0,120),
-    tolCitationBefore:num(query.tolCitationBefore,15,0,120),
-    tolCitationAfter:num(query.tolCitationAfter,40,0,120),
+    tolTurnCitationBefore:turnCitation.before,
+    tolTurnCitationAfter:turnCitation.after,
+    tolAssignmentBefore:assignment.before,
+    tolAssignmentAfter:assignment.after,
+    tolTurnBefore:turn.before,
+    tolTurnAfter:turn.after,
+    tolCitationBefore:citation.before,
+    tolCitationAfter:citation.after,
     atrasoLeve:num(query.atrasoLeve,10,1,120),
     atrasoModerado:num(query.atrasoModerado,20,2,180),
   };
