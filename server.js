@@ -244,7 +244,7 @@ function isAffirmative(value) {
 
 const FIELDS = {
   id: ['id_operador','id operador','numero_funcionario','número funcionario','numero funcionario','id','rut','codigo_operador','cod_operador'],
-  nombre: ['operador','nombre_operador','nom_operador','operario','nombre','employee_name','nombre_funcionario','nombre empleado','nombre_empleado'],
+  nombre: ['operador','nombre_operador','nom_operador','operario','nombre','employee_name','nombre_funcionario','nombre empleado','nombre_empleado','conductor','nombre_conductor','nombre conductor','chofer','nombre_chofer','nombre chofer'],
   firstName: ['primero_empleado','primero empleado','first_name','firstname','nombre_funcionario','nombre funcionario'],
   lastName: ['ultimo_empleado','último empleado','ultimo empleado','last_name','lastname','apellido_funcionario','apellido funcionario'],
   planta: ['planta','planta_origen','origen','plta','descripcion_planta','descripción planta','plant','codigo_command','código command','cod_planta_command','cod planta command','local_cmd','local cmd','centro_sap','centro sap','puesto_carga','puesto carga','shortname','short_name','local_inventario','local inventario','puesto_expedicion','puesto expedición'],
@@ -554,6 +554,7 @@ function operatorMatchKeys(row) {
 }
 
 
+
 function operatorNameSignature(row){
   const op=rowOperator(row);
   const n=normalizeName(op.nombre);
@@ -562,23 +563,67 @@ function operatorNameSignature(row){
   if(tokens.length<2)return '';
   return tokens.sort((a,b)=>a.localeCompare(b,'es')).join('|');
 }
+function operatorNameTokens(row){
+  const op=rowOperator(row);
+  const n=normalizeName(op.nombre);
+  if(!n||/^operador\s+\d+$/.test(n)||n==='sin nombre')return [];
+  const stop=new Set(['de','del','la','las','los','y']);
+  return [...new Set(n.split(' ').filter(t=>t.length>=2&&!stop.has(t)))];
+}
+function operatorNameSimilarity(a,b){
+  const ta=operatorNameTokens(a),tb=operatorNameTokens(b);
+  if(ta.length<2||tb.length<2)return 0;
+  const sa=new Set(ta),sb=new Set(tb);
+  let common=0;
+  for(const t of sa)if(sb.has(t))common++;
+  if(common<2)return 0;
+  const dice=(2*common)/(sa.size+sb.size);
+  const containment=common/Math.min(sa.size,sb.size);
+  return Math.max(dice,containment*0.92);
+}
 function addToNameSignatureIndex(index,row){
   const sig=operatorNameSignature(row);
   if(!sig)return;
   if(!index.has(sig))index.set(sig,[]);
   index.get(sig).push(row);
 }
-function rowsFromLogIndex(primaryIndex,nameSigIndex,row){
+function buildUniqueStatusOperatorGroups(rows){
+  const groups=new Map();
+  let anon=0;
+  for(const r of (rows||[])){
+    const id=normalizeId(pick(r,FIELDS.id));
+    const sig=operatorNameSignature(r);
+    const key=id?`id:${id}`:(sig?`name:${sig}`:`anon:${anon++}`);
+    if(!groups.has(key))groups.set(key,{key,id,rows:[],rep:r});
+    groups.get(key).rows.push(r);
+  }
+  return [...groups.values()];
+}
+function rowsFromLogIndex(primaryIndex,nameSigIndex,row,statusGroups=[]){
   const exact=rowsFromMultiIndex(primaryIndex,row);
   if(exact.length)return exact;
+
   const sig=operatorNameSignature(row);
-  if(!sig)return [];
-  const candidates=nameSigIndex.get(sig)||[];
-  if(!candidates.length)return [];
-  // Solo usar fallback si la firma representa un único operador del Status.
-  const ids=new Set(candidates.map(r=>normalizeId(pick(r,FIELDS.id))).filter(Boolean));
-  if(ids.size>1)return [];
-  return [...new Set(candidates)];
+  if(sig){
+    const candidates=nameSigIndex.get(sig)||[];
+    if(candidates.length){
+      const ids=new Set(candidates.map(r=>normalizeId(pick(r,FIELDS.id))).filter(Boolean));
+      if(ids.size<=1)return [...new Set(candidates)];
+    }
+  }
+
+  const scored=[];
+  for(const g of statusGroups){
+    const score=operatorNameSimilarity(row,g.rep);
+    if(score>=0.72)scored.push({g,score});
+  }
+  scored.sort((a,b)=>b.score-a.score);
+  if(!scored.length)return [];
+
+  const best=scored[0],second=scored[1];
+  const uniqueEnough=!second||(best.score-second.score)>=0.12||best.score>=0.90;
+  if(!uniqueEnough)return [];
+  return [...new Set(best.g.rows)];
 }
 
 function addToMultiIndex(index, row) {
@@ -937,11 +982,13 @@ function buildOperatorRecords(fecha = '') {
       addToMultiIndex(map, l);
       addToNameSignatureIndex(nameSigMap, l);
     }
-    logIndexCached = { rev: logIndexRev, map, nameSigMap };
+    const statusGroups = buildUniqueStatusOperatorGroups(logs);
+    logIndexCached = { rev: logIndexRev, map, nameSigMap, statusGroups };
     runtimeIndexCache.set('__log_operator_index', logIndexCached);
   }
   const logsByKey = logIndexCached.map;
   const logsByNameSignature = logIndexCached.nameSigMap || new Map();
+  const logStatusGroups = logIndexCached.statusGroups || buildUniqueStatusOperatorGroups(logs);
 
   const buildErrors = [];
   const built = shifts.map((t, idx) => {
@@ -967,7 +1014,7 @@ function buildOperatorRecords(fecha = '') {
     const referenciaMin = citacionAplicada ? citacionMin : turnoMin;
     const referenciaTipo = citacionAplicada ? 'Citación' : 'Turno';
 
-    const ls = rowsFromLogIndex(logsByKey, logsByNameSignature, t);
+    const ls = rowsFromLogIndex(logsByKey, logsByNameSignature, t, logStatusGroups);
 
     // v1.7 — Ventana operacional por turno.
     // Diurno: 05:00–17:59. Se ignoran eventos de madrugada del turno nocturno anterior.
