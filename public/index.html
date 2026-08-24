@@ -1411,7 +1411,10 @@ async function procesarCarpeta(tipo, files){
       if(!sheet) throw new Error('sin hoja utilizable');
       const filaHeader=detectarFilaHeader(wb,sheet);
       let rows=XLSX.utils.sheet_to_json(wb.Sheets[sheet],{defval:null,range:filaHeader});
-      if(tipo==='logeo') rows=compactarStatusRows(rows);
+      if(tipo==='logeo'){
+        rows=preservarFechaHoraLocalStatus(rows);
+        rows=compactarStatusRows(rows);
+      }
       if(!rows.length){ errores.push(`${file.name}: hoja vacía`); continue; }
       totalArchivos++; totalExtraidas += rows.length;
       const lotes=Math.ceil(rows.length/BATCH_SIZE);
@@ -1444,6 +1447,20 @@ function ccoYield(){ return new Promise(resolve=>setTimeout(resolve,0)); }
 function normalizeHeaderClient(k){
   return String(k??'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
 }
+
+function preservarFechaHoraLocalStatus(rows){
+  if(!Array.isArray(rows))return [];
+  const pad=n=>String(n).padStart(2,'0');
+  const wallClock=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  return rows.map(row=>{
+    const out={...row};
+    for(const [k,v] of Object.entries(out)){
+      if(v instanceof Date && !Number.isNaN(v.getTime()))out[k]=wallClock(v);
+    }
+    return out;
+  });
+}
+
 function compactarStatusRows(rows){
   if(!Array.isArray(rows)) return [];
   const patrones=[/numero.*funcionario/,/id.*operador/,/^rut$/,/(primero|nombre).*empleado/,/(ultimo|apellido).*empleado/,/descripcion.*estado/,/^estado$/,/^status$/,/(planta|plant)/,/(hora.*inicio|fecha.*inicio|timestamp|datetime|fecha.*hora|hora.*estado|fecha.*estado)/];
@@ -1568,7 +1585,8 @@ function detectarFilaHeader(wb, nombreHoja){
 function usarHoja(tipo, wb, nombreHoja, nombreArchivo){
   const hoja = wb.Sheets[nombreHoja];
   const filaHeader = detectarFilaHeader(wb, nombreHoja);
-  const registros = XLSX.utils.sheet_to_json(hoja, {defval:null, range: filaHeader});
+  let registros = XLSX.utils.sheet_to_json(hoja, {defval:null, range: filaHeader});
+  if(tipo==='logeo')registros=preservarFechaHoraLocalStatus(registros);
   if(!registros.length){
     setDot(tipo,'err'); setStatusText(tipo, `Hoja "${nombreHoja}" no tiene filas`, 'err');
     return;
