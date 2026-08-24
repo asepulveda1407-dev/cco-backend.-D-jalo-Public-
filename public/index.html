@@ -344,6 +344,13 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 .hist-detail-controls{display:flex;align-items:end;gap:8px;margin-left:auto;flex-wrap:wrap}
 .hist-detail-controls label{margin:0;font-size:9px;color:#60778c}
 .hist-detail-controls select{min-width:270px;max-width:390px}
+
+.hist-adh-badge{display:inline-flex;align-items:center;justify-content:center;padding:4px 8px;border-radius:999px;font-size:9px;font-weight:800;white-space:nowrap;border:1px solid transparent}
+.hist-adh-badge.ok{background:#e8f7ee;color:#0f8a47;border-color:#b7e8c9}
+.hist-adh-badge.no{background:#fdeeee;color:#c9485e;border-color:#f6ccd4}
+.hist-adh-badge.na{background:#f1f5f8;color:#68839a;border-color:#d7e1ea}
+.hist-adh-cell{min-width:100px}
+
 @media(max-width:760px){
   .hist-detail-controls{width:100%;margin-left:0}
   .hist-detail-controls select{width:100%;max-width:none}
@@ -760,7 +767,7 @@ table{border-collapse:separate!important;border-spacing:0!important}
     </details>
     <div class="row hist-actions">
       <button type="button" id="histConsultar">Actualizar análisis</button>
-      <button type="button" class="secondary" id="histExportar">Exportar detalle CSV</button><button type="button" class="secondary" id="histExportarAuditoria">Exportar auditoría XLSX</button><span class="history-note">La exportación usa el universo completo del filtro actual y conserva vacíos reales para Logeo, TAM, Asignación y Carga.</span>
+      <button type="button" class="secondary" id="histExportar">Exportar detalle CSV</button><button type="button" class="secondary" id="histExportarAdherencia">Exportar adherencia CSV</button><button type="button" class="secondary" id="histExportarAuditoria">Exportar auditoría XLSX</button><span class="history-note">La exportación usa el universo completo del filtro actual y conserva vacíos reales para Logeo, TAM, Asignación y Carga.</span>
       <span class="small" id="histAlcance"></span>
     </div>
     <div id="histDiagnostico" class="history-note"></div>
@@ -846,8 +853,8 @@ table{border-collapse:separate!important;border-spacing:0!important}
       </div>
     </div>
     <div class="history-table-wrap hist-detail-table"><table class="history-table">
-      <thead><tr><th>Fecha</th><th>Zona</th><th>Planta</th><th>Operador</th><th>Turno</th><th>Citación</th><th>Ingreso TAM</th><th>Logeo</th><th>1ª Asignación</th><th>1ª Carga</th><th>Salida TAM</th><th>Cruce</th></tr></thead>
-      <tbody id="histDetailBody"><tr><td colspan="12" class="history-empty">Cargue archivos históricos para comenzar.</td></tr></tbody>
+      <thead><tr><th>Fecha</th><th>Zona</th><th>Planta</th><th>Operador</th><th>Turno</th><th>Adh. Turno</th><th>Citación</th><th>Adh. Citación</th><th>Ingreso TAM</th><th>Logeo</th><th>1ª Asignación</th><th>1ª Carga</th><th>Salida TAM</th><th>Cruce</th></tr></thead>
+      <tbody id="histDetailBody"><tr><td colspan="14" class="history-empty">Cargue archivos históricos para comenzar.</td></tr></tbody>
     </table></div>
 
 
@@ -3828,6 +3835,16 @@ function syncHistDetailWeekOptions(rows){
   if(current&&weeks.includes(current)){sel.value=current;}
   else{histDetailWeekSelected='';sel.value='';}
 }
+
+function histAdherenceBadge(status){
+  if(!status||status.ok===null||status.ok===undefined){
+    return '<span class="hist-adh-badge na">Sin base</span>';
+  }
+  const diff=status.diff;
+  const tip=`${status.label} (${diff>0?'+':''}${diff} min)`;
+  return `<span class="hist-adh-badge ${status.ok?'ok':'no'}" title="${escapeHtml(tip)}">${status.ok?'Adherente':'Fuera'}</span>`;
+}
+
 function renderDetail(data){
   try{
     const allRows=data.detailed||[];
@@ -3847,17 +3864,41 @@ function renderDetail(data){
     }
     if(bodyEl){
       if(rows.length){
-        bodyEl.innerHTML=rows.map(r=>`<tr><td>${r.fecha}</td><td>${escapeHtml(r.zona||'')}</td><td>${escapeHtml(r.planta||'')}</td><td><b>${escapeHtml(r.operadorNombre||r.operadorId||'')}</b><div class="small">${escapeHtml(r.operadorId||'')}</div></td><td>${htime(r.turnoMin)}</td><td>${htime(r.citacionMin)}</td><td>${htime(r.tamIngresoMin)}</td><td>${htime(r.loginMin)}</td><td>${htime(r.asignacionMin)}</td><td>${htime(r.primeraCargaMin)}</td><td>${htime(r.tamSalidaMin)}</td><td>${escapeHtml(r.crossLabel||'')}</td></tr>`).join('');
+        bodyEl.innerHTML=rows.map(r=>`<tr><td>${r.fecha}</td><td>${escapeHtml(r.zona||'')}</td><td>${escapeHtml(r.planta||'')}</td><td><b>${escapeHtml(r.operadorNombre||r.operadorId||'')}</b><div class="small">${escapeHtml(r.operadorId||'')}</div></td><td>${htime(r.turnoMin)}</td><td class="hist-adh-cell">${histAdherenceBadge(r.adherenciaTurno)}</td><td>${htime(r.citacionMin)}</td><td class="hist-adh-cell">${histAdherenceBadge(r.adherenciaCitacion)}</td><td>${htime(r.tamIngresoMin)}</td><td>${htime(r.loginMin)}</td><td>${htime(r.asignacionMin)}</td><td>${htime(r.primeraCargaMin)}</td><td>${htime(r.tamSalidaMin)}</td><td>${escapeHtml(r.crossLabel||'')}</td></tr>`).join('');
       }else{
         bodyEl.innerHTML=histDetailWeekSelected
-          ? '<tr><td colspan="12" class="history-empty">SIN INFORMACIÓN PARA LA SEMANA SELECCIONADA</td></tr>'
-          : '<tr><td colspan="12" class="history-empty">Cargue archivos históricos para comenzar.</td></tr>';
+          ? '<tr><td colspan="14" class="history-empty">SIN INFORMACIÓN PARA LA SEMANA SELECCIONADA</td></tr>'
+          : '<tr><td colspan="14" class="history-empty">Cargue archivos históricos para comenzar.</td></tr>';
       }
     }
   }catch(err){
     console.error('[renderDetail]',err);
     const bodyEl=document.getElementById('histDetailBody');
-    if(bodyEl)bodyEl.innerHTML='<tr><td colspan="12" class="history-empty">Error renderizando tabla detallada. Recargue la página.</td></tr>';
+    if(bodyEl)bodyEl.innerHTML='<tr><td colspan="14" class="history-empty">Error renderizando tabla detallada. Recargue la página.</td></tr>';
+  }
+}
+
+
+async function exportarHistoricoAdherenciaCSV(){
+  try{
+    const params=histParams();
+    if(histDetailWeekSelected)params.set('week',histDetailWeekSelected);
+    const r=await fetch(API+'/api/historico/adherencia-export?'+params.toString(),{headers:authHeaders(),cache:'no-store'});
+    if(!r.ok){
+      let msg=`HTTP ${r.status}`;
+      try{const j=await r.json();msg=j.detalle||j.error||msg;}catch{}
+      throw new Error(msg);
+    }
+    const blob=await r.blob();
+    if(!blob.size){alert('No hay datos de adherencia para exportar con los filtros seleccionados.');return;}
+    const cd=r.headers.get('content-disposition')||'';
+    const m=cd.match(/filename="([^"]+)"/i);
+    const name=m?.[1]||'trazabilidad_adherencia.csv';
+    const url=URL.createObjectURL(blob),a=document.createElement('a');
+    a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),500);
+  }catch(err){
+    console.error('[exportarHistoricoAdherenciaCSV]',err);
+    alert('No fue posible exportar la adherencia detallada: '+(err.message||err));
   }
 }
 
@@ -3892,6 +3933,7 @@ function initHistIntelligence(){
   HIST_SOURCE_KEYS.forEach(histDropSetup);
   document.getElementById('histConsultar')?.addEventListener('click',cargarHistorico);
   document.getElementById('histExportar')?.addEventListener('click',exportarHistoricoCSV);
+  document.getElementById('histExportarAdherencia')?.addEventListener('click',exportarHistoricoAdherenciaCSV);
   document.getElementById('histExportarAuditoria')?.addEventListener('click',exportarHistoricoAuditoriaXLSX);
   document.getElementById('histPeriodoTipo')?.addEventListener('change',()=>{renderHistPeriodControls();cargarHistorico();});
   document.querySelectorAll('#histModeSegment button').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('#histModeSegment button').forEach(x=>x.classList.toggle('active',x===btn));histModePlantCacheKey='';histCatalogo.modePlantCatalog=null;histSelections.plantas.clear();renderHistPeriodControls();syncRankingMetricOptions();cargarHistorico();}));
