@@ -13,11 +13,13 @@ const os = require('os');
 const multer = require('multer');
 const ExcelJS = require('exceljs');
 const XLSXNode = require('xlsx');
+const APP_VERSION = (()=>{ try{return require('./package.json').version||'unknown';}catch{return 'unknown';} })();
 
 const PORT = Number(process.env.PORT || 10000);
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const APP_ORIGIN = process.env.APP_ORIGIN || '';
 const AUTH_SECRET = process.env.AUTH_SECRET || 'cco-dev-secret-change-me';
+const TOKEN_TTL_MS = Math.max(15*60*1000, Number(process.env.TOKEN_TTL_MS || 12*60*60*1000));
 const DATA_FILE = path.resolve(process.env.DATA_FILE || path.join(__dirname, 'data', 'cco-state.json'));
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const PLANT_DICTIONARY_FILE = path.join(__dirname, 'config', 'plant-dictionary.json');
@@ -1127,6 +1129,7 @@ function decodeToken(token) {
     if (sig.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
     const user = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
     if (!user?.nombre || !user?.rol) return null;
+    if(!Number.isFinite(Number(user.iat)) || Date.now()-Number(user.iat)>TOKEN_TTL_MS)return null;
     return user;
   } catch { return null; }
 }
@@ -1421,6 +1424,20 @@ function buildRecordsWithDiagnostics(fecha='') {
   }
 }
 
+
+function effectiveScope(req){
+  const q={...(req?.query||{})};
+  const u=req?.user||{};
+  if(u.zona)q.zona=u.zona;
+  if(u.region)q.region=u.region;
+  if(u.planta)q.plantas=u.planta;
+  return q;
+}
+function scopeAllowsPlant(user,plant){
+  if(!user?.planta)return true;
+  return normalizeName(user.planta)===normalizeName(plant);
+}
+
 function filterScope(records, query) {
   const zona = safeText(query.zona || '');
   const region = safeText(query.region || '');
@@ -1433,10 +1450,33 @@ function datasetPlantCount(type, planta) {
   return rows.filter(r => resolvePlantFromRow(r) === canonicalPlantName(planta)).length;
 }
 
+
+function systemArchitectureAudit(){
+  const blockers=[
+    'AUTH_SELF_ASSERTED_ROLE',
+    'LOCAL_FILESYSTEM_PERSISTENCE',
+    'NO_SHARED_DATABASE',
+    'REALTIME_SINGLE_PROCESS_ONLY'
+  ];
+  if(NODE_ENV==='production'&&AUTH_SECRET==='cco-dev-secret-change-me')blockers.push('DEFAULT_AUTH_SECRET');
+  return {
+    certification:'NO_CERTIFICADO',
+    appVersion:APP_VERSION,
+    persistence:{mode:'local-json-files',dataFile:DATA_FILE,historicalFile:HISTORICAL_FILE,durableAcrossEphemeralRestart:false,multiInstanceSafe:false},
+    realtime:{transport:'socket.io',scope:'single-node-process',multiInstanceSafe:false},
+    authentication:{scheme:'signed-self-asserted-user-payload',tokenTtlMs:TOKEN_TTL_MS,identityProvider:false,roleAuthorizationMiddleware:false},
+    concurrency:{fleetOptimisticVersioning:true,plantOptimisticVersioning:true,operationalBatchLock:true,historicalMultiProcessLock:false},
+    blockers
+  };
+}
+
+app.get('/api/system/audit', requireAuth, (req,res)=>res.json(systemArchitectureAudit()));
+
 app.get('/health', (req, res) => res.json({
   ok: true,
   service: 'CCO Intelligence',
-  version: '4.3.0',
+  version: APP_VERSION,
+  certification: systemArchitectureAudit().certification,
   plant_dictionary: { loaded: PLANT_DICTIONARY.plants.length, conflicts: Object.keys(PLANT_DICTIONARY.conflicts || {}).length, source: PLANT_DICTIONARY.source_file },
   env: NODE_ENV,
   timestamp: nowIso(),
@@ -1459,6 +1499,33 @@ app.post('/api/auth/login', (req, res) => {
   const user = { nombre, rol, zona, region, planta, fecha };
   res.json({ token: authToken(user), user });
 });
+
+
+const activeIngestions=new Map();
+const INGESTION_LOCK_TTL_MS=10*60*1000;
+function cleanupIngestionLocks(){
+  const now=Date.now();
+  for(const [k,v] of activeIngestions)if(now-Number(v.updatedAt||0)>INGESTION_LOCK_TTL_MS)activeIngestions.delete(k);
+}
+function validateIngestionSession(tipo,req,modo,lote,totalLotes){
+  cleanupIngestionLocks();
+  const session=safeText(req.body?.upload_session||'');
+  const owner=`${safeText(req.user?.nombre)}|${session||'single'}`;
+  const current=activeIngestions.get(tipo);
+  if((Number(totalLotes)||1)<=1){
+    if(current&&current.owner!==owner)return {ok:false,current};
+    return {ok:true,session};
+  }
+  if(!session)return {ok:false,error:'Falta upload_session para una carga por lotes.'};
+  if(Number(lote)===1&&modo==='replace'){
+    if(current&&current.owner!==owner)return {ok:false,current};
+    activeIngestions.set(tipo,{owner,session,user:safeText(req.user?.nombre),startedAt:Date.now(),updatedAt:Date.now(),totalLotes:Number(totalLotes)});
+    return {ok:true,session};
+  }
+  if(!current||current.owner!==owner)return {ok:false,current,error:'La sesión de carga no coincide con la carga activa.'};
+  current.updatedAt=Date.now();
+  return {ok:true,session};
+}
 
 app.post('/api/ingesta', requireAuth, (req, res) => {
   try {
@@ -1488,6 +1555,15 @@ app.post('/api/ingesta', requireAuth, (req, res) => {
     const lote = Number(req.body?.lote || 1);
     const totalLotes = Number(req.body?.total_lotes || 1);
     const esUltimoLote = !Number.isFinite(totalLotes) || totalLotes <= 1 || lote >= totalLotes;
+    const ingestionSession=validateIngestionSession(tipo,req,modo,lote,totalLotes);
+    if(!ingestionSession.ok){
+      return res.status(409).json({
+        error:'CONFLICTO_CARGA_CONCURRENTE',
+        detalle:ingestionSession.error||`Existe otra carga activa de ${tipo}. Espere a que finalice o reintente.`,
+        tipo,
+        carga_activa:ingestionSession.current?{usuario:ingestionSession.current.user,iniciada:new Date(ingestionSession.current.startedAt).toISOString()}:null
+      });
+    }
     const validConFuente = result.valid.map(row => ({ ...row, __source_file: row?.__source_file || archivo }));
     const anteriores = modo === 'append' && Array.isArray(state.datasets?.[tipo]?.datos)
       ? state.datasets[tipo].datos
@@ -1547,7 +1623,7 @@ app.post('/api/ingesta', requireAuth, (req, res) => {
       fecha: nowIso(),
     });
     state.audit = state.audit.slice(0, 2000);
-    if (esUltimoLote) persistState();
+    if (esUltimoLote) { persistState(); activeIngestions.delete(tipo); }
 
     const info = {
       tipo,
@@ -1870,10 +1946,8 @@ app.post('/api/bitacora', requireAuth, (req, res) => {
 
 app.get('/api/tabla-operadores', requireAuth, (req, res) => {
   try {
-  const truth=buildOperationalTruth(safeText(req.query.fecha || req.user.fecha || ''),req.query);
+  const truth=buildOperationalTruth(safeText(req.query.fecha || req.user.fecha || ''),effectiveScope(req));
   let records=[...truth.records];
-  if (req.user.zona) records = records.filter(r=>r.zona===req.user.zona);
-  if (req.user.region) records = records.filter(r=>r.region===req.user.region);
   if (req.query.soloProblemas === '1') records = records.filter(r=>r.categoria !== 'a_tiempo');
   const orden = req.query.orden;
   if (orden === 'planta') records.sort((a,b)=>a.planta.localeCompare(b.planta,'es') || a.nombre.localeCompare(b.nombre,'es'));
@@ -1891,8 +1965,10 @@ app.get('/api/analisis-operadores', requireAuth, (req, res) => {
   try {
     const planta = safeText(req.query.planta || '');
     if (!planta) return res.status(400).json({ error:'Planta requerida' });
+    if(!scopeAllowsPlant(req.user,planta))return res.status(403).json({error:'FUERA_DE_ALCANCE',detalle:'La planta solicitada no pertenece al alcance del usuario.'});
     const fecha = safeText(req.query.fecha || req.user.fecha || '');
-    const truth = buildOperationalTruth(fecha,{...req.query,planta});
+    const scope={...effectiveScope(req),plantas:planta};
+    const truth = buildOperationalTruth(fecha,scope);
     const built = {records:truth.records,errors:truth.errors};
     const records = truth.records.filter(r=>r.planta===planta);
     if (!records.length) return res.json({
@@ -4163,13 +4239,13 @@ app.get('/api/operacion/fecha-audit.csv', requireAuth, (req,res)=>{
 
 app.get('/api/operacion/auditoria-total', requireAuth, (req,res)=>{
   try{
-    const fecha=safeText(req.query.fecha||req.user.fecha||''),truth=buildOperationalTruth(fecha,req.query);
+    const fecha=safeText(req.query.fecha||req.user.fecha||''),truth=buildOperationalTruth(fecha,effectiveScope(req));
     return res.json({ok:truth.summary.validacion.ok&&truth.reconciliation.ok,fecha,motor:'operador_programado_dia',kpi:truth.summary,conciliacionLogin:truth.reconciliation,loginAudit:truth.audit,erroresConstruccion:truth.errors,registros:truth.records.map(r=>({operadorId:r.id,operador:r.nombre,planta:r.planta,turno:r.turnoMin,login:r.logeoMin,asignacion:r.asignacionMin,primeraCarga:r.primeraCargaMin,tiempoMuerto:r.tiempoMuertoMin,categoria:r.categoria,trazabilidad:r.trazabilidad||null}))});
   }catch(err){return res.status(422).json({error:'No fue posible ejecutar auditoría operacional',detalle:err?.message||String(err)});}
 });
 app.get('/api/operacion/export.csv', requireAuth, (req,res)=>{
   try{
-    const fecha=safeText(req.query.fecha||req.user.fecha||''),truth=buildOperationalTruth(fecha,req.query),cell=v=>`"${String(v??'').replace(/"/g,'""')}"`;
+    const fecha=safeText(req.query.fecha||req.user.fecha||''),truth=buildOperationalTruth(fecha,effectiveScope(req)),cell=v=>`"${String(v??'').replace(/"/g,'""')}"`;
     const head=['Fecha','Zona','Planta','Operador','ID','Turno','Login','Asignacion','Primera Carga','Tiempo Muerto min','Categoria','Archivo Turno','Fila Turno','Archivo Login','Fila Login','Archivo Asignacion','Fila Asignacion','Archivo Primera Carga','Fila Primera Carga'],lines=[head.map(cell).join(';')];
     for(const r of truth.records){const t=r.trazabilidad||{};lines.push([fecha,r.zona,r.planta,r.nombre,r.id,fmtMinutes(r.turnoMin),fmtMinutes(r.logeoMin),fmtMinutes(r.asignacionMin),fmtMinutes(r.primeraCargaMin),r.tiempoMuertoMin,r.categoria,t.turno?.archivo,t.turno?.fila,t.login?.archivo,t.login?.fila,t.asignacion?.archivo,t.asignacion?.fila,t.primeraCarga?.archivo,t.primeraCarga?.fila].map(cell).join(';'));}
     res.setHeader('Content-Type','text/csv; charset=utf-8');res.setHeader('Content-Disposition',`attachment; filename="operacion_auditable_${fecha||'fecha'}.csv"`);return res.send('\uFEFF'+lines.join('\n'));
@@ -4190,13 +4266,11 @@ app.get('/api/reporte', requireAuth, (req, res) => {
       const fecha = safeText(req.query.fecha || req.user.fecha || '');
       const statusSchema = statusSchemaAudit(getLogeo());
       const fechaAudit = operationalDateAudit(fecha);
-      const truth = buildOperationalTruth(fecha,req.query);
+      const scope = effectiveScope(req);
+      const truth = buildOperationalTruth(fecha,scope);
       const built = {records:truth.records,errors:truth.errors};
       const loginAudit = truth.audit;
       const records = truth.records;
-      if (req.user.zona) records = records.filter(r=>r.zona===req.user.zona);
-      if (req.user.region) records = records.filter(r=>r.region===req.user.region);
-      if (req.user.planta) records = records.filter(r=>r.planta===req.user.planta);
       const plantNames = [...new Set(records.map(r=>r.planta))];
       if (!plantNames.length) return respuestaSinDatos(res, 'Sin información disponible para el período seleccionado', {
         fecha, generado_por:req.user?.nombre || 'Sistema', generado_en:nowIso(),
@@ -4234,9 +4308,9 @@ app.get('/api/reporte', requireAuth, (req, res) => {
           fechas:fechaAudit
         },
         generado_en:nowIso(),
-        zona:req.query.zona || req.user.zona || null,
-        region:req.query.region || req.user.region || null,
-        plantasFiltro:req.query.plantas?String(req.query.plantas).split(',').filter(Boolean):null,
+        zona:scope.zona || null,
+        region:scope.region || null,
+        plantasFiltro:scope.plantas?String(scope.plantas).split(',').filter(Boolean):null,
         resumen:{
           totalTurnos:records.length,
           programadosExigibles:records.length,
@@ -4555,7 +4629,7 @@ app.get('*', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 
 if (require.main === module && process.env.CCO_TEST_MODE !== '1') {
   server.listen(PORT, () => {
-    console.log(`[CCO][startup] CCO Intelligence v4.3.2 activo en puerto ${PORT}`);
+    console.log(`[CCO][startup] CCO Intelligence v${APP_VERSION} activo en puerto ${PORT}`);
     console.log(`[CCO][startup] Diccionario plantas: ${PLANT_DICTIONARY.plants.length} plantas, ${PLANT_DICTIONARY_LOOKUP.size} alias resolubles, ${Object.keys(PLANT_DICTIONARY.conflicts||{}).length} alias ambiguos`);
     if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producción.');
   });
