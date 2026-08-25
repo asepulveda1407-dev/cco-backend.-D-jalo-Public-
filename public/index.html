@@ -948,6 +948,10 @@ table{border-collapse:separate!important;border-spacing:0!important}
     </div>
     <div id="pickerLogeo"></div>
     <p class="batch-help">Operación Nacional acepta únicamente archivos del día actual. Las carpetas históricas se cargan exclusivamente desde Trazabilidad Histórica.</p>
+    <details id="fechaDiagPanel" style="margin:8px 0 10px">
+      <summary><b>📅 Diagnóstico de fechas operacionales</b></summary>
+      <div id="fechaDiagContent" class="small" style="padding:8px 0">Cargue archivos para auditar el período.</div>
+    </details>
     <button onclick="generarReporte()">Generar reporte ejecutivo</button>
     
     <button class="secondary" onclick="copiarReporte()">Copiar texto</button>
@@ -1418,10 +1422,15 @@ async function procesarCarpeta(tipo, files){
       if(!sheet) throw new Error('sin hoja utilizable');
       const filaHeader=detectarFilaHeader(wb,sheet);
       let rows=XLSX.utils.sheet_to_json(wb.Sheets[sheet],{defval:null,range:filaHeader});
-      if(tipo==='logeo'){
-        rows=preservarFechaHoraLocalStatus(rows);
-        rows=rows.map((r,idx)=>({...r,__cco_source_file:file.name,__cco_source_sheet:sheet,__cco_source_row:filaHeader+idx+2}));
-      }
+      const fechaOperacionDetectada = tipo==='citaciones' ? detectarFechaOperacionWorkbook(wb) : '';
+      if(tipo==='logeo') rows=preservarFechaHoraLocalStatus(rows);
+      rows=rows.map((r,idx)=>({
+        ...r,
+        __cco_source_file:file.name,
+        __cco_source_sheet:sheet,
+        __cco_source_row:filaHeader+idx+2,
+        ...(fechaOperacionDetectada?{__cco_operational_date:fechaOperacionDetectada}:{})
+      }));
       if(!rows.length){ errores.push(`${file.name}: hoja vacía`); continue; }
       totalArchivos++; totalExtraidas += rows.length;
       const lotes=Math.ceil(rows.length/BATCH_SIZE);
@@ -1618,11 +1627,41 @@ function detectarFilaHeader(wb, nombreHoja){
   return 0; // no se detectó nada raro, usar la primera fila como siempre
 }
 
+
+function detectarFechaOperacionWorkbook(wb){
+  try{
+    const norm=v=>String(v??'').toLowerCase().normalize('NFD')
+      .replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim();
+    for(const sheetName of (wb?.SheetNames||[])){
+      const ws=wb.Sheets?.[sheetName];
+      if(!ws)continue;
+      const matrix=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,range:0,raw:false}).slice(0,40);
+      for(const row of matrix){
+        for(let c=0;c<Math.min(row.length,12);c++){
+          const key=norm(row[c]);
+          if(key==='fecha operacion'||key==='fecha de operacion'||key==='fecha operacional'){
+            const val=row[c+1];
+            if(val!==null&&val!==undefined&&String(val).trim()!=='')return String(val).trim();
+          }
+        }
+      }
+    }
+  }catch(err){console.warn('[fecha-operacion-workbook]',err);}
+  return '';
+}
+
 function usarHoja(tipo, wb, nombreHoja, nombreArchivo){
   const hoja = wb.Sheets[nombreHoja];
   const filaHeader = detectarFilaHeader(wb, nombreHoja);
   let registros = XLSX.utils.sheet_to_json(hoja, {defval:null, range: filaHeader});
-  registros=registros.map((r,idx)=>({...r,__cco_source_file:nombreArchivo,__cco_source_sheet:nombreHoja,__cco_source_row:filaHeader+idx+2}));
+  const fechaOperacionDetectada = tipo==='citaciones' ? detectarFechaOperacionWorkbook(wb) : '';
+  registros=registros.map((r,idx)=>({
+    ...r,
+    __cco_source_file:nombreArchivo,
+    __cco_source_sheet:nombreHoja,
+    __cco_source_row:filaHeader+idx+2,
+    ...(fechaOperacionDetectada?{__cco_operational_date:fechaOperacionDetectada}:{})
+  }));
   if(tipo==='logeo')registros=preservarFechaHoraLocalStatus(registros);
   if(!registros.length){
     setDot(tipo,'err'); setStatusText(tipo, `Hoja "${nombreHoja}" no tiene filas`, 'err');
@@ -1726,6 +1765,7 @@ async function subirIngesta(tipo, registros, nombreArchivo){
       marcarIngestaStatus(tipo, resp.cantidad ?? registros.length, resp.subido_por ?? '—', false);
     }
 
+    await actualizarDiagnosticoFechas();
     if(tipo === 'logeo' && document.getElementById('reporteBox')?.style.display !== 'none'){
       generarReporte();
     }
@@ -1873,6 +1913,43 @@ function validarConsistenciaHistoricaUI(data){
   return true;
 }
 
+
+async function actualizarDiagnosticoFechas(){
+  const box=document.getElementById('fechaDiagContent');
+  if(!box)return null;
+  const fecha=user?.fecha||document.getElementById('scopeFecha')?.value||'';
+  if(!fecha){box.textContent='No existe fecha operacional seleccionada.';return null;}
+  try{
+    const r=await fetch(API+'/api/operacion/fecha-audit?fecha='+encodeURIComponent(fecha),{headers:authHeaders(),cache:'no-store'});
+    const data=await leerRespuestaApiSegura(r);
+    if(!r.ok||data?.error)throw new Error(data?.detalle||data?.error||`HTTP ${r.status}`);
+    const a=data.auditoria||{},rows=a.fuentes||[];
+    box.innerHTML=`
+      <div style="overflow-x:auto">
+        <table class="rep-tabla">
+          <thead><tr><th>Archivo / fuente</th><th>Registros</th><th>Fecha mínima</th><th>Fecha máxima</th><th>Registros período</th><th>Estado</th></tr></thead>
+          <tbody>${rows.map(s=>`<tr>
+            <td><b>${escapeHtml(String(s.fuente||'').toUpperCase())}</b><div class="small">${escapeHtml(s.archivo||'—')}</div></td>
+            <td>${Number(s.registros||0).toLocaleString('es-CL')}</td>
+            <td>${escapeHtml(s.fechaMin||'—')}</td>
+            <td>${escapeHtml(s.fechaMax||'—')}</td>
+            <td>${Number(s.registrosPeriodo||0).toLocaleString('es-CL')}</td>
+            <td>${s.contieneFecha?'✅ Coincide':'⚠ '+escapeHtml(s.estado||'sin datos')}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>
+      <div class="small" style="margin-top:6px">
+        Fecha analizada: <b>${escapeHtml(a.fechaSeleccionada||fecha)}</b> ·
+        Intersección: <b>${escapeHtml(a.interseccion?.min||'—')} → ${escapeHtml(a.interseccion?.max||'—')}</b>
+        ${a.advertencias?.length?' · '+escapeHtml(a.advertencias.join(' ')):''}
+      </div>`;
+    return a;
+  }catch(err){
+    box.textContent='Error de diagnóstico de fechas: '+(err.message||err);
+    return null;
+  }
+}
+
 async function generarReporte(){
   const box = document.getElementById('reporteBox');
   box.style.display='block';
@@ -1890,6 +1967,7 @@ async function generarReporte(){
   const url = API+'/api/reporte' + (qs ? '?'+qs : '');
 
   try {
+    await actualizarDiagnosticoFechas();
     const response = await fetch(url,{headers:authHeaders()});
     const raw = await response.text();
     let rep;
@@ -1928,7 +2006,8 @@ async function generarReporte(){
     }
   } catch(err) {
     registrarErrorDetalladoUI('reporte','generarReporte',err,{url});
-    alertas.innerHTML = `<div class="alert-card critico"><span class="alert-icon">⚠️</span><div class="alert-text"><b>No fue posible procesar el reporte.</b> Revise que Turnos, Citaciones y StatusBreakdown correspondan al período seleccionado.</div></div>`;
+    alertas.innerHTML = `<div class="alert-card critico"><span class="alert-icon">⚠️</span><div class="alert-text"><b>No fue posible procesar el reporte.</b> ${escapeHtml(err?.message||String(err))}</div></div>`;
+    await actualizarDiagnosticoFechas();
   }
 }
 
