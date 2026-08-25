@@ -1470,7 +1470,15 @@ function preservarFechaHoraLocalStatus(rows){
 
 function compactarStatusRows(rows){
   if(!Array.isArray(rows)) return [];
-  const patrones=[/numero.*funcionario/,/id.*operador/,/^rut$/,/(primero|nombre).*empleado/,/(ultimo|apellido).*empleado/,/descripcion.*estado/,/^estado$/,/^status$/,/(planta|plant)/,/(hora.*inicio|fecha.*inicio|timestamp|datetime|fecha.*hora|hora.*estado|fecha.*estado)/];
+  const patrones=[
+    /numero.*funcionario/,/id.*operador/,/^rut$/,
+    /(primero|nombre).*empleado/,/(ultimo|apellido).*empleado/,
+    /descripcion.*estado/,/^estado$/,/^status$/,
+    /login.*pre.*viaje/,/estado.*login.*pre.*viaje/,
+    /estado.*asign/,
+    /(planta|plant)/,
+    /(hora.*inicio|fecha.*inicio|timestamp|datetime|fecha.*hora|hora.*estado|fecha.*estado)/
+  ];
   return rows.map(row=>{
     const out={};
     for(const [k,v] of Object.entries(row||{})){
@@ -1481,10 +1489,31 @@ function compactarStatusRows(rows){
   });
 }
 
-async function enviarLoteIngesta(tipo,datosLote,nombreArchivo,modo,lote,totalLotes,finalizar=false){
+function auditarStatusCliente(rows){
+  const list=Array.isArray(rows)?rows:[];
+  const countsByHeader=new Map(),columns=new Set();
+  const norm=v=>String(v??'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim().replace(/\s+/g,' ');
+  for(const row of list){
+    for(const [k,v] of Object.entries(row||{})){
+      columns.add(String(k));
+      if(norm(v)==='login pre viaje')countsByHeader.set(String(k),(countsByHeader.get(String(k))||0)+1);
+    }
+  }
+  const headers=[...countsByHeader.entries()].sort((a,b)=>b[1]-a[1]);
+  return {
+    filasFisicasLeidas:list.length,
+    columnasDetectadas:columns.size,
+    encabezados:[...columns],
+    encabezadoEstadoDetectado:headers[0]?.[0]||null,
+    loginPreviajeAntesNormalizar:headers.reduce((s,[,n])=>s+n,0),
+    coincidenciasPorEncabezado:Object.fromEntries(headers)
+  };
+}
+
+async function enviarLoteIngesta(tipo,datosLote,nombreArchivo,modo,lote,totalLotes,finalizar=false,auditoriaStatus=null){
   const response=await fetch(API+'/api/ingesta',{
     method:'POST', headers:authHeaders(),
-    body:JSON.stringify({tipo,datos:datosLote,archivo:nombreArchivo,modo,lote,total_lotes:totalLotes,finalizar})
+    body:JSON.stringify({tipo,datos:datosLote,archivo:nombreArchivo,modo,lote,total_lotes:totalLotes,finalizar,auditoria_status:auditoriaStatus})
   });
   return leerRespuestaApiSegura(response);
 }
@@ -1662,6 +1691,7 @@ async function subirIngesta(tipo, registros, nombreArchivo){
       throw new Error('La sesión CCO no está autenticada. Vuelve a ingresar.');
     }
 
+    const auditoriaStatus = tipo==='logeo' ? auditarStatusCliente(registros) : null;
     if(tipo==='logeo') registros=compactarStatusRows(registros);
     const BATCH_SIZE = tipo==='logeo' ? 1800 : 1200;
     const totalLotes = Math.ceil(registros.length / BATCH_SIZE);
@@ -1677,7 +1707,7 @@ async function subirIngesta(tipo, registros, nombreArchivo){
       setStatusText(tipo, `Subiendo lote ${lote+1}/${totalLotes} · ${Math.min(inicio+datosLote.length, registros.length)}/${registros.length} filas...`);
 
       try{
-        ultimaRespuesta = await enviarLoteIngesta(tipo,datosLote,nombreArchivo,modo,lote+1,totalLotes,lote===totalLotes-1);
+        ultimaRespuesta = await enviarLoteIngesta(tipo,datosLote,nombreArchivo,modo,lote+1,totalLotes,lote===totalLotes-1,auditoriaStatus);
       }catch(networkErr){
         throw new Error(`No fue posible procesar el lote ${lote+1}/${totalLotes}: ${networkErr?.message || networkErr}`);
       }
@@ -1933,11 +1963,12 @@ function renderReporte(rep){
 
   // --- KPIs nacionales exclusivos (respetan el alcance de zona/plantas elegido) ---
   const total = rep.resumen.programadosExigibles ?? rep.resumen.totalTurnos ?? 0;
-  const logeados = rep.resumen.logeadosAlCorte ?? rep.resumen.totalLogeo ?? 0;
-  const pendientes = rep.resumen.pendientesIngreso ?? Math.max(0,total-logeados);
+  const logeados = rep.resumen.loginFuente ?? rep.resumen.totalLogeo ?? 0;
+  const conciliados = rep.resumen.logeadosConciliados ?? rep.resumen.logeadosAlCorte ?? 0;
+  const pendientes = rep.resumen.pendientesIngreso ?? Math.max(0,total-conciliados);
   const kpisNac = [
     ['Programados exigibles', total, alcance, 'info'],
-    ['Con logeo', logeados, total?Math.round(logeados/total*1000)/10+'% de cobertura':'—', logeados===total?'ok':'info'],
+    ['Con logeo', logeados, `${conciliados} conciliados con Turnos`, 'info'],
     ['Pendientes de ingreso', pendientes, pendientes?'Requieren seguimiento':'Cobertura completa', pendientes?'warn':'ok'],
     ['Asignados',
       rep.resumen.statusSchema?.hasAssignmentField===false?'Sin dato':(rep.resumen.asignados ?? 0),
@@ -1964,6 +1995,10 @@ function renderReporte(rep){
   const fuentes = rep.resumen.fuentes || {};
   if(rep.resumen.statusSchema?.hasLoginField===false){
     alertasHtml += `<div class="alert-card critico"><span class="alert-icon">⚠️</span><div class="alert-text"><b>KPI Logeo no calculado.</b> No se encontró la columna que contiene el estado <b>Login/pre-viaje</b>. No se sustituye por otro Status.</div></div>`;
+  }
+  const loginAudit=rep.diagnosticoFecha?.loginAudit;
+  if(loginAudit && Number(loginAudit.loginMostradoKpi)!==Number(loginAudit.loginDespuesCruceTurnos)){
+    alertasHtml += `<div class="alert-card info"><span class="alert-icon">🔎</span><div class="alert-text"><b>Auditoría Login:</b> ${Number(loginAudit.loginMostradoKpi||0).toLocaleString('es-CL')} registros LOGIN/PRE-VIAJE en la fuente · ${Number(loginAudit.loginDespuesCruceTurnos||0).toLocaleString('es-CL')} conciliados con Turnos · diferencia ${Number(loginAudit.diferenciaCruceVsFuente||0).toLocaleString('es-CL')}. El KPI Login usa la fuente directa.</div></div>`;
   }
   if((fuentes.turnosFilas||0)>0 && (fuentes.logeoFilas||0)===0){
     alertasHtml += `<div class="alert-card critico"><span class="alert-icon">📅</span><div class="alert-text"><b>StatusBreakdown no contiene datos para ${escapeHtml(fuentes.fecha||rep.fecha||'la fecha seleccionada')}.</b> Turnos detectados: ${fuentes.turnosFilas||0}. No se calcularán logeos como cero porque la fuente está ausente para ese día.</div></div>`;
@@ -2124,7 +2159,7 @@ function renderReporte(rep){
   texto += `Citaciones aplicadas: *${rep.resumen.totalCitaciones}*\n`;
   texto += `Referencia operacional: *${rep.resumen.operadoresConCitacion||0} por citación* · *${rep.resumen.operadoresPorTurno||0} por turno*\n`;
   if(rep.resumen.cumplimientoReferenciaPct!==null) texto += `Cumplimiento referencia: *${rep.resumen.cumplimientoReferenciaPct}%*\n`;
-  texto += `Con logeo: *${rep.resumen.logeadosAlCorte ?? rep.resumen.totalLogeo}*\n`;
+  texto += `Con logeo: *${rep.resumen.loginFuente ?? rep.resumen.totalLogeo}*\n`;
   texto += `Pendientes de ingreso: *${rep.resumen.pendientesIngreso ?? 0}*\n`;
   texto += `Asignados: *${rep.resumen.statusSchema?.hasAssignmentField===false?'No disponible':(rep.resumen.asignados ?? 0)}*\n`;
   texto += `Primera carga: *${rep.resumen.primeraCarga ?? 0}*\n`;
