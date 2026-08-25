@@ -1370,7 +1370,7 @@ Object.keys(TIPOS_ARCHIVO).forEach(inputId=>{
     reader.onload = (evt)=>{
       try{
         const data = new Uint8Array(evt.target.result);
-        const wb = XLSX.read(data, {type:'array', cellDates:true});
+        const wb = XLSX.read(data, {type:'array', cellDates:false});
         if(wb.SheetNames.length === 1){
           usarHoja(tipo, wb, wb.SheetNames[0], file.name);
         } else {
@@ -1417,7 +1417,7 @@ async function procesarCarpeta(tipo, files){
     try{
       setStatusText(tipo,`Leyendo ${i+1}/${files.length}: ${file.name}`);
       const ab=await file.arrayBuffer();
-      const wb=XLSX.read(new Uint8Array(ab),{type:'array',cellDates:true,dense:true});
+      const wb=XLSX.read(new Uint8Array(ab),{type:'array',cellDates:false,dense:true});
       const sheet=hojaSugeridaLote(tipo,wb);
       if(!sheet) throw new Error('sin hoja utilizable');
       const filaHeader=detectarFilaHeader(wb,sheet);
