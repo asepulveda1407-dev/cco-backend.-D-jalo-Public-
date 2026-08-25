@@ -1366,7 +1366,7 @@ app.post('/api/ingesta', requireAuth, (req, res) => {
         fecha_unica: dateProfile.fecha_unica,
         modo_ultima_carga: modo,
         revision: Number(metaAnterior.revision || 0) + 1,
-        ...(tipo==='logeo'?{status_schema:statusSchema}:{}),
+        ...(tipo==='logeo'?{status_schema:statusSchema,auditoria_status_cliente:req.body?.auditoria_status || metaAnterior.auditoria_status_cliente || null}:{}),
       },
     };
 
@@ -3984,11 +3984,23 @@ function aggregateHistory(rows, granularity) {
   });
 }
 
+
+app.get('/api/operacion/login-audit', requireAuth, (req,res)=>{
+  try{
+    const fecha=safeText(req.query.fecha||req.user.fecha||'');
+    const built=buildRecordsWithDiagnostics(fecha);
+    return res.json({ok:true,auditoria:loginSourceAudit(fecha,built.records)});
+  }catch(err){
+    return res.status(422).json({error:'No fue posible auditar el KPI Login',detalle:err?.message||String(err)});
+  }
+});
+
 app.get('/api/reporte', requireAuth, (req, res) => {
   try {
       const fecha = safeText(req.query.fecha || req.user.fecha || '');
       const statusSchema = statusSchemaAudit(getLogeo());
       const built = buildRecordsWithDiagnostics(fecha);
+      const loginAudit = loginSourceAudit(fecha,built.records);
       let records = filterScope(built.records, req.query);
       if (req.user.zona) records = records.filter(r=>r.zona===req.user.zona);
       if (req.user.region) records = records.filter(r=>r.region===req.user.region);
@@ -4043,7 +4055,8 @@ app.get('/api/reporte', requireAuth, (req, res) => {
           turnosDia:records.length,
           citacionesDia:filterRowsForDate(getCitaciones(),fecha,'citaciones').length,
           citacionesAdelantarDia:filterRowsForDate(getCitaciones(),fecha,'citaciones').filter(c=>isAffirmative(pick(c,FIELDS.requiereAdelantarCitacion))).length,
-          statusDia:filterRowsForDate(getLogeo(),fecha,'logeo').length
+          statusDia:filterRowsForDate(getLogeo(),fecha,'logeo').length,
+          loginAudit
         },
         generado_en:nowIso(),
         zona:req.query.zona || req.user.zona || null,
@@ -4058,8 +4071,10 @@ app.get('/api/reporte', requireAuth, (req, res) => {
           cumplimientoReferenciaPct:records.length?round1(records.filter(r=>r.categoria==='a_tiempo').length/records.length*100):null,
           cumplimientoCitacionPct:records.filter(r=>r.citacionAplicada).length?round1(records.filter(r=>r.citacionAplicada && r.categoria==='a_tiempo').length/records.filter(r=>r.citacionAplicada).length*100):null,
           cumplimientoTurnoPct:records.filter(r=>!r.citacionAplicada).length?round1(records.filter(r=>!r.citacionAplicada && r.categoria==='a_tiempo').length/records.filter(r=>!r.citacionAplicada).length*100):null,
-          totalLogeo:records.filter(r=>hasMinute(r.logeoMin)).length,
+          totalLogeo:loginAudit.loginMostradoKpi,
+          loginFuente:loginAudit.loginMostradoKpi,
           logeadosAlCorte:records.filter(r=>hasMinute(r.logeoMin)).length,
+          logeadosConciliados:records.filter(r=>hasMinute(r.logeoMin)).length,
           pendientesIngreso:records.filter(r=>!hasMinute(r.logeoMin)).length,
           asignados:statusSchema.hasAssignmentField?records.filter(r=>hasMinute(r.asignacionMin)).length:null,
           primeraCarga:records.filter(r=>hasMinute(r.primeraCargaMin)).length,
@@ -4191,6 +4206,53 @@ function recordsToPlantRows(records) {
       tiempoMuertoPromedioMin:tm.length?round1(tm.reduce((sum,r)=>sum+(Number(r?.tiempoMuertoMin)||0),0)/tm.length):null,
     };
   });
+}
+
+
+function loginSourceRows(fecha=''){
+  return filterRowsForDate(getLogeo(),fecha,'logeo').filter(r=>{
+    const general=pick(r,OP_STATUS.fields.generalState),dedicated=pick(r,OP_STATUS.fields.loginState);
+    return isLoginPreviajeState(dedicated)||isLoginPreviajeState(general);
+  });
+}
+function loginSourceAudit(fecha='',builtRecords=[]){
+  const all=getLogeo(),meta=state?.datasets?.logeo?.metadatos||{},client=meta.auditoria_status_cliente||{};
+  const afterNormalize=all.filter(r=>{
+    const general=pick(r,OP_STATUS.fields.generalState),dedicated=pick(r,OP_STATUS.fields.loginState);
+    return isLoginPreviajeState(dedicated)||isLoginPreviajeState(general);
+  });
+  const afterDate=loginSourceRows(fecha);
+  const dedupe=new Map();
+  for(const r of afterDate){
+    const op=normalizeId(pick(r,FIELDS.id))||normalizeName(rowOperator(r).nombre);
+    const when=safeText(getEventTimeValue(r));
+    const st=safeText(pick(r,OP_STATUS.fields.loginState))||safeText(pick(r,OP_STATUS.fields.generalState));
+    const key=`${op}|${when}|${normalizeName(st)}`;
+    if(!dedupe.has(key))dedupe.set(key,r);
+  }
+  const crossed=Array.isArray(builtRecords)?builtRecords.filter(r=>hasMinute(r?.logeoMin)).length:0;
+  let header=null;
+  const hc=new Map();
+  for(const r of all)for(const [k,v] of Object.entries(r||{}))if(isLoginPreviajeState(v))hc.set(k,(hc.get(k)||0)+1);
+  header=[...hc.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]||null;
+  return {
+    archivo:meta.archivo||null,fecha,
+    totalFilasFisicasLeidas:Number(client.filasFisicasLeidas ?? meta.filas_totales ?? all.length),
+    totalFilasValidas:Number(meta.filas_validas ?? all.length),
+    totalFilasRechazadas:Number(meta.filas_rechazadas ?? 0),
+    totalColumnasDetectadas:Number(client.columnasDetectadas ?? Object.keys(all[0]||{}).length),
+    encabezadoEstado:client.encabezadoEstadoDetectado||header,
+    loginAntesNormalizar:Number(client.loginPreviajeAntesNormalizar ?? afterNormalize.length),
+    loginDespuesNormalizar:afterNormalize.length,
+    loginDespuesFiltroFecha:afterDate.length,
+    loginDespuesEliminarDuplicados:dedupe.size,
+    loginDespuesCruceTurnos:crossed,
+    loginEnviadoCalculo:afterDate.length,
+    loginMostradoKpi:afterDate.length,
+    noContabilizadosPorFecha:Math.max(0,afterNormalize.length-afterDate.length),
+    diferenciaCruceVsFuente:Math.max(0,afterDate.length-crossed),
+    regla:'KPI Login = filas válidas de Status con LOGIN/PRE-VIAJE para la fecha activa; no depende del cruce con Turnos.'
+  };
 }
 
 function sourceCoverageForDate(fecha) {
