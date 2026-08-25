@@ -2520,7 +2520,7 @@ async function etlProcessXlsx(filePath,source,archivo,job,diag){
 }
 
 function etlSheetJsRows(filePath,source,diag){
-  const wb=XLSXNode.readFile(filePath,{cellDates:true,cellNF:false,cellStyles:false});
+  const wb=XLSXNode.readFile(filePath,{cellDates:false,cellNF:false,cellStyles:false});
   const candidates=[];
   for(const name of wb.SheetNames){
     const ws=wb.Sheets[name],matrix=XLSXNode.utils.sheet_to_json(ws,{header:1,defval:null,raw:true});
@@ -2537,7 +2537,7 @@ async function etlProcessNonXlsx(filePath,ext,source,archivo,job,diag){
   if(ext==='csv'||ext==='txt'){
     const text=fs.readFileSync(filePath,'utf8');if(!text.trim())throw new Error('El archivo está vacío.');
     wb=XLSXNode.read(text,{type:'string',raw:true});
-  }else wb=XLSXNode.readFile(filePath,{cellDates:true,raw:true});
+  }else wb=XLSXNode.readFile(filePath,{cellDates:false,raw:true});
   const candidates=[];
   for(const name of wb.SheetNames){
     const ws=wb.Sheets[name],matrix=XLSXNode.utils.sheet_to_json(ws,{header:1,defval:null,raw:true});
@@ -2594,7 +2594,7 @@ function hashFileMd5(filePath){
     s.on('data',d=>h.update(d));s.on('error',reject);s.on('end',()=>resolve(h.digest('hex')));
   });
 }
-const HIST_ETL_CACHE_VERSION='4.1.3';
+const HIST_ETL_CACHE_VERSION='4.8.3';
 function histCacheKey(source,md5){return `${HIST_ETL_CACHE_VERSION}:${source}:${md5}`;}
 function publicDiagnostic(diag){if(!diag)return null;const {_errorRows,...safe}=diag;return safe;}
 function finalizeDiagRuntime(diag){
@@ -2714,7 +2714,7 @@ const HIST_FIELD = {
     end:['fecha_fin_semana','fecha fin semana','fin_semana'],
     date:['fecha','date'],
     plant:['planta','planta_original','nombre_planta','descripcion_planta'],
-    operatorId:['id_operador','id operador','numero_funcionario','número funcionario','id'],
+    operatorId:['id_operador','id operador','id_ operador','numero_funcionario','número funcionario','numero funcionario','id funcionario','id empleado','id'],
     operatorName:['conductor','operador','nombre_operador','nombre operador'],
     shift:['hora_ingreso','hora ingreso','inicio_turno','turno','hora_turno'],
   },
@@ -2731,7 +2731,7 @@ const HIST_FIELD = {
     date:['fecha','date'],
     plant:['descripcion_planta','descripción planta','planta','nombre_planta'],
     plantCode:['numero_planta','número planta','codigo_planta','código planta'],
-    operatorId:['numero_funcionario','número funcionario','id_operador','id operador'],
+    operatorId:['numero_funcionario','número funcionario','numero funcionario','id_funcionario','id funcionario','id_operador','id operador','id empleado'],
     firstName:['primero_empleado','primero empleado','nombre'],
     lastName:['ultimo_empleado','último empleado','apellido'],
     state:[...OP_STATUS.fields.generalState],
@@ -2924,20 +2924,47 @@ function historicalPeriodKey(dateStr,granularity='week'){
   return isoWeekKey(dateStr);
 }
 
+
+function historicalCanonicalKeyMap(records){
+  const byName=new Map();
+  for(const r of records||[]){
+    const nn=normalizeName(r?.operadorNombre||r?.operador||'');
+    const id=normalizeId(r?.operadorId);
+    if(!nn||!id)continue;
+    if(!byName.has(nn))byName.set(nn,new Set());
+    byName.get(nn).add(`id:${id}`);
+  }
+  const uniqueNameToId=new Map();
+  for(const [name,ids] of byName){
+    if(ids.size===1)uniqueNameToId.set(name,[...ids][0]);
+  }
+  return uniqueNameToId;
+}
+function historicalCanonicalOperatorKey(r,uniqueNameToId){
+  const explicit=r?.operadorKey||histOperatorKey(r?.operadorId,r?.operadorNombre||r?.operador);
+  const nn=normalizeName(r?.operadorNombre||r?.operador||'');
+  const canonical=nn?uniqueNameToId.get(nn):null;
+  // Si el mismo nombre aparece asociado de forma única a un ID real,
+  // todas las fuentes usan ese ID canónico. Si es ambiguo, conserva la clave fuente.
+  return canonical||explicit;
+}
+
 let historicalDailyCache={revision:-1,rows:[],byDate:new Map(),plants:[],zones:[],operators:[]};
 function getHistoricalDailyIndex(){
   const revision=Number(historicalWarehouse?.revision||0);
   if(historicalDailyCache.revision===revision) return historicalDailyCache;
   const records=Array.isArray(historicalWarehouse?.records)?historicalWarehouse.records:[];
+  const uniqueNameToId=historicalCanonicalKeyMap(records);
   const map=new Map();
   for(const r of records){
     if(!HISTORICAL_SOURCES[r?.source] && !HISTORICAL_SOURCES[r?.fuente]) continue;
     const source=r.source||r.fuente;
-    const key=`${r.fecha}|${r.operadorKey||histOperatorKey(r.operadorId,r.operadorNombre||r.operador)}`;
-    if(!r.fecha||key.endsWith('|')) continue;
+    const canonicalOperatorKey=historicalCanonicalOperatorKey(r,uniqueNameToId);
+    const key=`${r.fecha}|${canonicalOperatorKey}`;
+    if(!r.fecha||!canonicalOperatorKey) continue;
     if(!map.has(key)){
       map.set(key,{
-        fecha:r.fecha,operadorKey:r.operadorKey||histOperatorKey(r.operadorId,r.operadorNombre||r.operador),
+        fecha:r.fecha,operadorKey:canonicalOperatorKey,
         operadorId:r.operadorId||'',operadorNombre:r.operadorNombre||r.operador||'',
         planta:'',zona:'',camion:'',turnoMin:null,citacionMin:null,loginMin:null,
         asignacionMin:null,primeraCargaMin:null,tamIngresoMin:null,tamSalidaMin:null,fuentes:new Set()
@@ -3545,6 +3572,24 @@ function historicalQaE2E(query={}){
   };
 }
 
+
+function historicalSourceOverlap(){
+  const sets=historicalSourceDateSets();
+  const intersect=(a,b)=>{
+    const out=[];
+    for(const d of (sets[a]||new Set()))if((sets[b]||new Set()).has(d))out.push(d);
+    return out.sort();
+  };
+  const turnStatus=intersect('turnos','status');
+  const turnCit=intersect('turnos','citaciones');
+  const turnTam=intersect('turnos','tam');
+  return {
+    turnoStatus:{days:turnStatus.length,minDate:turnStatus[0]||null,maxDate:turnStatus.at(-1)||null},
+    turnoCitacion:{days:turnCit.length,minDate:turnCit[0]||null,maxDate:turnCit.at(-1)||null},
+    turnoTam:{days:turnTam.length,minDate:turnTam[0]||null,maxDate:turnTam.at(-1)||null}
+  };
+}
+
 function historicalSourceRanges(){
   const acc={turnos:{records:0,dates:new Set()},citaciones:{records:0,dates:new Set()},status:{records:0,dates:new Set()},tam:{records:0,dates:new Set()}};
   for(const r of (historicalWarehouse.records||[])){
@@ -4093,6 +4138,7 @@ app.get('/api/historico/dashboard-enterprise',requireAuth,(req,res)=>{
         citacion:latestCommonHistoricalDate('citacion')
       },
       sourceRanges:historicalSourceRanges(),
+      sourceOverlap:historicalSourceOverlap(),
       detailed:rows.slice(0,2500).map(r=>{
         const adh=histAdherenceStatusRow(r,cfg);
         return {...r,crossLabel:histCrossLabel(r),adherenciaTurno:adh.turno,adherenciaCitacion:adh.citacion};
