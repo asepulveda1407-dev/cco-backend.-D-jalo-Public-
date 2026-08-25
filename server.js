@@ -340,7 +340,16 @@ const FIELDS = {
   sourceFile: ['cco_source_file','__cco_source_file'],
   sourceSheet: ['cco_source_sheet','__cco_source_sheet'],
   sourceRow: ['cco_source_row','__cco_source_row'],
+  operationalDate: ['cco_operational_date','__cco_operational_date'],
 };
+
+
+const DATE_FIELDS = Object.freeze({
+  turnosStart:['fecha_inicio_semana','fecha inicio semana','fecha_inicio','fecha inicio','inicio_semana','inicio semana'],
+  turnosEnd:['fecha_fin_semana','fecha fin semana','fin_semana','fin semana'],
+  turnosWeek:['añosemana','ano semana','año semana','ano_semana','año_semana','semana','semana_iso','week'],
+  citationDate:['fecha_operacion','fecha operación','fecha operacion','fecha operacional','fecha'],
+});
 
 // StatusBreakdown puede traer la fecha/hora con nombres distintos según la exportación.
 // Esta función busca primero los alias conocidos y, si no existen, detecta de forma
@@ -436,44 +445,57 @@ function diffMinutes(actual, planned) {
   return d;
 }
 
-function parseDateKey(value) {
+function parseDateKey(value, order='AUTO') {
   if (value === null || value === undefined || value === '') return null;
+  const validYmd=(y,m,d)=>{
+    const yy=Number(y),mm=Number(m),dd=Number(d);
+    if(!Number.isInteger(yy)||yy<1900||yy>2200||mm<1||mm>12||dd<1||dd>31)return null;
+    const test=new Date(Date.UTC(yy,mm-1,dd));
+    if(test.getUTCFullYear()!==yy||test.getUTCMonth()+1!==mm||test.getUTCDate()!==dd)return null;
+    return `${yy}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
+  };
+
   if (value instanceof Date && !isNaN(value)) {
-    return `${value.getFullYear()}-${String(value.getMonth()+1).padStart(2,'0')}-${String(value.getDate()).padStart(2,'0')}`;
+    return validYmd(value.getFullYear(),value.getMonth()+1,value.getDate());
   }
+
   if (typeof value === 'number') {
-    // Excel serial.
     if (value > 20_000 && value < 80_000) {
-      const d = new Date(Date.UTC(1899, 11, 30) + Math.floor(value) * 86400000);
-      return d.toISOString().slice(0,10);
+      const d = new Date(Date.UTC(1899,11,30) + Math.floor(value)*86400000);
+      return validYmd(d.getUTCFullYear(),d.getUTCMonth()+1,d.getUTCDate());
     }
-    // Unix seconds / milliseconds.
     if (value >= 1_000_000_000 && value < 10_000_000_000) {
-      const d=new Date(value*1000); if(!isNaN(d)) return d.toISOString().slice(0,10);
+      const d=new Date(value*1000);
+      if(!isNaN(d))return validYmd(d.getUTCFullYear(),d.getUTCMonth()+1,d.getUTCDate());
     }
     if (value >= 1_000_000_000_000 && value < 10_000_000_000_000) {
-      const d=new Date(value); if(!isNaN(d)) return d.toISOString().slice(0,10);
+      const d=new Date(value);
+      if(!isNaN(d))return validYmd(d.getUTCFullYear(),d.getUTCMonth()+1,d.getUTCDate());
     }
   }
-  const s = String(value).trim();
-  if (!s) return null;
 
-  let m = s.match(/^(\d{4})[-\/]([01]?\d)[-\/]([0-3]?\d)(?:[T\s]|$)/);
-  if (m) return `${m[1]}-${String(+m[2]).padStart(2,'0')}-${String(+m[3]).padStart(2,'0')}`;
+  const s=String(value).trim();
+  if(!s)return null;
 
-  m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})(?:[T\s]|$)/);
-  if (m) {
-    let a=Number(m[1]),b=Number(m[2]),y=Number(m[3]),day,month;
-    // Chile: ambiguos se interpretan DD/MM. Si el segundo valor >12, es MM/DD.
-    if (a > 12) { day=a; month=b; }
-    else if (b > 12) { month=a; day=b; }
-    else { day=a; month=b; }
-    if(month>=1&&month<=12&&day>=1&&day<=31)
-      return `${y}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+  // YYYY-MM-DD / YYYY/MM/DD / datetime ISO: se toma la fecha escrita, nunca la zona horaria.
+  let mt=s.match(/(?:^|\D)(20\d{2})[-\/.](\d{1,2})[-\/.](\d{1,2})(?=\D|$)/);
+  if(mt)return validYmd(mt[1],mt[2],mt[3]);
+
+  // DD/MM/YYYY, DD-MM-YYYY, MM/DD/YYYY y equivalentes con hora.
+  mt=s.match(/(?:^|\D)(\d{1,2})[-\/.](\d{1,2})[-\/.](20\d{2})(?=\D|$)/);
+  if(mt){
+    const a=Number(mt[1]),b=Number(mt[2]),y=Number(mt[3]);
+    let day,month;
+    if(a>12){day=a;month=b;}          // evidencia DMY
+    else if(b>12){month=a;day=b;}     // evidencia MDY
+    else if(String(order).toUpperCase()==='MDY'){month=a;day=b;}
+    else {day=a;month=b;}             // Chile / AUTO: DMY para ambiguos
+    return validYmd(y,month,day);
   }
 
-  const d = new Date(s);
-  if (!isNaN(d)) return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  // Fallback solo para valores Date-like no ambiguos.
+  const d=new Date(s);
+  if(!isNaN(d))return validYmd(d.getFullYear(),d.getMonth()+1,d.getDate());
   return null;
 }
 function weekdayEs(dateKey) {
@@ -509,7 +531,96 @@ function isoDateFromWeekday(year, week, weekdayRaw) {
   monday.setUTCDate(jan4.getUTCDate() - jan4Iso + 1 + (week-1)*7 + (idx-1));
   return monday.toISOString().slice(0,10);
 }
+
+function parseIsoWeekValue(value){
+  if(value===null||value===undefined||value==='')return null;
+  const s=String(value).trim();
+  let m=s.match(/(20\d{2})\s*[-_/]?\s*S?W?(\d{1,2})/i);
+  if(!m)m=s.match(/(20\d{2}).*?S(\d{1,2})/i);
+  if(m){
+    const y=Number(m[1]),w=Number(m[2]);
+    if(w>=1&&w<=53)return {year:y,week:w};
+  }
+  const w=parseWeekNumber(value);
+  if(w)return {year:null,week:w};
+  return null;
+}
+function isoWeekDateRange(year,week){
+  if(!year||!week)return null;
+  const monday=isoDateFromWeekday(year,week,'lunes');
+  const sunday=isoDateFromWeekday(year,week,'domingo');
+  return monday&&sunday?{min:monday,max:sunday,method:'semana_iso'}:null;
+}
+function dateFromSourceFilename(row,type){
+  const rowFile=safeText(pick(row,FIELDS.sourceFile));
+  const meta=state?.datasets?.[type]?.metadatos||{};
+  const file=rowFile||safeText(meta.archivo)||safeText((meta.archivos||[])[0]);
+  if(!file)return null;
+
+  let m=file.match(/(20\d{2})[-_.](\d{1,2})[-_.](\d{1,2})/);
+  if(m)return parseDateKey(`${m[1]}-${m[2]}-${m[3]}`);
+
+  m=file.match(/(\d{1,2})[-_.](\d{1,2})[-_.](20\d{2})/);
+  if(m){
+    const a=Number(m[1]),b=Number(m[2]),y=Number(m[3]);
+    const order=b>12?'MDY':(a>12?'DMY':'DMY');
+    return parseDateKey(`${a}-${b}-${y}`,order);
+  }
+  return null;
+}
+function rowOperationalRange(row,type){
+  if(!row||typeof row!=='object')return null;
+
+  if(type==='turnos'){
+    const start=parseDateKey(pick(row,DATE_FIELDS.turnosStart));
+    const end=parseDateKey(pick(row,DATE_FIELDS.turnosEnd));
+    if(start||end){
+      return {min:start||end,max:end||start,method:'rango_semana'};
+    }
+    const wv=parseIsoWeekValue(pick(row,DATE_FIELDS.turnosWeek));
+    if(wv){
+      const yr=wv.year||sourceYear(row);
+      const wr=isoWeekDateRange(yr,wv.week);
+      if(wr)return wr;
+    }
+  }
+
+  const opDate=parseDateKey(pick(row,FIELDS.operationalDate));
+  if(opDate)return {min:opDate,max:opDate,method:'fecha_operacion_archivo'};
+
+  const direct=parseDateKey(pick(row,FIELDS.fecha));
+  if(direct)return {min:direct,max:direct,method:'fecha_fila'};
+
+  if(type==='logeo'){
+    const eventDate=parseDateKey(getEventTimeValue(row));
+    if(eventDate)return {min:eventDate,max:eventDate,method:'fecha_evento_status'};
+  }
+
+  if(type==='citaciones'){
+    const eventDate=parseDateKey(pick(row,FIELDS.timestamp));
+    if(eventDate)return {min:eventDate,max:eventDate,method:'fecha_evento_citacion'};
+    const named=dateFromSourceFilename(row,type);
+    if(named)return {min:named,max:named,method:'fecha_nombre_archivo'};
+  }
+
+  const week=parseWeekNumber(pick(row,FIELDS.semana));
+  const weekday=pick(row,FIELDS.diaSemana);
+  if(week&&weekday){
+    const d=isoDateFromWeekday(sourceYear(row),week,weekday);
+    if(d)return {min:d,max:d,method:'semana_dia'};
+  }
+
+  return null;
+}
+function rowMatchesOperationalDate(row,fecha,type){
+  const r=rowOperationalRange(row,type);
+  if(!r)return false;
+  return fecha>=r.min&&fecha<=r.max;
+}
+
 function rowDateKey(row, type) {
+  const range=rowOperationalRange(row,type);
+  if(range&&range.min===range.max)return range.min;
   const direct = parseDateKey(pick(row, FIELDS.fecha));
   if (direct) return direct;
   if (type === 'logeo') {
@@ -558,45 +669,52 @@ function datasetDateIndex(type) {
   return idx;
 }
 function filterRowsForDate(rows, fecha, type) {
-  const safeRows = Array.isArray(rows) ? rows : [];
-  if (!fecha) return safeRows;
-  if (safeRows === getDatasetRows(type)) {
-    const idx = datasetDateIndex(type);
-    if (idx.explicitCount > 0) return idx.byDate.get(fecha) || [];
-    const targetDay = weekdayEs(fecha);
-    return [...(idx.byWeekday.get(targetDay) || []), ...idx.timeless];
+  const safeRows=Array.isArray(rows)?rows:[];
+  const target=parseDateKey(fecha);
+  if(!target)return safeRows;
+
+  const withRange=[],timeless=[];
+  for(const row of safeRows){
+    const range=rowOperationalRange(row,type);
+    if(range)withRange.push({row,range});
+    else timeless.push(row);
   }
-  const targetDay = weekdayEs(fecha);
-  return safeRows.filter(row => {
-    const dk = rowDateKey(row, type);
-    if (dk) return dk === fecha;
-    const rawFecha = pick(row, FIELDS.fecha);
-    const rawEvento = type === 'logeo' ? getEventTimeValue(row) : (type === 'citaciones' ? pick(row, FIELDS.timestamp) : null);
-    if ((rawFecha !== null && rawFecha !== undefined && String(rawFecha).trim() !== '') ||
-        (rawEvento !== null && rawEvento !== undefined && String(rawEvento).trim() !== '')) return false;
-    const wd = normalizeWeekday(pick(row, FIELDS.diaSemana));
-    if (wd) return wd === targetDay;
-    return true;
+
+  if(withRange.length){
+    return withRange.filter(x=>target>=x.range.min&&target<=x.range.max).map(x=>x.row);
+  }
+
+  // Compatibilidad con archivos antiguos sin fecha: día de semana, luego timeless.
+  const targetDay=weekdayEs(target);
+  const byWeekday=safeRows.filter(row=>{
+    const wd=normalizeWeekday(pick(row,FIELDS.diaSemana));
+    return wd&&wd===targetDay;
   });
+  return byWeekday.length?byWeekday:timeless;
 }
 function countRowsWithDate(rows, type) {
   return rows.filter(r => rowDateKey(r, type) || pick(r, FIELDS.diaSemana)).length;
 }
 
 function datasetDateProfile(rows, type) {
-  const counts = new Map();
-  for (const row of rows || []) {
-    const d = rowDateKey(row, type);
-    if (!d) continue;
-    counts.set(d, (counts.get(d) || 0) + 1);
+  const counts=new Map(),methods=new Map();
+  let invalid=0,min=null,max=null;
+  for(const row of rows||[]){
+    const range=rowOperationalRange(row,type);
+    if(!range){invalid++;continue;}
+    min=!min||range.min<min?range.min:min;
+    max=!max||range.max>max?range.max:max;
+    methods.set(range.method,(methods.get(range.method)||0)+1);
+    if(range.min===range.max)counts.set(range.min,(counts.get(range.min)||0)+1);
   }
-  const fechas = [...counts.entries()]
-    .sort((a,b)=>a[0].localeCompare(b[0]))
-    .map(([fecha,cantidad])=>({fecha,cantidad}));
+  const fechas=[...counts.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([fecha,cantidad])=>({fecha,cantidad}));
   return {
     fechas,
-    fecha_unica: fechas.length === 1 ? fechas[0].fecha : null,
-    filas_con_fecha: fechas.reduce((a,x)=>a+x.cantidad,0),
+    fecha_unica:min&&max&&min===max?min:null,
+    fecha_min:min,fecha_max:max,
+    filas_con_fecha:(rows||[]).length-invalid,
+    filas_sin_fecha:invalid,
+    metodos:Object.fromEntries(methods)
   };
 }
 
@@ -3898,11 +4016,10 @@ function validarOperacionDiaria(payload, fecha) {
   if(a>l)throw new Error(`Asignados ${a} no puede superar ConLogeo ${l}`);
   if(c>a)throw new Error(`PrimeraCarga ${c} no puede superar Asignados ${a}`);
   if(crit>l)throw new Error(`OperadoresCríticos ${crit} no puede superar ConLogeo ${l}`);
-  if(r.conciliacionLogin?.ok===false)throw new Error(`LOGIN/PRE-VIAJE sin conciliación completa: fuente ${r.conciliacionLogin.loginFuente}, conciliados ${r.conciliacionLogin.loginConciliado}`);
+  const fechaAudit=operationalDateAudit(fecha);
+  if(!fechaAudit.valido)throw new Error(fechaAudit.errores.join(' | '));
   const fuentes=r.fuentes||sourceCoverageForDate(fecha);
-  if(!fuentes||Number(fuentes.turnosFilas||0)<=0)throw new Error('No existen Turnos para la fecha operacional');
-  if(Number(fuentes.logeoFilas||0)<=0)throw new Error('No existe StatusBreakdown para la fecha operacional');
-  return {ok:true,fuentes};
+  return {ok:true,fuentes,fechaAudit};
 }
 
 function validarTrazabilidadHistorica(rows) {
@@ -4017,6 +4134,33 @@ function aggregateHistory(rows, granularity) {
 
 
 
+
+app.get('/api/operacion/fecha-audit', requireAuth, (req,res)=>{
+  try{
+    const fecha=safeText(req.query.fecha||req.user.fecha||'');
+    return res.json({ok:true,auditoria:operationalDateAudit(fecha)});
+  }catch(err){
+    return res.status(422).json({error:'No fue posible auditar las fechas operacionales',detalle:err?.message||String(err)});
+  }
+});
+
+app.get('/api/operacion/fecha-audit.csv', requireAuth, (req,res)=>{
+  try{
+    const fecha=safeText(req.query.fecha||req.user.fecha||''),a=operationalDateAudit(fecha);
+    const cell=v=>`"${String(v??'').replace(/"/g,'""')}"`;
+    const head=['Fuente','Archivo','Registros','Registros válidos fecha','Registros descartados fecha','Fecha mínima','Fecha máxima','Registros período','Contiene fecha seleccionada','Estado','Período analizado'];
+    const lines=[head.map(cell).join(';')];
+    for(const s of a.fuentes){
+      lines.push([s.fuente,s.archivo,s.registros,s.registrosValidosFecha,s.registrosDescartadosFecha,s.fechaMin,s.fechaMax,s.registrosPeriodo,s.contieneFecha?'SI':'NO',s.estado,a.fechaSeleccionada].map(cell).join(';'));
+    }
+    res.setHeader('Content-Type','text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition',`attachment; filename="auditoria_fechas_${a.fechaSeleccionada||'fecha'}.csv"`);
+    return res.send('\uFEFF'+lines.join('\n'));
+  }catch(err){
+    return res.status(422).json({error:'No fue posible exportar auditoría de fechas',detalle:err?.message||String(err)});
+  }
+});
+
 app.get('/api/operacion/auditoria-total', requireAuth, (req,res)=>{
   try{
     const fecha=safeText(req.query.fecha||req.user.fecha||''),truth=buildOperationalTruth(fecha,req.query);
@@ -4045,6 +4189,7 @@ app.get('/api/reporte', requireAuth, (req, res) => {
   try {
       const fecha = safeText(req.query.fecha || req.user.fecha || '');
       const statusSchema = statusSchemaAudit(getLogeo());
+      const fechaAudit = operationalDateAudit(fecha);
       const truth = buildOperationalTruth(fecha,req.query);
       const built = {records:truth.records,errors:truth.errors};
       const loginAudit = truth.audit;
@@ -4085,7 +4230,8 @@ app.get('/api/reporte', requireAuth, (req, res) => {
           citacionesDia:filterRowsForDate(getCitaciones(),fecha,'citaciones').length,
           citacionesAdelantarDia:filterRowsForDate(getCitaciones(),fecha,'citaciones').filter(c=>isAffirmative(pick(c,FIELDS.requiereAdelantarCitacion))).length,
           statusDia:filterRowsForDate(getLogeo(),fecha,'logeo').length,
-          loginAudit
+          loginAudit,
+          fechas:fechaAudit
         },
         generado_en:nowIso(),
         zona:req.query.zona || req.user.zona || null,
@@ -4131,11 +4277,22 @@ app.get('/api/reporte', requireAuth, (req, res) => {
       if(statusSchema.warnings.length){
         payload.advertencias=[...(payload.advertencias||[]),...statusSchema.warnings.map(m=>({codigo:'STATUS_SCHEMA',mensaje:m}))];
       }
+      if(fechaAudit.advertencias.length){
+        payload.advertencias=[...(payload.advertencias||[]),{
+          codigo:'DIFERENCIAS_FECHA',
+          mensaje:'Se detectaron diferencias menores entre archivos. El reporte se generó utilizando la información disponible. '+fechaAudit.advertencias.join(' ')
+        }];
+      }
       try {
         payload.validacionOperacion = validarOperacionDiaria(payload, fecha);
       } catch (validationErr) {
         registrarErrorDetallado({ modulo:'operacion', funcion:'validarOperacionDiaria', error:validationErr?.message||String(validationErr), stack:validationErr?.stack, contexto:{fecha} });
-        return res.status(422).json({ error:'No fue posible validar la operación diaria', detalle:validationErr?.message||String(validationErr), fecha });
+        return res.status(422).json({
+          error:'No fue posible validar la operación diaria',
+          detalle:validationErr?.message||String(validationErr),
+          fecha,
+          diagnostico_fechas:operationalDateAudit(fecha)
+        });
       }
       return res.json(payload);
   } catch (err) {
@@ -4267,6 +4424,62 @@ function loginSourceAudit(fecha='',builtRecords=[]){
     noContabilizadosPorFecha:Math.max(0,afterNormalize.length-afterDate.length),
     diferenciaCruceVsFuente:Math.max(0,afterDate.length-crossed),
     regla:'KPI Login = filas válidas de Status con LOGIN/PRE-VIAJE para la fecha activa; no depende del cruce con Turnos.'
+  };
+}
+
+
+function operationalDateAuditForSource(type,fecha){
+  const rows=getDatasetRows(type);
+  const profile=datasetDateProfile(rows,type);
+  const selected=filterRowsForDate(rows,fecha,type);
+  const meta=state?.datasets?.[type]?.metadatos||{};
+  const total=Array.isArray(rows)?rows.length:0;
+  const valid=Number(profile.filas_con_fecha||0);
+  return {
+    fuente:type,
+    archivo:safeText(meta.archivo)||((meta.archivos||[]).join(', '))||null,
+    registros:total,
+    registrosValidosFecha:valid,
+    registrosDescartadosFecha:Math.max(0,total-valid),
+    fechaMin:profile.fecha_min||null,
+    fechaMax:profile.fecha_max||null,
+    registrosPeriodo:selected.length,
+    contieneFecha:selected.length>0,
+    metodos:profile.metodos||{},
+    estado:total===0?'archivo_sin_datos':(valid===0?'fecha_no_detectada':(selected.length===0?'fuera_periodo':'ok'))
+  };
+}
+function operationalDateAudit(fecha){
+  const target=parseDateKey(fecha);
+  const sources=['turnos','citaciones','logeo'].map(t=>operationalDateAuditForSource(t,target));
+  const disponibles=sources.filter(s=>s.registros>0);
+  const conPeriodo=sources.filter(s=>s.contieneFecha);
+
+  const mins=disponibles.map(s=>s.fechaMin).filter(Boolean).sort();
+  const maxs=disponibles.map(s=>s.fechaMax).filter(Boolean).sort();
+  const interMin=mins.length?mins.at(-1):null;
+  const interMax=maxs.length?maxs[0]:null;
+  const hayInterseccion=!!(interMin&&interMax&&interMin<=interMax);
+
+  const errores=[],advertencias=[];
+  for(const s of sources){
+    if(s.registros===0)advertencias.push(`${s.fuente}: archivo sin datos.`);
+    else if(s.registrosValidosFecha===0)advertencias.push(`${s.fuente}: no se detectó una fecha operacional utilizable.`);
+    else if(!s.contieneFecha)advertencias.push(`${s.fuente}: no existen registros que cubran ${target}. Rango detectado ${s.fechaMin||'—'} → ${s.fechaMax||'—'}.`);
+  }
+
+  const turnos=sources.find(s=>s.fuente==='turnos');
+  if(!turnos?.registros)errores.push('Turnos: archivo sin datos.');
+  else if(!turnos.contieneFecha)errores.push(`Turnos: la fecha ${target} no pertenece a la semana/rango cargado (${turnos.fechaMin||'—'} → ${turnos.fechaMax||'—'}).`);
+
+  return {
+    fechaSeleccionada:target,
+    fuentes:sources,
+    interseccion:{min:interMin,max:interMax,existe:hayInterseccion},
+    fuentesConPeriodo:conPeriodo.map(s=>s.fuente),
+    tolerancia:conPeriodo.length>0,
+    valido:errores.length===0,
+    errores,advertencias
   };
 }
 
