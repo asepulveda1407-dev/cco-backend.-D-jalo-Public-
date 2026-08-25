@@ -245,6 +245,103 @@ function isAffirmative(value) {
     || s.includes('recomendacion') && s.includes('adelantar');
 }
 
+
+const OP_STATUS = Object.freeze({
+  fields:Object.freeze({
+    generalState:Object.freeze([
+      'descripcion_estado','descripción estado','estado','status','status_description',
+      'descripcion status','descripción status'
+    ]),
+    loginState:Object.freeze([
+      'login/pre-viaje','login pre-viaje','login pre viaje','login_pre_viaje',
+      'estado login/pre-viaje','estado login pre-viaje','estado login pre viaje'
+    ]),
+    assignmentState:Object.freeze([
+      'estado asignacion','estado asignación','estado_asignacion',
+      'estado de asignacion','estado de asignación','assignment status'
+    ])
+  }),
+  values:Object.freeze({
+    login:'login pre viaje',
+    assignment:'asignado',
+    firstLoad:Object.freeze(['cargando','cargado'])
+  })
+});
+
+function statusValue(v){ return normalizeName(v); }
+
+function isLoginPreviajeState(v){
+  return statusValue(v)===OP_STATUS.values.login;
+}
+function isAssignmentState(v){
+  return statusValue(v)===OP_STATUS.values.assignment;
+}
+function isFirstLoadState(v){
+  return OP_STATUS.values.firstLoad.includes(statusValue(v));
+}
+function rowHasAlias(row,aliases){
+  if(!row||typeof row!=='object')return false;
+  const keys=new Set(Object.keys(row).map(normalizeKey));
+  return (aliases||[]).some(a=>keys.has(normalizeKey(a)));
+}
+function statusSchemaAudit(rows){
+  const list=Array.isArray(rows)?rows:[];
+  const hasGeneralState=list.some(r=>rowHasAlias(r,OP_STATUS.fields.generalState));
+  const hasLoginDedicated=list.some(r=>rowHasAlias(r,OP_STATUS.fields.loginState));
+  const hasAssignmentField=list.some(r=>rowHasAlias(r,OP_STATUS.fields.assignmentState));
+  let loginMatches=0,assignmentMatches=0,unknownAssignmentValues=0;
+  const assignmentValues=new Map();
+
+  for(const r of list){
+    const general=pick(r,OP_STATUS.fields.generalState);
+    const dedicatedLogin=pick(r,OP_STATUS.fields.loginState);
+    const assignment=pick(r,OP_STATUS.fields.assignmentState);
+
+    if(isLoginPreviajeState(dedicatedLogin)||isLoginPreviajeState(general))loginMatches++;
+    if(assignment!==null&&assignment!==undefined&&String(assignment).trim()!==''){
+      const normalized=statusValue(assignment);
+      assignmentValues.set(normalized,(assignmentValues.get(normalized)||0)+1);
+      if(isAssignmentState(assignment))assignmentMatches++;
+      else unknownAssignmentValues++;
+    }
+  }
+
+  const warnings=[];
+  if(!hasGeneralState&&!hasLoginDedicated){
+    warnings.push('Falta la columna que contiene el estado "Login/pre-viaje". KPI Logeo no disponible.');
+  }
+  if(!hasAssignmentField){
+    warnings.push('Falta la columna "Estado asignación". KPI Asignación no disponible.');
+  }
+
+  return {
+    hasGeneralState,hasLoginDedicated,
+    hasLoginField:hasGeneralState||hasLoginDedicated,
+    hasAssignmentField,
+    loginMatches,assignmentMatches,unknownAssignmentValues,
+    assignmentValues:Object.fromEntries([...assignmentValues.entries()].slice(0,20)),
+    warnings
+  };
+}
+
+function statusKindsFromRow(row){
+  const general=pick(row,OP_STATUS.fields.generalState);
+  const dedicatedLogin=pick(row,OP_STATUS.fields.loginState);
+  const assignment=pick(row,OP_STATUS.fields.assignmentState);
+  const kinds=[];
+
+  // LOGEO: exclusivamente Login/pre-viaje.
+  if(isLoginPreviajeState(dedicatedLogin)||isLoginPreviajeState(general))kinds.push('login');
+
+  // ASIGNACIÓN: exclusivamente desde la columna Estado asignación.
+  if(isAssignmentState(assignment))kinds.push('asignado');
+
+  // 1ª carga continúa usando el Status general existente.
+  if(isFirstLoadState(general))kinds.push('primera_carga');
+
+  return [...new Set(kinds)];
+}
+
 const FIELDS = {
   id: ['id_operador','id operador','numero_funcionario','número funcionario','numero funcionario','id','rut','codigo_operador','cod_operador'],
   nombre: ['operador','nombre_operador','nom_operador','operario','nombre','employee_name','nombre_funcionario','nombre empleado','nombre_empleado','conductor','nombre_conductor','nombre conductor','chofer','nombre_chofer','nombre chofer'],
@@ -256,7 +353,9 @@ const FIELDS = {
   citacion: ['citacion','citación','cita','hora_citacion','hora citacion','citacion_sugerida','citación sugerida'],
   requiereAdelantarCitacion: ['requiere_adelantar_citacion','requiere adelantar citacion','requiere adelantar citación','adelantar_citacion','adelantar citacion','adelantar citación','requiere_citacion','requiere citacion','requiere citación','se recomienda adelantar','se_recomienda_adelantar','recomienda adelantar','recomendacion adelantar','recomendación adelantar','adelantar recomendado','adelanto recomendado'],
   logeo: ['logeo','marcacion','marcación','hora_logeo','hora logeo','entrada','login','fecha_hora','fecha hora'],
-  estado: ['descripcion_estado','descripción estado','estado','status','status_description','descripcion status','descripción status'],
+  estado: [...OP_STATUS.fields.generalState],
+  loginEstado: [...OP_STATUS.fields.loginState],
+  estadoAsignacion: [...OP_STATUS.fields.assignmentState],
   fecha: ['fecha','fecha_turno','fecha turno','dia_fecha','día_fecha','date','fecha_programada','fecha programada'],
   diaSemana: ['dia','día','dia_semana','día_semana','day','weekday'],
   semana: ['semana','n_semana','n° semana','numero_semana','número_semana','week','week_number','semana_iso'],
@@ -645,16 +744,8 @@ function rowsFromMultiIndex(index, row) {
 }
 
 function classifyOperationalEvent(rawEstado) {
-  const e = normalizeName(rawEstado);
-  if (!e) return 'otro';
-  // Regla operacional existente: LOGIN y PRE-VIAJE representan ingreso/logeo real.
-  // normalizeName convierte variantes como "PRE-VIAJE", "PRE VIAJE" y "Pre Viaje"
-  // a una forma comparable.
-  if (/login|logeo|logeado|entrada|pre viaje|previaje/.test(e)) return 'login';
-  if (/^asignado$|asignad|assigned|dispatch|despachad/.test(e)) return 'asignado';
-  if (/cargando|^cargado$|loading/.test(e)) return 'primera_carga';
-  if (/en planta/.test(e)) return 'en_planta';
-  if (/en servicio/.test(e)) return 'en_servicio';
+  if (isLoginPreviajeState(rawEstado)) return 'login';
+  if (isFirstLoadState(rawEstado)) return 'primera_carga';
   return 'otro';
 }
 
@@ -1034,17 +1125,23 @@ function buildOperatorRecords(fecha = '') {
       return Math.round((da-db)/86400000);
     };
 
-    const events = ls.map(l => {
+    const events = ls.flatMap(l => {
       const min = parseTimeMinutes(getEventTimeValue(l));
+      if(min===null)return [];
       const eventDate = rowDateKey(l, 'logeo');
       const dayOffset = targetDate && eventDate ? dateDiffDays(eventDate, targetDate) : 0;
-      return {
-        row:l, min, dayOffset, absMin: min===null ? null : min + dayOffset*1440,
-        estadoRaw:safeText(pick(l, FIELDS.estado)) || '',
-        estado:normalizeName(pick(l, FIELDS.estado)),
-        tipo:classifyOperationalEvent(pick(l, FIELDS.estado)),
-      };
-    }).filter(x => x.min !== null);
+      const generalStateRaw=safeText(pick(l, FIELDS.estado)) || '';
+      const assignmentStateRaw=safeText(pick(l, FIELDS.estadoAsignacion)) || '';
+      const kinds=statusKindsFromRow(l);
+
+      return kinds.map(tipo=>({
+        row:l,min,dayOffset,absMin:min + dayOffset*1440,
+        estadoRaw:generalStateRaw,
+        estado:normalizeName(generalStateRaw),
+        assignmentStateRaw,
+        tipo
+      }));
+    });
 
     const shiftAbs = turnoMin;
     // La puntualidad y selección del LOGIN se miden contra la referencia operacional.
@@ -1080,10 +1177,8 @@ function buildOperatorRecords(fecha = '') {
     loginCandidates.sort((a,b)=>Math.abs(a.absMin-referenceAbs)-Math.abs(b.absMin-referenceAbs));
     let loginEvent = loginCandidates[0] || null;
 
-    // Respaldo solo para archivos sin columna Estado.
-    if (!loginEvent && operationalEvents.length && operationalEvents.every(e => !e.estado)) {
-      loginEvent = [...operationalEvents].sort((a,b)=>Math.abs(a.absMin-referenceAbs)-Math.abs(b.absMin-referenceAbs))[0];
-    }
+    // Sin sustituciones: si no existe Login/pre-viaje real, no se fabrica Logeo.
+
     const logeoAbs = loginEvent?.absMin ?? null;
     const logeoMin = loginEvent?.min ?? null;
 
@@ -1224,6 +1319,7 @@ app.post('/api/ingesta', requireAuth, (req, res) => {
     }
 
     const normalized = normalizeRows(incoming);
+    const statusSchema = tipo==='logeo' ? statusSchemaAudit(normalized) : null;
     const result = validateDataset(tipo, normalized);
     if (!result.valid.length) {
       return res.status(400).json({
@@ -1270,6 +1366,7 @@ app.post('/api/ingesta', requireAuth, (req, res) => {
         fecha_unica: dateProfile.fecha_unica,
         modo_ultima_carga: modo,
         revision: Number(metaAnterior.revision || 0) + 1,
+        ...(tipo==='logeo'?{status_schema:statusSchema}:{}),
       },
     };
 
@@ -1304,6 +1401,7 @@ app.post('/api/ingesta', requireAuth, (req, res) => {
       filas_rechazadas: result.rejected.length,
       fechas_detectadas: dateProfile.fechas,
       fecha_unica: dateProfile.fecha_unica,
+      ...(tipo==='logeo'?{status_schema:statusSchema,advertencias:statusSchema?.warnings||[]}:{}),
     };
     if (esUltimoLote){
       emitRealtime('ingesta:actualizada',info,'operacion','ingesta_actualizada',req.user,{tipo});
@@ -1724,14 +1822,16 @@ const HIST_ETL_HEADER_ALIASES = {
   citacion:['hora citacion','hora citación','hora_citacion','citacion','citación','citacion sugerida'],
   fecha:['fecha','date','fecha turno','fecha_turno','fecha programada','fecha_programada','fecha inicio semana','fecha_inicio_semana','hora inicio','hora_inicio'],
   semana:['anosemana','ano_semana','semana','semana iso','semana_iso'],
-  estado:['descripcion estado','descripción estado','descripcion_estado','estado','status'],
+  estado:[...OP_STATUS.fields.generalState],
+  loginEstado:[...OP_STATUS.fields.loginState],
+  estadoAsignacion:[...OP_STATUS.fields.assignmentState],
   tamIngreso:['a.hora inicio','a hora inicio','a_hora_inicio','hora inicio tam','ingreso tam'],
   tamSalida:['a. hora fin','a hora fin','a_hora_fin','hora fin tam','salida tam'],
 };
 const HIST_ETL_REQUIRED = {
   turnos:[['operadorId','operador'],['fecha','semana']],
   citaciones:[['operadorId','operador'],['fecha']],
-  status:[['operadorId','operador'],['fecha'],['estado']],
+  status:[['operadorId','operador'],['fecha'],['estado','loginEstado']],
   tam:[['operadorId'],['fecha']],
 };
 function etlCanonicalHeader(v){
@@ -1792,7 +1892,7 @@ function etlDiagBase(source,file){
     id:crypto.randomUUID(),source,file,status:'procesando',startedAt:nowIso(),finishedAt:null,
     sheet:null,headerRow:null,sheetsDetected:[],columns:[],columnCount:0,
     rowsFound:0,rowsStored:0,rowsPartial:0,rowsRejected:0,rowsFiltered:0,duplicates:0,
-    missing:[],reason:'Procesando archivo...',ruleCounts:{},samples:[],log:[],
+    missing:[],reason:'Procesando archivo...',ruleCounts:{},samples:[],schemaWarnings:[],log:[],
     durationMs:0,memoryMb:0,md5:null,fromCache:false,blocksProcessed:0,currentStage:'Archivo seleccionado',progress:0,_errorRows:[]
   };
 }
@@ -1939,23 +2039,38 @@ function etlNormalizeRow(source,row,archivo,rowNumber,diag,statusAccumulator=nul
     return [rec];
   }
 
-  // Status: se consolida directamente a operador/día. Eventos no KPI no son
-  // "filas descartadas": se registran como filtrados por una regla explícita.
+  // Status: LOGEO y ASIGNACIÓN usan fuentes de estado distintas.
   const dt=histPick(r,HIST_FIELD.status.datetime),fecha=parseDateKey(dt)||parseDateKey(histPick(r,HIST_FIELD.status.date)),eventMin=histTime(dt);
-  const state=safeText(histPick(r,HIST_FIELD.status.state)),kind=histStatusKind(state);
-  if(kind==='otro'){etlReason(diag,rowNumber,'EVENTO_STATUS_NO_KPI','ESTADO',`Estado "${state||'vacío'}" no participa en LOGIN/ASIGNADO/1ª CARGA`,'filtered');return [];}
+  const generalState=safeText(histPick(r,HIST_FIELD.status.state));
+  const loginState=safeText(histPick(r,HIST_FIELD.status.loginState));
+  const assignmentState=safeText(histPick(r,HIST_FIELD.status.assignmentState));
+  const kinds=[];
+  if(isLoginPreviajeState(loginState)||isLoginPreviajeState(generalState))kinds.push('login');
+  if(isAssignmentState(assignmentState))kinds.push('asignado');
+  if(isFirstLoadState(generalState))kinds.push('primera_carga');
+
+  if(!kinds.length){
+    etlReason(diag,rowNumber,'EVENTO_STATUS_NO_KPI','ESTADO',
+      `Fila sin Login/pre-viaje, Estado asignación=Asignado ni CARGANDO/CARGADO`,'filtered');
+    return [];
+  }
+
   const id=histPick(r,HIST_FIELD.status.operatorId),first=safeText(histPick(r,HIST_FIELD.status.firstName)),last=safeText(histPick(r,HIST_FIELD.status.lastName)),name=[first,last].filter(Boolean).join(' ').trim(),key=histOperatorKey(id,name);
   if(!key){etlReason(diag,rowNumber,'OPERADOR_NO_IDENTIFICABLE','OPERADOR','Evento KPI sin operador identificable','rejected');return [];}
   if(!fecha){etlReason(diag,rowNumber,'FECHA_NO_RECONOCIBLE','HORA_INICIO','No se pudo extraer la fecha del evento','rejected');return [];}
   if(eventMin===null){etlReason(diag,rowNumber,'HORA_EVENTO_NO_RECONOCIBLE','HORA_INICIO','No se pudo interpretar la hora del evento','rejected');return [];}
+
   const plant=histResolvePlant(histPick(r,HIST_FIELD.status.plant),histPick(r,HIST_FIELD.status.plantCode));
   const accKey=`${fecha}|${key}`;
   if(!statusAccumulator.has(accKey))statusAccumulator.set(accKey,{...base,fecha,planta:plant,zona:plant?inferZona(plant):'',operadorId:normalizeId(id),operadorNombre:name,operadorKey:key,camion:normalizePlate(histPick(r,HIST_FIELD.status.truck))||safeText(histPick(r,HIST_FIELD.status.truck))});
   const rec=statusAccumulator.get(accKey);
   if(!rec.planta&&plant){rec.planta=plant;rec.zona=inferZona(plant);}
-  if(kind==='login'&&(rec.loginMin===null||eventMin<rec.loginMin))rec.loginMin=eventMin;
-  if(kind==='asignado'&&(rec.asignacionMin===null||eventMin<rec.asignacionMin))rec.asignacionMin=eventMin;
-  if(kind==='primera_carga'&&(rec.primeraCargaMin===null||eventMin<rec.primeraCargaMin))rec.primeraCargaMin=eventMin;
+
+  for(const kind of new Set(kinds)){
+    if(kind==='login'&&(rec.loginMin===null||eventMin<rec.loginMin))rec.loginMin=eventMin;
+    if(kind==='asignado'&&(rec.asignacionMin===null||eventMin<rec.asignacionMin))rec.asignacionMin=eventMin;
+    if(kind==='primera_carga'&&(rec.primeraCargaMin===null||eventMin<rec.primeraCargaMin))rec.primeraCargaMin=eventMin;
+  }
   return [];
 }
 
@@ -2044,6 +2159,10 @@ async function etlProcessXlsx(filePath,source,archivo,job,diag){
         const turnosHasShift = source!=='turnos' || bestHeader?.recognized?.has('turno');
         if(bestHeader && bestHeader.requiredHits===bestHeader.requiredTotal && bestHeader.score>=250 && turnosHasShift){
           selected=true;diag.sheet=ws.name;diag.headerRow=bestHeader.rowNumber;
+          if(source==='status'&&!bestHeader.recognized.has('estadoAsignacion')){
+            diag.schemaWarnings=Array.isArray(diag.schemaWarnings)?diag.schemaWarnings:[];
+            diag.schemaWarnings.push('Falta columna Estado asignación: KPI Asignación no se calculará; Logeo y otros eventos compatibles continúan.');
+          }
           diag.columns=bestHeader.values.map(v=>safeText(v)).filter(Boolean);diag.columnCount=diag.columns.length;
           if(source==='tam' && normalizeKey(bestHeader.values?.[0])!=='id'){
             throw new Error(`Marcaje TAM inválido: el encabezado detectado en fila ${bestHeader.rowNumber} no tiene ID en la columna A.`);
@@ -2323,7 +2442,9 @@ const HIST_FIELD = {
     operatorId:['numero_funcionario','número funcionario','id_operador','id operador'],
     firstName:['primero_empleado','primero empleado','nombre'],
     lastName:['ultimo_empleado','último empleado','apellido'],
-    state:['descripcion_estado','descripción estado','estado','status'],
+    state:[...OP_STATUS.fields.generalState],
+    loginState:[...OP_STATUS.fields.loginState],
+    assignmentState:[...OP_STATUS.fields.assignmentState],
     truck:['numero_equipo','número equipo','equipo','camion','mixer'],
     ticket:['n_de_tiquete','n° de tiquete','numero_tiquete','número de tiquete'],
   },
@@ -2384,11 +2505,8 @@ function histResolvePlant(rawPlant, rawCode=''){
   return '';
 }
 function histStatusKind(v){
-  const s=normalizeName(v);
-  if(!s) return 'otro';
-  if(s.includes('login')||s.includes('pre viaje')) return 'login';
-  if(s==='asignado'||s.includes('asignado')) return 'asignado';
-  if(s==='cargando'||s==='cargado'||s.includes('cargando')||s.includes('cargado')) return 'primera_carga';
+  if(isLoginPreviajeState(v))return 'login';
+  if(isFirstLoadState(v))return 'primera_carga';
   return 'otro';
 }
 function histTime(v){ return parseTimeMinutes(v); }
@@ -2447,25 +2565,32 @@ function historicalNormalizeMany(source,row,archivo='',rowIndex=0){
   const dt=histPick(r,HIST_FIELD.status.datetime);
   const fecha=parseDateKey(dt)||parseDateKey(histPick(r,HIST_FIELD.status.date));
   const eventMin=histTime(dt);
-  const state=safeText(histPick(r,HIST_FIELD.status.state));
-  const kind=histStatusKind(state);
-  // Para este modelo histórico se conserva únicamente lo necesario para
-  // LOGIN, ASIGNADO y primera carga. Reduce drásticamente el volumen Status.
-  if(kind==='otro') return [];
+  const generalState=safeText(histPick(r,HIST_FIELD.status.state));
+  const loginState=safeText(histPick(r,HIST_FIELD.status.loginState));
+  const assignmentState=safeText(histPick(r,HIST_FIELD.status.assignmentState));
+  const kinds=[];
+  if(isLoginPreviajeState(loginState)||isLoginPreviajeState(generalState))kinds.push('login');
+  if(isAssignmentState(assignmentState))kinds.push('asignado');
+  if(isFirstLoadState(generalState))kinds.push('primera_carga');
+  if(!kinds.length)return [];
+
   const id=histPick(r,HIST_FIELD.status.operatorId);
   const first=safeText(histPick(r,HIST_FIELD.status.firstName));
   const last=safeText(histPick(r,HIST_FIELD.status.lastName));
   const name=[first,last].filter(Boolean).join(' ').trim();
   const key=histOperatorKey(id,name);
-  if(!key || !fecha || eventMin===null) return [];
+  if(!key||!fecha||eventMin===null)return [];
+
   const plant=histResolvePlant(histPick(r,HIST_FIELD.status.plant),histPick(r,HIST_FIELD.status.plantCode));
-  const rec=histBaseRecord(source,archivo,rowIndex);
-  Object.assign(rec,{
-    fecha, planta:plant, zona:plant?inferZona(plant):'', operadorId:normalizeId(id),
-    operadorNombre:name, operadorKey:key, camion:safeText(histPick(r,HIST_FIELD.status.truck)),
-    eventoMin:eventMin, estado:state, eventoKind:kind, ticket:safeText(histPick(r,HIST_FIELD.status.ticket))
+  return [...new Set(kinds)].map(kind=>{
+    const rec=histBaseRecord(source,archivo,rowIndex);
+    Object.assign(rec,{
+      fecha,planta:plant,zona:plant?inferZona(plant):'',operadorId:normalizeId(id),
+      operadorNombre:name,operadorKey:key,camion:safeText(histPick(r,HIST_FIELD.status.truck)),
+      eventoMin:eventMin,estado:generalState,eventoKind:kind,ticket:safeText(histPick(r,HIST_FIELD.status.ticket))
+    });
+    return rec;
   });
-  return [rec];
 }
 function historicalNormalizeRecord(source,row,archivo=''){
   return historicalNormalizeMany(source,row,archivo,0)[0] || null;
@@ -3725,19 +3850,28 @@ function snapshotSourceAudit(fecha) {
 function validarOperacionDiaria(payload, fecha) {
   if (!payload || typeof payload !== 'object') throw new Error('Payload diario inválido');
   if (!fecha || payload.fecha !== fecha) throw new Error('La fecha del reporte no coincide con la fecha operacional activa');
+
   const r = payload.resumen || {};
-  const nums=['programadosExigibles','logeadosAlCorte','pendientesIngreso','asignados','primeraCarga'];
-  for (const k of nums) if (!Number.isFinite(Number(r[k]))) throw new Error(`KPI diario inválido: ${k}`);
-  const p=Number(r.programadosExigibles), l=Number(r.logeadosAlCorte), pend=Number(r.pendientesIngreso), a=Number(r.asignados), c=Number(r.primeraCarga);
-  if (p < 0 || l < 0 || pend < 0 || a < 0 || c < 0) throw new Error('Los KPIs diarios no pueden ser negativos');
-  if (l > p) throw new Error('Con logeo no puede superar Programados');
-  if (pend !== Math.max(0,p-l)) throw new Error('Pendientes no coincide con Programados - Con logeo');
-  if (a > l) throw new Error('Asignados no puede superar Con logeo');
-  if (c > a) throw new Error('Primera carga no puede superar Asignados');
-  const fuentes = r.fuentes || sourceCoverageForDate(fecha);
-  if (!fuentes || Number(fuentes.turnosFilas||0) <= 0) throw new Error('No existen Turnos para la fecha operacional');
-  if (Number(fuentes.logeoFilas||0) <= 0) throw new Error('No existe StatusBreakdown para la fecha operacional');
-  return { ok:true, fuentes };
+  const schema=r.statusSchema||{};
+  const assignmentAvailable=schema.hasAssignmentField!==false;
+
+  const required=['programadosExigibles','logeadosAlCorte','pendientesIngreso','primeraCarga'];
+  for (const k of required) if (!Number.isFinite(Number(r[k]))) throw new Error(`KPI diario inválido: ${k}`);
+  if(assignmentAvailable && !Number.isFinite(Number(r.asignados)))throw new Error('KPI diario inválido: asignados');
+
+  const p=Number(r.programadosExigibles),l=Number(r.logeadosAlCorte),pend=Number(r.pendientesIngreso);
+  const a=assignmentAvailable?Number(r.asignados):null,c=Number(r.primeraCarga);
+
+  if (p<0||l<0||pend<0||c<0||(assignmentAvailable&&a<0)) throw new Error('Los KPIs diarios no pueden ser negativos');
+  if (l>p) throw new Error('Con logeo no puede superar Programados');
+  if (pend!==Math.max(0,p-l)) throw new Error('Pendientes no coincide con Programados - Con logeo');
+  if (assignmentAvailable && a>l) throw new Error('Asignados no puede superar Con logeo');
+  if (assignmentAvailable && c>a) throw new Error('Primera carga no puede superar Asignados');
+
+  const fuentes=r.fuentes||sourceCoverageForDate(fecha);
+  if(!fuentes||Number(fuentes.turnosFilas||0)<=0)throw new Error('No existen Turnos para la fecha operacional');
+  if(Number(fuentes.logeoFilas||0)<=0)throw new Error('No existe StatusBreakdown para la fecha operacional');
+  return {ok:true,fuentes,statusSchema:schema};
 }
 
 function validarTrazabilidadHistorica(rows) {
@@ -3853,6 +3987,7 @@ function aggregateHistory(rows, granularity) {
 app.get('/api/reporte', requireAuth, (req, res) => {
   try {
       const fecha = safeText(req.query.fecha || req.user.fecha || '');
+      const statusSchema = statusSchemaAudit(getLogeo());
       const built = buildRecordsWithDiagnostics(fecha);
       let records = filterScope(built.records, req.query);
       if (req.user.zona) records = records.filter(r=>r.zona===req.user.zona);
@@ -3875,7 +4010,7 @@ app.get('/api/reporte', requireAuth, (req, res) => {
           turnos:rs.length,
           citaciones:rs.filter(r=>r.citacionAplicada).length,
           logeo:logged.length,
-          asignados:rs.filter(r=>hasMinute(r.asignacionMin)).length,
+          asignados:statusSchema.hasAssignmentField?rs.filter(r=>hasMinute(r.asignacionMin)).length:null,
           primeraCarga:rs.filter(r=>hasMinute(r.primeraCargaMin)).length,
           pendientesIngreso:rs.filter(r=>!hasMinute(r.logeoMin)).length,
           adherenciaLogeo:rs.length?round1(logged.length/rs.length*100):null,
@@ -3926,15 +4061,16 @@ app.get('/api/reporte', requireAuth, (req, res) => {
           totalLogeo:records.filter(r=>hasMinute(r.logeoMin)).length,
           logeadosAlCorte:records.filter(r=>hasMinute(r.logeoMin)).length,
           pendientesIngreso:records.filter(r=>!hasMinute(r.logeoMin)).length,
-          asignados:records.filter(r=>hasMinute(r.asignacionMin)).length,
+          asignados:statusSchema.hasAssignmentField?records.filter(r=>hasMinute(r.asignacionMin)).length:null,
           primeraCarga:records.filter(r=>hasMinute(r.primeraCargaMin)).length,
-          operadoresCriticos:records.filter(r=>r.categoria==='atraso_critico' || (hasMinute(r.logeoMin) && !hasMinute(r.asignacionMin))).length,
-          tiempoMuertoPromedioMin:tmAll.length?round1(tmAll.reduce((s,r)=>s+r.tiempoMuertoMin,0)/tmAll.length):null,
+          operadoresCriticos:records.filter(r=>r.categoria==='atraso_critico' || (statusSchema.hasAssignmentField&&hasMinute(r.logeoMin)&&!hasMinute(r.asignacionMin))).length,
+          tiempoMuertoPromedioMin:statusSchema.hasAssignmentField&&tmAll.length?round1(tmAll.reduce((s,r)=>s+r.tiempoMuertoMin,0)/tmAll.length):null,
           adelantadosPct:records.length?round1(adelantados.length/records.length*100):null,
           adelantadosCantidad:adelantados.length,
           filasSinReconocer:unknown,
           filasSinReconocerDetalle:{ plantaVacia:0, codigoDesconocido:unknown },
           fuentes: sourceCoverageForDate(fecha),
+          statusSchema,
         },
         porPlanta:byPlant,
         rankingAdelantados:[...adelantados].sort((a,b)=>(Number(b.adelantoMin)||0)-(Number(a.adelantoMin)||0)).slice(0,10),
@@ -3943,6 +4079,9 @@ app.get('/api/reporte', requireAuth, (req, res) => {
       };
       if (built.errors.length) {
         payload.advertencias = [...(payload.advertencias || []), {codigo:'FILAS_OMITIDAS', mensaje:`${built.errors.length} operador(es) no pudieron procesarse y fueron aislados sin bloquear el reporte.`}];
+      }
+      if(statusSchema.warnings.length){
+        payload.advertencias=[...(payload.advertencias||[]),...statusSchema.warnings.map(m=>({codigo:'STATUS_SCHEMA',mensaje:m}))];
       }
       try {
         payload.validacionOperacion = validarOperacionDiaria(payload, fecha);
