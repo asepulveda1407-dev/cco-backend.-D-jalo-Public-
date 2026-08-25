@@ -239,7 +239,10 @@ function pick(row, aliases) {
 function isAffirmative(value) {
   if (value === true || value === 1) return true;
   const s = normalizeName(value);
-  return ['si','sí','s','yes','y','true','1','x','requiere adelantar citacion','adelantar citacion'].includes(s) || s.includes('requiere adelantar');
+  return ['si','sí','s','yes','y','true','1','x','requiere adelantar citacion','adelantar citacion','se recomienda adelantar','recomienda adelantar','adelanto recomendado'].includes(s)
+    || s.includes('requiere adelantar')
+    || s.includes('recomienda adelantar')
+    || s.includes('recomendacion') && s.includes('adelantar');
 }
 
 const FIELDS = {
@@ -251,7 +254,7 @@ const FIELDS = {
   zona: ['zona','region','región'],
   turno: ['turno_inicio','hora_inicio','hora_ingreso','hora ingreso','horaingreso','turno','inicio_turno'],
   citacion: ['citacion','citación','cita','hora_citacion','hora citacion','citacion_sugerida','citación sugerida'],
-  requiereAdelantarCitacion: ['requiere_adelantar_citacion','requiere adelantar citacion','requiere adelantar citación','adelantar_citacion','adelantar citacion','adelantar citación','requiere_citacion','requiere citacion','requiere citación'],
+  requiereAdelantarCitacion: ['requiere_adelantar_citacion','requiere adelantar citacion','requiere adelantar citación','adelantar_citacion','adelantar citacion','adelantar citación','requiere_citacion','requiere citacion','requiere citación','se recomienda adelantar','se_recomienda_adelantar','recomienda adelantar','recomendacion adelantar','recomendación adelantar','adelantar recomendado','adelanto recomendado'],
   logeo: ['logeo','marcacion','marcación','hora_logeo','hora logeo','entrada','login','fecha_hora','fecha hora'],
   estado: ['descripcion_estado','descripción estado','estado','status','status_description','descripcion status','descripción status'],
   fecha: ['fecha','fecha_turno','fecha turno','dia_fecha','día_fecha','date','fecha_programada','fecha programada'],
@@ -969,9 +972,10 @@ function buildOperatorRecords(fecha = '') {
   });
   const shifts = [...shiftMap.values()];
   const citations = filterRowsForDate(getCitaciones(), fecha, 'citaciones');
+  const citationsAplicables = citations.filter(c => isAffirmative(pick(c, FIELDS.requiereAdelantarCitacion)));
   const logs = getLogeo(); // v1.7: se indexa todo el StatusBreakdown para soportar turnos nocturnos que cruzan medianoche
   const cByKey = new Map();
-  for (const c of citations) addToMultiIndex(cByKey, c);
+  for (const c of citationsAplicables) addToMultiIndex(cByKey, c);
 
   const logIndexRev = datasetRevision('logeo');
   let logIndexCached = runtimeIndexCache.get('__log_operator_index');
@@ -1002,9 +1006,9 @@ function buildOperatorRecords(fecha = '') {
     if (!Number.isFinite(turnoMin)) throw new Error('Turno inválido o ausente');
 
     const cs = rowsFromMultiIndex(cByKey, t);
-    // v1.8 — La citación solo se aplica cuando el archivo indica explícitamente
-    // "Requiere adelantar citación". Si no, la referencia sigue siendo el turno.
-    const csAplicables = cs.filter(c => isAffirmative(pick(c, FIELDS.requiereAdelantarCitacion)));
+    // La fuente ya fue limitada exclusivamente a operadores con recomendación explícita
+    // de adelantar citación. No se usan otras filas de Citaciones como referencia.
+    const csAplicables = cs;
     let citacionMin = null;
     for (const c of csAplicables) {
       const m = parseTimeMinutes(pick(c, FIELDS.citacion));
@@ -1083,10 +1087,10 @@ function buildOperatorRecords(fecha = '') {
     // La asignación debe pertenecer a la misma secuencia operacional y ocurrir después del logeo.
     const assignmentCandidates = operationalEvents.filter(e => e.tipo === 'asignado');
     let assignmentEvent = null;
-    if (assignmentCandidates.length) {
-      const base = logeoAbs ?? referenceAbs;
+    if (assignmentCandidates.length && logeoAbs !== null) {
+      const base = logeoAbs;
       assignmentEvent = assignmentCandidates
-        .filter(e => base===null || e.absMin >= base)
+        .filter(e => e.absMin >= base)
         .sort((a,b)=>(a.absMin-base)-(b.absMin-base))[0] || null;
     }
     const asignacionAbs = assignmentEvent?.absMin ?? null;
@@ -1095,10 +1099,10 @@ function buildOperatorRecords(fecha = '') {
     // Primera carga: primer CARGANDO/CARGADO de la misma secuencia, posterior a asignación/logeo.
     const loadCandidates = operationalEvents.filter(e => e.tipo === 'primera_carga');
     let loadEvent = null;
-    if (loadCandidates.length) {
-      const base = asignacionAbs ?? logeoAbs ?? referenceAbs;
+    if (loadCandidates.length && logeoAbs !== null) {
+      const base = asignacionAbs ?? logeoAbs;
       loadEvent = loadCandidates
-        .filter(e => base===null || e.absMin >= base)
+        .filter(e => e.absMin >= base)
         .sort((a,b)=>(a.absMin-base)-(b.absMin-base))[0] || null;
     }
     const primeraCargaAbs = loadEvent?.absMin ?? null;
@@ -3895,7 +3899,14 @@ app.get('/api/reporte', requireAuth, (req, res) => {
       const payload = {
         generado_por:req.user.nombre,
         fecha,
-        diagnosticoFecha:{ turnosTotal:getTurnos().length, turnosConFecha:countRowsWithDate(getTurnos(),'turnos'), turnosDia:records.length },
+        diagnosticoFecha:{
+          turnosTotal:getTurnos().length,
+          turnosConFecha:countRowsWithDate(getTurnos(),'turnos'),
+          turnosDia:records.length,
+          citacionesDia:filterRowsForDate(getCitaciones(),fecha,'citaciones').length,
+          citacionesAdelantarDia:filterRowsForDate(getCitaciones(),fecha,'citaciones').filter(c=>isAffirmative(pick(c,FIELDS.requiereAdelantarCitacion))).length,
+          statusDia:filterRowsForDate(getLogeo(),fecha,'logeo').length
+        },
         generado_en:nowIso(),
         zona:req.query.zona || req.user.zona || null,
         region:req.query.region || req.user.region || null,
