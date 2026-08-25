@@ -1420,7 +1420,7 @@ async function procesarCarpeta(tipo, files){
       let rows=XLSX.utils.sheet_to_json(wb.Sheets[sheet],{defval:null,range:filaHeader});
       if(tipo==='logeo'){
         rows=preservarFechaHoraLocalStatus(rows);
-        rows=compactarStatusRows(rows);
+        rows=rows.map((r,idx)=>({...r,__cco_source_file:file.name,__cco_source_sheet:sheet,__cco_source_row:filaHeader+idx+2}));
       }
       if(!rows.length){ errores.push(`${file.name}: hoja vacía`); continue; }
       totalArchivos++; totalExtraidas += rows.length;
@@ -1622,6 +1622,7 @@ function usarHoja(tipo, wb, nombreHoja, nombreArchivo){
   const hoja = wb.Sheets[nombreHoja];
   const filaHeader = detectarFilaHeader(wb, nombreHoja);
   let registros = XLSX.utils.sheet_to_json(hoja, {defval:null, range: filaHeader});
+  registros=registros.map((r,idx)=>({...r,__cco_source_file:nombreArchivo,__cco_source_sheet:nombreHoja,__cco_source_row:filaHeader+idx+2}));
   if(tipo==='logeo')registros=preservarFechaHoraLocalStatus(registros);
   if(!registros.length){
     setDot(tipo,'err'); setStatusText(tipo, `Hoja "${nombreHoja}" no tiene filas`, 'err');
@@ -1692,7 +1693,7 @@ async function subirIngesta(tipo, registros, nombreArchivo){
     }
 
     const auditoriaStatus = tipo==='logeo' ? auditarStatusCliente(registros) : null;
-    if(tipo==='logeo') registros=compactarStatusRows(registros);
+    // Status se conserva completo: no se eliminan columnas antes de cruzar/auditar.
     const BATCH_SIZE = tipo==='logeo' ? 1800 : 1200;
     const totalLotes = Math.ceil(registros.length / BATCH_SIZE);
     let ultimaRespuesta = null;
@@ -1839,16 +1840,15 @@ function normalizarReporte(rep){
 }
 
 function validarOperacionDiariaUI(rep){
-  if(!rep || typeof rep!=='object') throw new Error('Reporte diario inválido');
-  if(rep.empty) return true;
-  if(rep.validacionOperacion?.ok!==true) throw new Error('El backend no certificó la operación diaria');
-
-  const r=rep.resumen||{},assignmentAvailable=r.statusSchema?.hasAssignmentField!==false;
-  const p=Number(r.programadosExigibles??r.totalTurnos),l=Number(r.logeadosAlCorte??r.totalLogeo),pend=Number(r.pendientesIngreso),c=Number(r.primeraCarga);
-  const a=assignmentAvailable?Number(r.asignados):null;
-
-  if([p,l,pend,c].some(v=>!Number.isFinite(v)||v<0)||(assignmentAvailable&&(!Number.isFinite(a)||a<0)))throw new Error('KPIs diarios inválidos');
-  if(l>p||pend!==Math.max(0,p-l)||(assignmentAvailable&&a>l)||(assignmentAvailable&&c>a))throw new Error('Los KPIs diarios no cumplen consistencia matemática');
+  if(!rep||typeof rep!=='object')throw new Error('Reporte diario inválido');
+  if(rep.empty)return true;
+  if(rep.validacionOperacion?.ok!==true)throw new Error('El backend no certificó la operación diaria');
+  const r=rep.resumen||{},p=Number(r.programadosExigibles),l=Number(r.totalLogeo),pend=Number(r.pendientesIngreso),a=Number(r.asignados),c=Number(r.primeraCarga),crit=Number(r.operadoresCriticos);
+  if([p,l,pend,a,c,crit].some(v=>!Number.isFinite(v)||v<0))throw new Error('KPIs diarios inválidos');
+  if(p!==l+pend)throw new Error('Programados debe ser igual a Con Logeo + Pendientes');
+  if(a>l)throw new Error('Asignados no puede superar Con Logeo');
+  if(c>a)throw new Error('Primera Carga no puede superar Asignados');
+  if(crit>l)throw new Error('Operadores Críticos no puede superar Con Logeo');
   if(rep.fecha!==(user?.fecha||document.getElementById('scopeFecha')?.value))throw new Error('El reporte no corresponde a la fecha operacional activa');
   return true;
 }
@@ -1963,17 +1963,14 @@ function renderReporte(rep){
 
   // --- KPIs nacionales exclusivos (respetan el alcance de zona/plantas elegido) ---
   const total = rep.resumen.programadosExigibles ?? rep.resumen.totalTurnos ?? 0;
-  const logeados = rep.resumen.loginFuente ?? rep.resumen.totalLogeo ?? 0;
-  const conciliados = rep.resumen.logeadosConciliados ?? rep.resumen.logeadosAlCorte ?? 0;
-  const pendientes = rep.resumen.pendientesIngreso ?? Math.max(0,total-conciliados);
+  const logeados = rep.resumen.totalLogeo ?? rep.resumen.logeadosAlCorte ?? 0;
+  const conciliados = rep.resumen.logeadosConciliados ?? logeados;
+  const pendientes = rep.resumen.pendientesIngreso ?? Math.max(0,total-logeados);
   const kpisNac = [
     ['Programados exigibles', total, alcance, 'info'],
-    ['Con logeo', logeados, `${conciliados} conciliados con Turnos`, 'info'],
+    ['Con logeo', logeados, `${rep.resumen.loginFuente ?? logeados} LOGIN/PRE-VIAJE en fuente`, 'info'],
     ['Pendientes de ingreso', pendientes, pendientes?'Requieren seguimiento':'Cobertura completa', pendientes?'warn':'ok'],
-    ['Asignados',
-      rep.resumen.statusSchema?.hasAssignmentField===false?'Sin dato':(rep.resumen.asignados ?? 0),
-      rep.resumen.statusSchema?.hasAssignmentField===false?'Falta columna Estado asignación':'Estado asignación = ASIGNADO',
-      'info'],
+    ['Asignados', rep.resumen.asignados ?? 0, 'ASIGNADO posterior a LOGIN/PRE-VIAJE', 'info'],
     ['Primera carga', rep.resumen.primeraCarga ?? 0, 'Primer CARGANDO/CARGADO detectado', 'ok'],
     ['Operadores críticos', rep.resumen.operadoresCriticos ?? 0, 'Atraso crítico o logeado sin asignación', (rep.resumen.operadoresCriticos??0)>0?'crit':'ok'],
   ];
@@ -1998,7 +1995,7 @@ function renderReporte(rep){
   }
   const loginAudit=rep.diagnosticoFecha?.loginAudit;
   if(loginAudit && Number(loginAudit.loginMostradoKpi)!==Number(loginAudit.loginDespuesCruceTurnos)){
-    alertasHtml += `<div class="alert-card info"><span class="alert-icon">🔎</span><div class="alert-text"><b>Auditoría Login:</b> ${Number(loginAudit.loginMostradoKpi||0).toLocaleString('es-CL')} registros LOGIN/PRE-VIAJE en la fuente · ${Number(loginAudit.loginDespuesCruceTurnos||0).toLocaleString('es-CL')} conciliados con Turnos · diferencia ${Number(loginAudit.diferenciaCruceVsFuente||0).toLocaleString('es-CL')}. El KPI Login usa la fuente directa.</div></div>`;
+    alertasHtml += `<div class="alert-card info"><span class="alert-icon">🔎</span><div class="alert-text"><b>Auditoría Login:</b> ${Number(loginAudit.loginMostradoKpi||0).toLocaleString('es-CL')} registros LOGIN/PRE-VIAJE en la fuente · ${Number(loginAudit.loginDespuesCruceTurnos||0).toLocaleString('es-CL')} conciliados con Turnos · diferencia ${Number(loginAudit.diferenciaCruceVsFuente||0).toLocaleString('es-CL')}. La diferencia queda auditada; el KPI operativo usa la población programada conciliada.</div></div>`;
   }
   if((fuentes.turnosFilas||0)>0 && (fuentes.logeoFilas||0)===0){
     alertasHtml += `<div class="alert-card critico"><span class="alert-icon">📅</span><div class="alert-text"><b>StatusBreakdown no contiene datos para ${escapeHtml(fuentes.fecha||rep.fecha||'la fecha seleccionada')}.</b> Turnos detectados: ${fuentes.turnosFilas||0}. No se calcularán logeos como cero porque la fuente está ausente para ese día.</div></div>`;
@@ -2010,10 +2007,8 @@ function renderReporte(rep){
   if((rep.resumen.pendientesIngreso||0)>0){
     alertasHtml += `<div class="alert-card medio"><span class="alert-icon">⏳</span><div class="alert-text"><b>${rep.resumen.pendientesIngreso} operador(es) pendientes de ingreso.</b> Están programados para la fecha seleccionada y no tienen evento LOGIN/PRE-VIAJE.</div></div>`;
   }
-  if(rep.resumen.statusSchema?.hasAssignmentField===false){
-    alertasHtml += `<div class="alert-card critico"><span class="alert-icon">⚠️</span><div class="alert-text"><b>KPI Asignación no calculado.</b> El StatusBreakdown no contiene la columna <b>Estado asignación</b>. Los demás KPI continúan disponibles.</div></div>`;
-  }else if((rep.resumen.asignados||0)>0){
-    alertasHtml += `<div class="alert-card info"><span class="alert-icon">📌</span><div class="alert-text"><b>${rep.resumen.asignados} operador(es) asignados.</b> Fuente: columna <b>Estado asignación</b> con valor ASIGNADO.</div></div>`;
+  if((rep.resumen.asignados||0)>0){
+    alertasHtml += `<div class="alert-card info"><span class="alert-icon">📌</span><div class="alert-text"><b>${rep.resumen.asignados} operador(es) asignados.</b> Evento ASIGNADO posterior a LOGIN/PRE-VIAJE del mismo operador.</div></div>`;
   }
   if((rep.resumen.primeraCarga||0)>0){
     alertasHtml += `<div class="alert-card ok"><span class="alert-icon">🚚</span><div class="alert-text"><b>${rep.resumen.primeraCarga} operador(es) con primera carga.</b> Se detectó CARGANDO/CARGADO en su secuencia operacional.</div></div>`;
@@ -2159,7 +2154,7 @@ function renderReporte(rep){
   texto += `Citaciones aplicadas: *${rep.resumen.totalCitaciones}*\n`;
   texto += `Referencia operacional: *${rep.resumen.operadoresConCitacion||0} por citación* · *${rep.resumen.operadoresPorTurno||0} por turno*\n`;
   if(rep.resumen.cumplimientoReferenciaPct!==null) texto += `Cumplimiento referencia: *${rep.resumen.cumplimientoReferenciaPct}%*\n`;
-  texto += `Con logeo: *${rep.resumen.loginFuente ?? rep.resumen.totalLogeo}*\n`;
+  texto += `Con logeo: *${rep.resumen.totalLogeo ?? rep.resumen.logeadosAlCorte}*\n`;
   texto += `Pendientes de ingreso: *${rep.resumen.pendientesIngreso ?? 0}*\n`;
   texto += `Asignados: *${rep.resumen.statusSchema?.hasAssignmentField===false?'No disponible':(rep.resumen.asignados ?? 0)}*\n`;
   texto += `Primera carga: *${rep.resumen.primeraCarga ?? 0}*\n`;
