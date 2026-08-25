@@ -247,6 +247,19 @@ function isAffirmative(value) {
     || s.includes('recomendacion') && s.includes('adelantar');
 }
 
+function citationRequiresAdvance(row){
+  const explicit=pick(row,FIELDS.requiereAdelantarCitacion);
+  if(explicit!==null&&explicit!==undefined&&String(explicit).trim()!==''){
+    return isAffirmative(explicit);
+  }
+  const obs=normalizeName(pick(row,FIELDS.observacionCitacion));
+  if(!obs)return false;
+  return obs.includes('adelantar citacion')
+    || obs.includes('adelantar la citacion')
+    || (obs.includes('adelantar')&&obs.includes('citacion'));
+}
+
+
 
 const OP_STATUS = Object.freeze({
   fields:Object.freeze({
@@ -327,6 +340,7 @@ const FIELDS = {
   turno: ['turno_inicio','hora_inicio','hora_ingreso','hora ingreso','horaingreso','turno','inicio_turno'],
   citacion: ['citacion','citación','cita','hora_citacion','hora citacion','citacion_sugerida','citación sugerida'],
   requiereAdelantarCitacion: ['requiere_adelantar_citacion','requiere adelantar citacion','requiere adelantar citación','adelantar_citacion','adelantar citacion','adelantar citación','requiere_citacion','requiere citacion','requiere citación','se recomienda adelantar','se_recomienda_adelantar','recomienda adelantar','recomendacion adelantar','recomendación adelantar','adelantar recomendado','adelanto recomendado'],
+  observacionCitacion: ['observacion','observación','comentario','comentarios','detalle','motivo'],
   logeo: ['logeo','marcacion','marcación','hora_logeo','hora logeo','entrada','login','fecha_hora','fecha hora'],
   estado: [...OP_STATUS.fields.generalState],
   loginEstado: [...OP_STATUS.fields.loginState],
@@ -1180,7 +1194,7 @@ function buildOperatorRecords(fecha = '') {
   });
   const shifts = [...shiftMap.values()];
   const citations = filterRowsForDate(getCitaciones(), fecha, 'citaciones');
-  const citationsAplicables = citations.filter(c => isAffirmative(pick(c, FIELDS.requiereAdelantarCitacion)));
+  const citationsAplicables = citations.filter(c => citationRequiresAdvance(c));
   const logs = getLogeo(); // v1.7: se indexa todo el StatusBreakdown para soportar turnos nocturnos que cruzan medianoche
   const cByKey = new Map();
   for (const c of citationsAplicables) addToMultiIndex(cByKey, c);
@@ -4302,7 +4316,7 @@ app.get('/api/reporte', requireAuth, (req, res) => {
           turnosConFecha:countRowsWithDate(getTurnos(),'turnos'),
           turnosDia:records.length,
           citacionesDia:filterRowsForDate(getCitaciones(),fecha,'citaciones').length,
-          citacionesAdelantarDia:filterRowsForDate(getCitaciones(),fecha,'citaciones').filter(c=>isAffirmative(pick(c,FIELDS.requiereAdelantarCitacion))).length,
+          citacionesAdelantarDia:filterRowsForDate(getCitaciones(),fecha,'citaciones').filter(c=>citationRequiresAdvance(c)).length,
           statusDia:filterRowsForDate(getLogeo(),fecha,'logeo').length,
           loginAudit,
           fechas:fechaAudit
