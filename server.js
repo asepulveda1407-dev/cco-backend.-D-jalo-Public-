@@ -647,7 +647,10 @@ function rowsFromMultiIndex(index, row) {
 function classifyOperationalEvent(rawEstado) {
   const e = normalizeName(rawEstado);
   if (!e) return 'otro';
-  if (/login|logeo|logeado|entrada/.test(e)) return 'login';
+  // Regla operacional existente: LOGIN y PRE-VIAJE representan ingreso/logeo real.
+  // normalizeName convierte variantes como "PRE-VIAJE", "PRE VIAJE" y "Pre Viaje"
+  // a una forma comparable.
+  if (/login|logeo|logeado|entrada|pre viaje|previaje/.test(e)) return 'login';
   if (/^asignado$|asignad|assigned|dispatch|despachad/.test(e)) return 'asignado';
   if (/cargando|^cargado$|loading/.test(e)) return 'primera_carga';
   if (/en planta/.test(e)) return 'en_planta';
