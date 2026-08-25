@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CCO Intelligence v4.3.2 · Centro de Control Operacional</title>
+<title>CCO Intelligence · Centro de Control Operacional</title>
 <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4/dist/socket.io.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
@@ -1519,10 +1519,10 @@ function auditarStatusCliente(rows){
   };
 }
 
-async function enviarLoteIngesta(tipo,datosLote,nombreArchivo,modo,lote,totalLotes,finalizar=false,auditoriaStatus=null){
+async function enviarLoteIngesta(tipo,datosLote,nombreArchivo,modo,lote,totalLotes,finalizar=false,auditoriaStatus=null,uploadSession=''){
   const response=await fetch(API+'/api/ingesta',{
     method:'POST', headers:authHeaders(),
-    body:JSON.stringify({tipo,datos:datosLote,archivo:nombreArchivo,modo,lote,total_lotes:totalLotes,finalizar,auditoria_status:auditoriaStatus})
+    body:JSON.stringify({tipo,datos:datosLote,archivo:nombreArchivo,modo,lote,total_lotes:totalLotes,finalizar,auditoria_status:auditoriaStatus,upload_session:uploadSession})
   });
   return leerRespuestaApiSegura(response);
 }
@@ -1735,6 +1735,7 @@ async function subirIngesta(tipo, registros, nombreArchivo){
     // Status se conserva completo: no se eliminan columnas antes de cruzar/auditar.
     const BATCH_SIZE = tipo==='logeo' ? 1800 : 1200;
     const totalLotes = Math.ceil(registros.length / BATCH_SIZE);
+    const uploadSession = (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`);
     let ultimaRespuesta = null;
 
     setDot(tipo,'busy');
@@ -1747,7 +1748,7 @@ async function subirIngesta(tipo, registros, nombreArchivo){
       setStatusText(tipo, `Subiendo lote ${lote+1}/${totalLotes} · ${Math.min(inicio+datosLote.length, registros.length)}/${registros.length} filas...`);
 
       try{
-        ultimaRespuesta = await enviarLoteIngesta(tipo,datosLote,nombreArchivo,modo,lote+1,totalLotes,lote===totalLotes-1,auditoriaStatus);
+        ultimaRespuesta = await enviarLoteIngesta(tipo,datosLote,nombreArchivo,modo,lote+1,totalLotes,lote===totalLotes-1,auditoriaStatus,uploadSession);
       }catch(networkErr){
         throw new Error(`No fue posible procesar el lote ${lote+1}/${totalLotes}: ${networkErr?.message || networkErr}`);
       }
