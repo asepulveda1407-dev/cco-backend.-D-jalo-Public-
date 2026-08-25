@@ -3621,7 +3621,12 @@ function renderHistoricalCoverage(data){
   if(absent.length){
     warn.innerHTML=`⚠ <b>El período seleccionado no contiene todas las fuentes necesarias.</b> ${absent.join(' · ')}${data.recommendedDate?` · Última fecha común recomendada: <b>${data.recommendedDate}</b>.`:''}`;
   }else if((x.turnoStatus||0)===0&&(x.turnoCitacion||0)===0){
-    warn.innerHTML='⚠ Las fuentes tienen registros en el período, pero no existen coincidencias por <b>operador + fecha</b>. Revise IDs y fechas en el diagnóstico.';
+    const ov=data?.sourceOverlap||{};
+    if(Number(ov.turnoStatus?.days||0)===0){
+      warn.innerHTML=`⚠ <b>No existe superposición de fechas entre Turnos y Status.</b> Turnos: ${ranges.turnos?.minDate||'—'} → ${ranges.turnos?.maxDate||'—'} · Status: ${ranges.status?.minDate||'—'} → ${ranges.status?.maxDate||'—'}. Para calcular Adherencia al Turno, ambos archivos deben cubrir al menos una misma fecha.`;
+    }else{
+      warn.innerHTML=`⚠ Las fuentes sí comparten fechas (${ov.turnoStatus.minDate||'—'} → ${ov.turnoStatus.maxDate||'—'}), pero no existen cruces por operador + fecha. Los archivos se reprocesarán con la clave histórica canónica al volver a cargarlos.`;
+    }
   }else{
     warn.innerHTML=`✅ Fuentes disponibles y cruce activo · Turno↔Citación: <b>${x.turnoCitacion||0}</b> · Turno↔Status: <b>${x.turnoStatus||0}</b> · Tres fuentes: <b>${x.tresFuentes||0}</b>.`;
   }
