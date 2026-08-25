@@ -288,65 +288,38 @@ function statusSchemaAudit(rows){
   const list=Array.isArray(rows)?rows:[];
   const hasGeneralState=list.some(r=>rowHasAlias(r,OP_STATUS.fields.generalState));
   const hasLoginDedicated=list.some(r=>rowHasAlias(r,OP_STATUS.fields.loginState));
-  const hasAssignmentField=list.some(r=>rowHasAlias(r,OP_STATUS.fields.assignmentState));
-  let loginMatches=0,assignmentMatches=0,unknownAssignmentValues=0;
-  const assignmentValues=new Map();
-
+  let loginMatches=0,assignmentMatches=0,firstLoadMatches=0;
   for(const r of list){
-    const general=pick(r,OP_STATUS.fields.generalState);
-    const dedicatedLogin=pick(r,OP_STATUS.fields.loginState);
-    const assignment=pick(r,OP_STATUS.fields.assignmentState);
-
-    if(isLoginPreviajeState(dedicatedLogin)||isLoginPreviajeState(general))loginMatches++;
-    if(assignment!==null&&assignment!==undefined&&String(assignment).trim()!==''){
-      const normalized=statusValue(assignment);
-      assignmentValues.set(normalized,(assignmentValues.get(normalized)||0)+1);
-      if(isAssignmentState(assignment))assignmentMatches++;
-      else unknownAssignmentValues++;
-    }
+    const general=pick(r,OP_STATUS.fields.generalState),dedicated=pick(r,OP_STATUS.fields.loginState);
+    if(isLoginPreviajeState(dedicated)||isLoginPreviajeState(general))loginMatches++;
+    if(isAssignmentState(general))assignmentMatches++;
+    if(isFirstLoadState(general))firstLoadMatches++;
   }
-
   const warnings=[];
-  if(!hasGeneralState&&!hasLoginDedicated){
-    warnings.push('Falta la columna que contiene el estado "Login/pre-viaje". KPI Logeo no disponible.');
-  }
-  if(!hasAssignmentField){
-    warnings.push('Falta la columna "Estado asignación". KPI Asignación no disponible.');
-  }
-
-  return {
-    hasGeneralState,hasLoginDedicated,
-    hasLoginField:hasGeneralState||hasLoginDedicated,
-    hasAssignmentField,
-    loginMatches,assignmentMatches,unknownAssignmentValues,
-    assignmentValues:Object.fromEntries([...assignmentValues.entries()].slice(0,20)),
-    warnings
-  };
+  if(!hasGeneralState&&!hasLoginDedicated)warnings.push('Falta la columna que contiene LOGIN/PRE-VIAJE.');
+  if(!hasGeneralState)warnings.push('Falta la columna de estado operacional para ASIGNADO/CARGANDO/CARGADO.');
+  return {hasGeneralState,hasLoginDedicated,hasLoginField:hasGeneralState||hasLoginDedicated,hasAssignmentField:hasGeneralState,loginMatches,assignmentMatches,firstLoadMatches,warnings};
 }
 
 function statusKindsFromRow(row){
-  const general=pick(row,OP_STATUS.fields.generalState);
-  const dedicatedLogin=pick(row,OP_STATUS.fields.loginState);
-  const assignment=pick(row,OP_STATUS.fields.assignmentState);
-  const kinds=[];
-
-  // LOGEO: exclusivamente Login/pre-viaje.
-  if(isLoginPreviajeState(dedicatedLogin)||isLoginPreviajeState(general))kinds.push('login');
-
-  // ASIGNACIÓN: exclusivamente desde la columna Estado asignación.
-  if(isAssignmentState(assignment))kinds.push('asignado');
-
-  // 1ª carga continúa usando el Status general existente.
+  const general=pick(row,OP_STATUS.fields.generalState),dedicated=pick(row,OP_STATUS.fields.loginState),kinds=[];
+  if(isLoginPreviajeState(dedicated)||isLoginPreviajeState(general))kinds.push('login');
+  if(isAssignmentState(general))kinds.push('asignado');
   if(isFirstLoadState(general))kinds.push('primera_carga');
-
   return [...new Set(kinds)];
 }
 
 const FIELDS = {
-  id: ['id_operador','id operador','numero_funcionario','número funcionario','numero funcionario','id','rut','codigo_operador','cod_operador'],
+  id: [
+    'id_operador','id operador','numero_funcionario','número funcionario','numero funcionario',
+    'id_funcionario','id funcionario','id_empleado','id empleado','employee_id','employee id',
+    'numero_empleado','número empleado','numero empleado','nro_empleado','nro empleado',
+    'codigo_funcionario','código funcionario','codigo empleado','código empleado',
+    'codigo_operador','cod_operador','legajo','id','rut'
+  ],
   nombre: ['operador','nombre_operador','nom_operador','operario','nombre','employee_name','nombre_funcionario','nombre empleado','nombre_empleado','conductor','nombre_conductor','nombre conductor','chofer','nombre_chofer','nombre chofer'],
-  firstName: ['primero_empleado','primero empleado','first_name','firstname','nombre_funcionario','nombre funcionario'],
-  lastName: ['ultimo_empleado','último empleado','ultimo empleado','last_name','lastname','apellido_funcionario','apellido funcionario'],
+  firstName: ['primero_empleado','primero empleado','first_name','firstname','nombre_funcionario','nombre funcionario','primer nombre','nombres','nombre empleado'],
+  lastName: ['ultimo_empleado','último empleado','ultimo empleado','last_name','lastname','apellido_funcionario','apellido funcionario','apellidos','apellido empleado'],
   planta: ['planta','planta_origen','origen','plta','descripcion_planta','descripción planta','plant','codigo_command','código command','cod_planta_command','cod planta command','local_cmd','local cmd','centro_sap','centro sap','puesto_carga','puesto carga','shortname','short_name','local_inventario','local inventario','puesto_expedicion','puesto expedición'],
   zona: ['zona','region','región'],
   turno: ['turno_inicio','hora_inicio','hora_ingreso','hora ingreso','horaingreso','turno','inicio_turno'],
@@ -364,6 +337,9 @@ const FIELDS = {
     'fecha estado','fecha_estado','hora estado','hora_estado','inicio estado','inicio_estado',
     'fecha inicio','fecha_inicio','hora inicio','hora_inicio','date time','datetime','event time'
   ],
+  sourceFile: ['cco_source_file','__cco_source_file'],
+  sourceSheet: ['cco_source_sheet','__cco_source_sheet'],
+  sourceRow: ['cco_source_row','__cco_source_row'],
 };
 
 // StatusBreakdown puede traer la fecha/hora con nombres distintos según la exportación.
@@ -624,14 +600,30 @@ function datasetDateProfile(rows, type) {
   };
 }
 
+
+function inferOperatorId(row){
+  const direct=normalizeId(pick(row,FIELDS.id));
+  if(direct)return direct;
+  for(const [k,v] of Object.entries(row||{})){
+    const nk=normalizeKey(k);
+    if(!/(operador|funcionario|empleado|employee|conductor)/.test(nk))continue;
+    if(!/(id|numero|nro|codigo|cod|legajo)/.test(nk))continue;
+    const id=normalizeId(v); if(id)return id;
+  }
+  return '';
+}
+function sourceTrace(row){
+  return {archivo:safeText(pick(row,FIELDS.sourceFile)),hoja:safeText(pick(row,FIELDS.sourceSheet)),fila:Number(pick(row,FIELDS.sourceRow))||null};
+}
+
 function operatorKey(row) {
-  const id = normalizeId(pick(row, FIELDS.id));
+  const id = inferOperatorId(row);
   if (id) return `id:${id}`;
   const name = normalizeName(pick(row, FIELDS.nombre));
   return name ? `name:${name}` : '';
 }
 function rowOperator(row) {
-  const id = normalizeId(pick(row, FIELDS.id));
+  const id = inferOperatorId(row);
   let nombre = safeText(pick(row, FIELDS.nombre));
   if (!nombre) {
     const first = safeText(pick(row, FIELDS.firstName));
@@ -647,7 +639,7 @@ function rowOperator(row) {
 // archivos pueden traer ID Operador y/o nombre. Indexamos por ambos cuando existen.
 function operatorMatchKeys(row) {
   const keys = [];
-  const id = normalizeId(pick(row, FIELDS.id));
+  const id = inferOperatorId(row);
   if (id) keys.push(`id:${id}`);
   const op = rowOperator(row);
   const nombre = normalizeName(op.nombre);
@@ -693,7 +685,7 @@ function buildUniqueStatusOperatorGroups(rows){
   const groups=new Map();
   let anon=0;
   for(const r of (rows||[])){
-    const id=normalizeId(pick(r,FIELDS.id));
+    const id=inferOperatorId(r);
     const sig=operatorNameSignature(r);
     const key=id?`id:${id}`:(sig?`name:${sig}`:`anon:${anon++}`);
     if(!groups.has(key))groups.set(key,{key,id,rows:[],rep:r});
@@ -744,8 +736,9 @@ function rowsFromMultiIndex(index, row) {
 }
 
 function classifyOperationalEvent(rawEstado) {
-  if (isLoginPreviajeState(rawEstado)) return 'login';
-  if (isFirstLoadState(rawEstado)) return 'primera_carga';
+  if(isLoginPreviajeState(rawEstado))return 'login';
+  if(isAssignmentState(rawEstado))return 'asignado';
+  if(isFirstLoadState(rawEstado))return 'primera_carga';
   return 'otro';
 }
 
@@ -1197,8 +1190,8 @@ function buildOperatorRecords(fecha = '') {
     // Primera carga: primer CARGANDO/CARGADO de la misma secuencia, posterior a asignación/logeo.
     const loadCandidates = operationalEvents.filter(e => e.tipo === 'primera_carga');
     let loadEvent = null;
-    if (loadCandidates.length && logeoAbs !== null) {
-      const base = asignacionAbs ?? logeoAbs;
+    if (loadCandidates.length && logeoAbs !== null && asignacionAbs !== null) {
+      const base = asignacionAbs;
       loadEvent = loadCandidates
         .filter(e => e.absMin >= base)
         .sort((a,b)=>(a.absMin-base)-(b.absMin-base))[0] || null;
@@ -1240,6 +1233,13 @@ function buildOperatorRecords(fecha = '') {
       categoria, estado, estadoOperacional,
       etiqueta: estado,
       horaTurnoSospechosa: turnoMin !== null && (turnoMin < 5*60 || turnoMin > 23*60+59),
+      trazabilidad:{
+        turno:sourceTrace(t),
+        citacion:csAplicables[0]?sourceTrace(csAplicables[0]):null,
+        login:loginEvent?.row?sourceTrace(loginEvent.row):null,
+        asignacion:assignmentEvent?.row?sourceTrace(assignmentEvent.row):null,
+        primeraCarga:loadEvent?.row?sourceTrace(loadEvent.row):null
+      }
     };
     } catch (err) {
       const op = (()=>{ try { return rowOperator(t); } catch { return {id:`fila-${idx+1}`, nombre:'Operador no identificable'}; } })();
@@ -1254,6 +1254,45 @@ function buildOperatorRecords(fecha = '') {
 buildOperatorRecords.lastErrors = [];
 
 function hasMinute(v) { return Number.isFinite(v); }
+
+function operationalTimeStats(records){
+  const vals=(records||[]).map(r=>Number(r?.tiempoMuertoMin)).filter(v=>Number.isFinite(v)&&v>=0).sort((a,b)=>a-b);
+  if(!vals.length)return {n:0,promedio:null,mediana:null,min:null,max:null,p90:null};
+  const q=p=>{const pos=(vals.length-1)*p,lo=Math.floor(pos),hi=Math.ceil(pos);return round1(vals[lo]+(vals[hi]-vals[lo])*(pos-lo));};
+  return {n:vals.length,promedio:round1(vals.reduce((a,b)=>a+b,0)/vals.length),mediana:q(.5),min:vals[0],max:vals.at(-1),p90:q(.9)};
+}
+function operationalSummary(records){
+  const rows=Array.isArray(records)?records:[];
+  const programados=rows.length,conLogeo=rows.filter(r=>hasMinute(r.logeoMin)).length,pendientes=programados-conLogeo;
+  const asignados=rows.filter(r=>hasMinute(r.asignacionMin)).length,primeraCarga=rows.filter(r=>hasMinute(r.primeraCargaMin)).length;
+  const criticos=rows.filter(r=>hasMinute(r.logeoMin)&&(!hasMinute(r.asignacionMin)||(hasMinute(r.tiempoMuertoMin)&&Number(r.tiempoMuertoMin)>Number(ensurePlant(r.planta).tol_asig)))).length;
+  const stats=operationalTimeStats(rows),errores=[];
+  if(programados!==conLogeo+pendientes)errores.push(`Programados ${programados} != ConLogeo ${conLogeo} + Pendientes ${pendientes}`);
+  if(asignados>conLogeo)errores.push(`Asignados ${asignados} > ConLogeo ${conLogeo}`);
+  if(primeraCarga>asignados)errores.push(`PrimeraCarga ${primeraCarga} > Asignados ${asignados}`);
+  if(criticos>conLogeo)errores.push(`OperadoresCriticos ${criticos} > ConLogeo ${conLogeo}`);
+  for(const [k,v] of Object.entries({programados,conLogeo,pendientes,asignados,primeraCarga,criticos})){if(!Number.isFinite(v)||v<0)errores.push(`${k} inválido: ${v}`);if(k!=='programados'&&v>programados)errores.push(`${k} ${v} supera Programados ${programados}`);}
+  return {totalTurnos:programados,programadosExigibles:programados,totalLogeo:conLogeo,logeadosAlCorte:conLogeo,logeadosConciliados:conLogeo,pendientesIngreso:pendientes,asignados,primeraCarga,operadoresCriticos:criticos,tiempoMuertoPromedioMin:stats.promedio,tiempoMuertoStats:stats,validacion:{ok:errores.length===0,errores}};
+}
+function operationalPlantRows(records){
+  const groups=new Map();
+  for(const r of records||[]){const k=r.planta||'Sin planta';if(!groups.has(k))groups.set(k,[]);groups.get(k).push(r);}
+  return [...groups.entries()].map(([planta,rs])=>{
+    const s=operationalSummary(rs),cfg=ensurePlant(planta),aTiempo=rs.filter(r=>r.categoria==='a_tiempo').length;
+    return {planta,zona:rs[0]?.zona||cfg.zona,region:rs[0]?.region||cfg.region,turnos:s.programadosExigibles,citaciones:rs.filter(r=>r.citacionAplicada).length,logeo:s.totalLogeo,asignados:s.asignados,primeraCarga:s.primeraCarga,pendientesIngreso:s.pendientesIngreso,cumplimientoReferencia:rs.length?round1(aTiempo/rs.length*100):null,adherenciaLogeo:rs.length?round1(s.totalLogeo/rs.length*100):null,tiempoMuertoPromedioMin:s.tiempoMuertoPromedioMin,tiempoMuertoStats:s.tiempoMuertoStats,operadoresCriticos:s.operadoresCriticos,validacion:s.validacion};
+  });
+}
+function buildOperationalTruth(fecha='',scope={}){
+  const built=buildRecordsWithDiagnostics(fecha);
+  let records=Array.isArray(built.records)?built.records:[];
+  records=filterScope(records,scope||{});
+  const summary=operationalSummary(records),audit=loginSourceAudit(fecha,records);
+  const reconciliation={loginFuente:Number(audit.loginDespuesFiltroFecha||0),loginConciliado:summary.totalLogeo};
+  reconciliation.loginSinCruce=Math.max(0,reconciliation.loginFuente-reconciliation.loginConciliado);
+  reconciliation.ok=reconciliation.loginFuente===reconciliation.loginConciliado;
+  return {fecha,records,summary,porPlanta:operationalPlantRows(records),audit,reconciliation,errors:built.errors||[]};
+}
+
 function buildRecordsWithDiagnostics(fecha='') {
   try {
     const records = buildOperatorRecords(fecha);
@@ -1713,7 +1752,8 @@ app.post('/api/bitacora', requireAuth, (req, res) => {
 
 app.get('/api/tabla-operadores', requireAuth, (req, res) => {
   try {
-  let records = buildOperatorRecords(safeText(req.query.fecha || req.user.fecha || ''));
+  const truth=buildOperationalTruth(safeText(req.query.fecha || req.user.fecha || ''),req.query);
+  let records=[...truth.records];
   if (req.user.zona) records = records.filter(r=>r.zona===req.user.zona);
   if (req.user.region) records = records.filter(r=>r.region===req.user.region);
   if (req.query.soloProblemas === '1') records = records.filter(r=>r.categoria !== 'a_tiempo');
@@ -1734,8 +1774,9 @@ app.get('/api/analisis-operadores', requireAuth, (req, res) => {
     const planta = safeText(req.query.planta || '');
     if (!planta) return res.status(400).json({ error:'Planta requerida' });
     const fecha = safeText(req.query.fecha || req.user.fecha || '');
-    const built = buildRecordsWithDiagnostics(fecha);
-    const records = built.records.filter(r=>r.planta===planta);
+    const truth = buildOperationalTruth(fecha,{...req.query,planta});
+    const built = {records:truth.records,errors:truth.errors};
+    const records = truth.records.filter(r=>r.planta===planta);
     if (!records.length) return res.json({
       diagnostico:'ATENCIÓN', diagnosticoLineas:['No hay turnos válidos para esta planta.'],
       resumen:{ totalOperadores:0, conLogeo:0, sinLogeo:0, adherenciaTurnoPct:null, atrasadosPct:null, atrasadosCriticos:0, adelantadosPct:null, logeadosSinAsignacion:0, esperaAsignacionPromedioMin:null },
@@ -2046,7 +2087,7 @@ function etlNormalizeRow(source,row,archivo,rowNumber,diag,statusAccumulator=nul
   const assignmentState=safeText(histPick(r,HIST_FIELD.status.assignmentState));
   const kinds=[];
   if(isLoginPreviajeState(loginState)||isLoginPreviajeState(generalState))kinds.push('login');
-  if(isAssignmentState(assignmentState))kinds.push('asignado');
+  if(isAssignmentState(generalState))kinds.push('asignado');
   if(isFirstLoadState(generalState))kinds.push('primera_carga');
 
   if(!kinds.length){
@@ -2506,6 +2547,7 @@ function histResolvePlant(rawPlant, rawCode=''){
 }
 function histStatusKind(v){
   if(isLoginPreviajeState(v))return 'login';
+  if(isAssignmentState(v))return 'asignado';
   if(isFirstLoadState(v))return 'primera_carga';
   return 'otro';
 }
@@ -2570,7 +2612,7 @@ function historicalNormalizeMany(source,row,archivo='',rowIndex=0){
   const assignmentState=safeText(histPick(r,HIST_FIELD.status.assignmentState));
   const kinds=[];
   if(isLoginPreviajeState(loginState)||isLoginPreviajeState(generalState))kinds.push('login');
-  if(isAssignmentState(assignmentState))kinds.push('asignado');
+  if(isAssignmentState(generalState))kinds.push('asignado');
   if(isFirstLoadState(generalState))kinds.push('primera_carga');
   if(!kinds.length)return [];
 
@@ -3848,30 +3890,19 @@ function snapshotSourceAudit(fecha) {
 }
 
 function validarOperacionDiaria(payload, fecha) {
-  if (!payload || typeof payload !== 'object') throw new Error('Payload diario inválido');
-  if (!fecha || payload.fecha !== fecha) throw new Error('La fecha del reporte no coincide con la fecha operacional activa');
-
-  const r = payload.resumen || {};
-  const schema=r.statusSchema||{};
-  const assignmentAvailable=schema.hasAssignmentField!==false;
-
-  const required=['programadosExigibles','logeadosAlCorte','pendientesIngreso','primeraCarga'];
-  for (const k of required) if (!Number.isFinite(Number(r[k]))) throw new Error(`KPI diario inválido: ${k}`);
-  if(assignmentAvailable && !Number.isFinite(Number(r.asignados)))throw new Error('KPI diario inválido: asignados');
-
-  const p=Number(r.programadosExigibles),l=Number(r.logeadosAlCorte),pend=Number(r.pendientesIngreso);
-  const a=assignmentAvailable?Number(r.asignados):null,c=Number(r.primeraCarga);
-
-  if (p<0||l<0||pend<0||c<0||(assignmentAvailable&&a<0)) throw new Error('Los KPIs diarios no pueden ser negativos');
-  if (l>p) throw new Error('Con logeo no puede superar Programados');
-  if (pend!==Math.max(0,p-l)) throw new Error('Pendientes no coincide con Programados - Con logeo');
-  if (assignmentAvailable && a>l) throw new Error('Asignados no puede superar Con logeo');
-  if (assignmentAvailable && c>a) throw new Error('Primera carga no puede superar Asignados');
-
+  if(!payload||typeof payload!=='object')throw new Error('Payload diario inválido');
+  if(!fecha||payload.fecha!==fecha)throw new Error('La fecha del reporte no coincide con la fecha operacional activa');
+  const r=payload.resumen||{},p=Number(r.programadosExigibles),l=Number(r.totalLogeo),pend=Number(r.pendientesIngreso),a=Number(r.asignados),c=Number(r.primeraCarga),crit=Number(r.operadoresCriticos);
+  for(const [k,v] of Object.entries({programados:p,conLogeo:l,pendientes:pend,asignados:a,primeraCarga:c,criticos:crit}))if(!Number.isFinite(v)||v<0)throw new Error(`KPI ${k} inválido: ${v}`);
+  if(p!==l+pend)throw new Error(`Programados ${p} debe ser igual a ConLogeo ${l} + Pendientes ${pend}`);
+  if(a>l)throw new Error(`Asignados ${a} no puede superar ConLogeo ${l}`);
+  if(c>a)throw new Error(`PrimeraCarga ${c} no puede superar Asignados ${a}`);
+  if(crit>l)throw new Error(`OperadoresCríticos ${crit} no puede superar ConLogeo ${l}`);
+  if(r.conciliacionLogin?.ok===false)throw new Error(`LOGIN/PRE-VIAJE sin conciliación completa: fuente ${r.conciliacionLogin.loginFuente}, conciliados ${r.conciliacionLogin.loginConciliado}`);
   const fuentes=r.fuentes||sourceCoverageForDate(fecha);
   if(!fuentes||Number(fuentes.turnosFilas||0)<=0)throw new Error('No existen Turnos para la fecha operacional');
   if(Number(fuentes.logeoFilas||0)<=0)throw new Error('No existe StatusBreakdown para la fecha operacional');
-  return {ok:true,fuentes,statusSchema:schema};
+  return {ok:true,fuentes};
 }
 
 function validarTrazabilidadHistorica(rows) {
@@ -3985,6 +4016,21 @@ function aggregateHistory(rows, granularity) {
 }
 
 
+
+app.get('/api/operacion/auditoria-total', requireAuth, (req,res)=>{
+  try{
+    const fecha=safeText(req.query.fecha||req.user.fecha||''),truth=buildOperationalTruth(fecha,req.query);
+    return res.json({ok:truth.summary.validacion.ok&&truth.reconciliation.ok,fecha,motor:'operador_programado_dia',kpi:truth.summary,conciliacionLogin:truth.reconciliation,loginAudit:truth.audit,erroresConstruccion:truth.errors,registros:truth.records.map(r=>({operadorId:r.id,operador:r.nombre,planta:r.planta,turno:r.turnoMin,login:r.logeoMin,asignacion:r.asignacionMin,primeraCarga:r.primeraCargaMin,tiempoMuerto:r.tiempoMuertoMin,categoria:r.categoria,trazabilidad:r.trazabilidad||null}))});
+  }catch(err){return res.status(422).json({error:'No fue posible ejecutar auditoría operacional',detalle:err?.message||String(err)});}
+});
+app.get('/api/operacion/export.csv', requireAuth, (req,res)=>{
+  try{
+    const fecha=safeText(req.query.fecha||req.user.fecha||''),truth=buildOperationalTruth(fecha,req.query),cell=v=>`"${String(v??'').replace(/"/g,'""')}"`;
+    const head=['Fecha','Zona','Planta','Operador','ID','Turno','Login','Asignacion','Primera Carga','Tiempo Muerto min','Categoria','Archivo Turno','Fila Turno','Archivo Login','Fila Login','Archivo Asignacion','Fila Asignacion','Archivo Primera Carga','Fila Primera Carga'],lines=[head.map(cell).join(';')];
+    for(const r of truth.records){const t=r.trazabilidad||{};lines.push([fecha,r.zona,r.planta,r.nombre,r.id,fmtMinutes(r.turnoMin),fmtMinutes(r.logeoMin),fmtMinutes(r.asignacionMin),fmtMinutes(r.primeraCargaMin),r.tiempoMuertoMin,r.categoria,t.turno?.archivo,t.turno?.fila,t.login?.archivo,t.login?.fila,t.asignacion?.archivo,t.asignacion?.fila,t.primeraCarga?.archivo,t.primeraCarga?.fila].map(cell).join(';'));}
+    res.setHeader('Content-Type','text/csv; charset=utf-8');res.setHeader('Content-Disposition',`attachment; filename="operacion_auditable_${fecha||'fecha'}.csv"`);return res.send('\uFEFF'+lines.join('\n'));
+  }catch(err){return res.status(422).json({error:'No fue posible exportar la operación auditable',detalle:err?.message||String(err)});}
+});
 app.get('/api/operacion/login-audit', requireAuth, (req,res)=>{
   try{
     const fecha=safeText(req.query.fecha||req.user.fecha||'');
@@ -3999,9 +4045,10 @@ app.get('/api/reporte', requireAuth, (req, res) => {
   try {
       const fecha = safeText(req.query.fecha || req.user.fecha || '');
       const statusSchema = statusSchemaAudit(getLogeo());
-      const built = buildRecordsWithDiagnostics(fecha);
-      const loginAudit = loginSourceAudit(fecha,built.records);
-      let records = filterScope(built.records, req.query);
+      const truth = buildOperationalTruth(fecha,req.query);
+      const built = {records:truth.records,errors:truth.errors};
+      const loginAudit = truth.audit;
+      const records = truth.records;
       if (req.user.zona) records = records.filter(r=>r.zona===req.user.zona);
       if (req.user.region) records = records.filter(r=>r.region===req.user.region);
       if (req.user.planta) records = records.filter(r=>r.planta===req.user.planta);
@@ -4011,25 +4058,7 @@ app.get('/api/reporte', requireAuth, (req, res) => {
         resumen:{ totalTurnos:0, programadosExigibles:0, totalCitaciones:0, operadoresConCitacion:0, operadoresPorTurno:0, cumplimientoReferenciaPct:null, cumplimientoCitacionPct:null, cumplimientoTurnoPct:null, totalLogeo:0, logeadosAlCorte:0, pendientesIngreso:0, asignados:0, primeraCarga:0, operadoresCriticos:0, tiempoMuertoPromedioMin:null, adelantadosPct:null, adelantadosCantidad:0, filasSinReconocer:0 },
         porPlanta:[], rankingAdelantados:[], rankingTiempoMuertoNacional:[], erroresConstruccion:Array.isArray(built.errors)?built.errors:[]
       });
-      const byPlant = plantNames.map(planta=>{
-        const rs=records.filter(r=>r.planta===planta);
-        const logged=rs.filter(r=>hasMinute(r.logeoMin));
-        const tm=rs.filter(r=>hasMinute(r.tiempoMuertoMin));
-        return {
-          planta,
-          zona:ensurePlant(planta).zona,
-          region:ensurePlant(planta).region,
-          turnos:rs.length,
-          citaciones:rs.filter(r=>r.citacionAplicada).length,
-          logeo:logged.length,
-          asignados:statusSchema.hasAssignmentField?rs.filter(r=>hasMinute(r.asignacionMin)).length:null,
-          primeraCarga:rs.filter(r=>hasMinute(r.primeraCargaMin)).length,
-          pendientesIngreso:rs.filter(r=>!hasMinute(r.logeoMin)).length,
-          adherenciaLogeo:rs.length?round1(logged.length/rs.length*100):null,
-          cumplimientoReferencia:rs.length?round1(rs.filter(r=>r.categoria==='a_tiempo').length/rs.length*100):null,
-          tiempoMuertoPromedioMin:tm.length?round1(tm.reduce((s,r)=>s+r.tiempoMuertoMin,0)/tm.length):null,
-        };
-      });
+      const byPlant = truth.porPlanta;
       const tmAll=records.filter(r=>hasMinute(r.tiempoMuertoMin));
       const adelantados=records.filter(r=>r.categoria==='adelantado');
       let unknown = 0;
@@ -4071,21 +4100,25 @@ app.get('/api/reporte', requireAuth, (req, res) => {
           cumplimientoReferenciaPct:records.length?round1(records.filter(r=>r.categoria==='a_tiempo').length/records.length*100):null,
           cumplimientoCitacionPct:records.filter(r=>r.citacionAplicada).length?round1(records.filter(r=>r.citacionAplicada && r.categoria==='a_tiempo').length/records.filter(r=>r.citacionAplicada).length*100):null,
           cumplimientoTurnoPct:records.filter(r=>!r.citacionAplicada).length?round1(records.filter(r=>!r.citacionAplicada && r.categoria==='a_tiempo').length/records.filter(r=>!r.citacionAplicada).length*100):null,
-          totalLogeo:loginAudit.loginMostradoKpi,
-          loginFuente:loginAudit.loginMostradoKpi,
-          logeadosAlCorte:records.filter(r=>hasMinute(r.logeoMin)).length,
-          logeadosConciliados:records.filter(r=>hasMinute(r.logeoMin)).length,
-          pendientesIngreso:records.filter(r=>!hasMinute(r.logeoMin)).length,
-          asignados:statusSchema.hasAssignmentField?records.filter(r=>hasMinute(r.asignacionMin)).length:null,
-          primeraCarga:records.filter(r=>hasMinute(r.primeraCargaMin)).length,
-          operadoresCriticos:records.filter(r=>r.categoria==='atraso_critico' || (statusSchema.hasAssignmentField&&hasMinute(r.logeoMin)&&!hasMinute(r.asignacionMin))).length,
-          tiempoMuertoPromedioMin:statusSchema.hasAssignmentField&&tmAll.length?round1(tmAll.reduce((s,r)=>s+r.tiempoMuertoMin,0)/tmAll.length):null,
+          totalLogeo:truth.summary.totalLogeo,
+          loginFuente:truth.reconciliation.loginFuente,
+          logeadosAlCorte:truth.summary.totalLogeo,
+          logeadosConciliados:truth.summary.totalLogeo,
+          pendientesIngreso:truth.summary.pendientesIngreso,
+          asignados:truth.summary.asignados,
+          primeraCarga:truth.summary.primeraCarga,
+          operadoresCriticos:truth.summary.operadoresCriticos,
+          tiempoMuertoPromedioMin:truth.summary.tiempoMuertoPromedioMin,
+          tiempoMuertoStats:truth.summary.tiempoMuertoStats,
+          validacionKpi:truth.summary.validacion,
+          conciliacionLogin:truth.reconciliation,
           adelantadosPct:records.length?round1(adelantados.length/records.length*100):null,
           adelantadosCantidad:adelantados.length,
           filasSinReconocer:unknown,
           filasSinReconocerDetalle:{ plantaVacia:0, codigoDesconocido:unknown },
           fuentes: sourceCoverageForDate(fecha),
           statusSchema,
+          motorUnico:{revision:operationRevisionFingerprint(),dataset:'operador_programado_dia'},
         },
         porPlanta:byPlant,
         rankingAdelantados:[...adelantados].sort((a,b)=>(Number(b.adelantoMin)||0)-(Number(a.adelantoMin)||0)).slice(0,10),
@@ -4116,8 +4149,9 @@ app.post('/api/historico/snapshot', requireAuth, (req,res) => {
   try {
     const fecha=safeText(req.body?.fecha || req.query?.fecha || req.user?.fecha || '');
     if (!fecha) return res.status(400).json({error:'Fecha requerida para crear snapshot'});
-    const built=buildRecordsWithDiagnostics(fecha);
-    let records=Array.isArray(built?.records)?built.records:[];
+    const truth=buildOperationalTruth(fecha,{});
+    const built={records:truth.records,errors:truth.errors};
+    let records=Array.isArray(truth.records)?truth.records:[];
     if (req.user?.zona) records=records.filter(r=>r?.zona===req.user.zona);
     if (req.user?.region) records=records.filter(r=>r?.region===req.user.region);
     if (req.user?.planta) records=records.filter(r=>r?.planta===req.user.planta);
@@ -4134,13 +4168,14 @@ app.post('/api/historico/snapshot', requireAuth, (req,res) => {
         cumplimientoReferenciaPct:records.length?round1(records.filter(r=>r?.categoria==='a_tiempo').length/records.length*100):null,
         cumplimientoCitacionPct:cit.length?round1(cit.filter(r=>r?.categoria==='a_tiempo').length/cit.length*100):null,
         cumplimientoTurnoPct:noCit.length?round1(noCit.filter(r=>r?.categoria==='a_tiempo').length/noCit.length*100):null,
-        totalLogeo:records.filter(r=>hasMinute(r?.logeoMin)).length,
-        logeadosAlCorte:records.filter(r=>hasMinute(r?.logeoMin)).length,
-        pendientesIngreso:records.filter(r=>!hasMinute(r?.logeoMin)).length,
-        asignados:records.filter(r=>hasMinute(r?.asignacionMin)).length,
-        primeraCarga:records.filter(r=>hasMinute(r?.primeraCargaMin)).length,
-        operadoresCriticos:records.filter(r=>r?.categoria==='atraso_critico' || (hasMinute(r?.logeoMin)&&!hasMinute(r?.asignacionMin))).length,
-        tiempoMuertoPromedioMin:tmAll.length?round1(tmAll.reduce((s,r)=>s+(Number(r?.tiempoMuertoMin)||0),0)/tmAll.length):null,
+        totalLogeo:operationalSummary(records).totalLogeo,
+        logeadosAlCorte:operationalSummary(records).totalLogeo,
+        pendientesIngreso:operationalSummary(records).pendientesIngreso,
+        asignados:operationalSummary(records).asignados,
+        primeraCarga:operationalSummary(records).primeraCarga,
+        operadoresCriticos:operationalSummary(records).operadoresCriticos,
+        tiempoMuertoPromedioMin:operationalSummary(records).tiempoMuertoPromedioMin,
+        tiempoMuertoStats:operationalSummary(records).tiempoMuertoStats,
         fuentes:sourceCoverageForDate(fecha),
       },
       porPlanta,
@@ -4185,27 +4220,7 @@ app.get('/api/historico', requireAuth, (req,res) => {
 
 
 function recordsToPlantRows(records) {
-  const safe = Array.isArray(records) ? records : [];
-  const plantNames = [...new Set(safe.map(r=>safeText(r?.planta)).filter(Boolean))];
-  return plantNames.map(planta=>{
-    const rs=safe.filter(r=>r?.planta===planta);
-    const logged=rs.filter(r=>hasMinute(r?.logeoMin));
-    const tm=rs.filter(r=>hasMinute(r?.tiempoMuertoMin));
-    return {
-      planta,
-      zona:ensurePlant(planta).zona,
-      region:ensurePlant(planta).region,
-      turnos:rs.length,
-      citaciones:rs.filter(r=>r?.citacionAplicada===true).length,
-      logeo:logged.length,
-      asignados:rs.filter(r=>hasMinute(r?.asignacionMin)).length,
-      primeraCarga:rs.filter(r=>hasMinute(r?.primeraCargaMin)).length,
-      pendientesIngreso:rs.filter(r=>!hasMinute(r?.logeoMin)).length,
-      adherenciaLogeo:rs.length?round1(logged.length/rs.length*100):null,
-      cumplimientoReferencia:rs.length?round1(rs.filter(r=>r?.categoria==='a_tiempo').length/rs.length*100):null,
-      tiempoMuertoPromedioMin:tm.length?round1(tm.reduce((sum,r)=>sum+(Number(r?.tiempoMuertoMin)||0),0)/tm.length):null,
-    };
-  });
+  return operationalPlantRows(Array.isArray(records)?records:[]);
 }
 
 
