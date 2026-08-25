@@ -357,6 +357,8 @@ const FIELDS = {
   sourceSheet: ['cco_source_sheet','__cco_source_sheet'],
   sourceRow: ['cco_source_row','__cco_source_row'],
   operationalDate: ['cco_operational_date','__cco_operational_date'],
+  equipoNumero: ['numero_equipo','número equipo','numero equipo'],
+  equipoDescripcion: ['descripcion_equipo','descripción equipo','descripcion equipo'],
 };
 
 
@@ -771,6 +773,35 @@ function rowOperator(row) {
 // Genera todas las claves útiles para conciliar un operador entre fuentes.
 // StatusBreakdown suele identificar por Numero Funcionario, mientras otros
 // archivos pueden traer ID Operador y/o nombre. Indexamos por ambos cuando existen.
+
+function thirdPartyEquipmentKey(row){
+  if(!row||typeof row!=='object')return '';
+  const idRaw=safeText(pick(row,FIELDS.id));
+  const op=rowOperator(row);
+  const nameRaw=safeText(op?.nombre);
+
+  // Turnos de terceros: priorizar MX-#### escrito en el nombre;
+  // usar TER-#### solo como fallback.
+  const isThird=/^TER[-\s]?\d+/i.test(idRaw)||/operador\s+tercero/i.test(nameRaw);
+  if(isThird){
+    let m=nameRaw.match(/\bMX[-\s]?(\d+)\b/i);
+    if(m)return String(Number(m[1]));
+    m=idRaw.match(/\bTER[-\s]?(\d+)\b/i);
+    if(m)return String(Number(m[1]));
+    return '';
+  }
+
+  // StatusBreakdown: el número de equipo identifica el MX utilizado.
+  const eqNum=pick(row,FIELDS.equipoNumero);
+  if(eqNum!==null&&eqNum!==undefined&&String(eqNum).trim()!==''){
+    const n=String(eqNum).replace(/\.0$/,'').replace(/\D/g,'');
+    if(n)return String(Number(n));
+  }
+  const eqDesc=safeText(pick(row,FIELDS.equipoDescripcion));
+  const m=eqDesc.match(/\bMX[-\s]?(\d+)\b/i);
+  return m?String(Number(m[1])):'';
+}
+
 function operatorMatchKeys(row) {
   const keys = [];
   const id = inferOperatorId(row);
@@ -778,6 +809,8 @@ function operatorMatchKeys(row) {
   const op = rowOperator(row);
   const nombre = normalizeName(op.nombre);
   if (nombre && !/^operador\s+\d+$/.test(nombre) && nombre !== 'sin nombre') keys.push(`name:${nombre}`);
+  const eq=thirdPartyEquipmentKey(row);
+  if(eq)keys.push(`equipment:${eq}`);
   return [...new Set(keys)];
 }
 
@@ -1224,8 +1257,12 @@ function buildOperatorRecords(fecha = '') {
     const plantaOriginal = resolvePlantFromRow(t);
     const pCfg = ensurePlant(plantaOriginal, safeText(pick(t, FIELDS.zona)) || undefined);
     const planta = pCfg.nombre;
-    const turnoMin = parseTimeMinutes(pick(t, FIELDS.turno));
+    const turnoRaw = pick(t, FIELDS.turno);
+    const turnoMin = parseTimeMinutes(turnoRaw);
     if (!Number.isFinite(turnoMin)) throw new Error('Turno inválido o ausente');
+    // Guard-rail: el turno mostrado/exportado siempre deriva del campo real de Turnos.
+    // No se permite sustituirlo por Login, Asignación, Citación u otro evento.
+    if(turnoMin<0||turnoMin>=1440)throw new Error(`Turno fuera de rango: ${safeText(turnoRaw)}`);
 
     const cs = rowsFromMultiIndex(cByKey, t);
     // La fuente ya fue limitada exclusivamente a operadores con recomendación explícita
@@ -1355,7 +1392,7 @@ function buildOperatorRecords(fecha = '') {
 
     return {
       key, id, nombre, planta, zona: pCfg.zona, region: pCfg.region,
-      turnoMin, citacionMin, citacionAplicada, referenciaMin, referenciaTipo, referenciaAbs: referenceAbs, logeoMin, asignacionMin, primeraCargaMin,
+      turnoMin, turnoFuenteRaw:safeText(turnoRaw), citacionMin, citacionAplicada, referenciaMin, referenciaTipo, referenciaAbs: referenceAbs, logeoMin, asignacionMin, primeraCargaMin,
       horaTurno: fmtMinutes(turnoMin), horaCitacion: fmtMinutes(citacionMin), horaReferencia: fmtMinutes(referenciaMin), horaLogeo: fmtMinutes(logeoMin), horaAsignacion: fmtMinutes(asignacionMin), horaPrimeraCarga: fmtMinutes(primeraCargaMin),
       turno: fmtMinutes(turnoMin), citacionHora: fmtMinutes(citacionMin), referenciaHora: fmtMinutes(referenciaMin), logeo: fmtMinutes(logeoMin), asignacion: fmtMinutes(asignacionMin), primeraCarga: fmtMinutes(primeraCargaMin),
       conLogeo: Number.isFinite(logeoMin), asignado: Number.isFinite(asignacionMin), conPrimeraCarga: Number.isFinite(primeraCargaMin),
@@ -1422,10 +1459,16 @@ function buildOperationalTruth(fecha='',scope={}){
   let records=Array.isArray(built.records)?built.records:[];
   records=filterScope(records,scope||{});
   const summary=operationalSummary(records),audit=loginSourceAudit(fecha,records);
+  const reconciliationModes={
+    totalProgramados:records.length,
+    conLogeo:records.filter(r=>hasMinute(r.logeoMin)).length,
+    tercerosConLogeo:records.filter(r=>/^TER[-\s]?\d+/i.test(String(r.id||''))&&hasMinute(r.logeoMin)).length,
+    propiosConLogeo:records.filter(r=>!/^TER[-\s]?\d+/i.test(String(r.id||''))&&hasMinute(r.logeoMin)).length
+  };
   const reconciliation={loginFuente:Number(audit.loginDespuesFiltroFecha||0),loginConciliado:summary.totalLogeo};
   reconciliation.loginSinCruce=Math.max(0,reconciliation.loginFuente-reconciliation.loginConciliado);
   reconciliation.ok=reconciliation.loginFuente===reconciliation.loginConciliado;
-  return {fecha,records,summary,porPlanta:operationalPlantRows(records),audit,reconciliation,errors:built.errors||[]};
+  return {fecha,records,summary,porPlanta:operationalPlantRows(records),audit,reconciliation,reconciliationModes,errors:built.errors||[]};
 }
 
 function buildRecordsWithDiagnostics(fecha='') {
@@ -4254,7 +4297,7 @@ app.get('/api/operacion/fecha-audit.csv', requireAuth, (req,res)=>{
 app.get('/api/operacion/auditoria-total', requireAuth, (req,res)=>{
   try{
     const fecha=safeText(req.query.fecha||req.user.fecha||''),truth=buildOperationalTruth(fecha,effectiveScope(req));
-    return res.json({ok:truth.summary.validacion.ok&&truth.reconciliation.ok,fecha,motor:'operador_programado_dia',kpi:truth.summary,conciliacionLogin:truth.reconciliation,loginAudit:truth.audit,erroresConstruccion:truth.errors,registros:truth.records.map(r=>({operadorId:r.id,operador:r.nombre,planta:r.planta,turno:r.turnoMin,login:r.logeoMin,asignacion:r.asignacionMin,primeraCarga:r.primeraCargaMin,tiempoMuerto:r.tiempoMuertoMin,categoria:r.categoria,trazabilidad:r.trazabilidad||null}))});
+    return res.json({ok:truth.summary.validacion.ok,fecha,motor:'operador_programado_dia',kpi:truth.summary,conciliacionLogin:truth.reconciliation,modosConciliacion:truth.reconciliationModes,loginAudit:truth.audit,erroresConstruccion:truth.errors,registros:truth.records.map(r=>({operadorId:r.id,operador:r.nombre,planta:r.planta,turno:r.turnoMin,login:r.logeoMin,asignacion:r.asignacionMin,primeraCarga:r.primeraCargaMin,tiempoMuerto:r.tiempoMuertoMin,categoria:r.categoria,trazabilidad:r.trazabilidad||null}))});
   }catch(err){return res.status(422).json({error:'No fue posible ejecutar auditoría operacional',detalle:err?.message||String(err)});}
 });
 app.get('/api/operacion/export.csv', requireAuth, (req,res)=>{
