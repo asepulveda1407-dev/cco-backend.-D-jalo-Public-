@@ -1808,7 +1808,7 @@ app.put('/api/plantas/:nombre/config', requireAuth, (req, res) => {
 
 
 // ===== v3.1 · TORRE DE CONTROL DE FLOTA / MANTENIMIENTO =====
-const FLEET_STATUS = new Set(['available','preventive','internal','external','oos','parts','stale']);
+const FLEET_STATUS = new Set(['available','preventive','internal','external','oos','parts','operational_nonrecoverable','nonrecoverable','stale']);
 function normHeaderText(v){return safeText(v).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();}
 function fleetPick(row, aliases){
   if(!row || typeof row!=='object') return '';
@@ -1827,6 +1827,12 @@ function fleetPick(row, aliases){
 }
 function fleetStatusFromSource(sourceStatus, activeFlag){
   const s=normHeaderText(sourceStatus), a=normHeaderText(activeFlag);
+
+  // Taxonomía literal del archivo Excel. Estas reglas deben evaluarse antes
+  // de "operativo", "no operativo" y otros estados genéricos.
+  if(s.includes('operativo no recuperable')) return 'operational_nonrecoverable';
+  if(s.includes('no recuperable')) return 'nonrecoverable';
+
   if(s.includes('no operativo') || s.includes('fuera de servicio') || s.includes('no se activara')) return 'oos';
   if(s.includes('mant') && s.includes('prevent')) return 'preventive';
   if(s.includes('taller interno')) return 'internal';
@@ -1870,7 +1876,12 @@ function normalizeFleetRow(row, index){
 }
 function sanitizeFleetItem(item){
   const x={...item};
-  x.status=FLEET_STATUS.has(x.status)?x.status:'stale';
+  const sourceDerived=fleetStatusFromSource(x.sourceStatus,x.activeFlag);
+  if(sourceDerived==='operational_nonrecoverable' || sourceDerived==='nonrecoverable'){
+    x.status=sourceDerived;
+  }else{
+    x.status=FLEET_STATUS.has(x.status)?x.status:'stale';
+  }
   x.progress=clamp(Number(x.progress||0),0,100);
   x.history=Array.isArray(x.history)?x.history.slice(-100):[];
   return x;
