@@ -276,7 +276,7 @@ tr.sev-critico{background:#fff5f5}tr.sev-medio{background:#fffaf0}tr.sev-anomali
 
 
 /* v3.9 */
-.hist-ms{position:relative}.hist-ms-btn{width:100%;min-height:38px;border:1px solid #cddff0;background:#fff;border-radius:8px;padding:8px 34px 8px 10px;text-align:left;font-size:10px;color:#244764;position:relative}.hist-ms-btn:after{content:"▾";position:absolute;right:11px;top:10px}.hist-ms.open .hist-ms-btn:after{content:"▴"}.hist-ms-menu{display:none;position:absolute;z-index:50;top:42px;left:0;right:0;background:#fff;border:1px solid #cddff0;border-radius:10px;box-shadow:0 10px 28px rgba(35,74,111,.14);padding:8px;max-height:300px;overflow:auto}.hist-ms.open .hist-ms-menu{display:block}.hist-ms-search{width:100%;margin-bottom:6px}.hist-ms-actions{display:flex;gap:6px;margin-bottom:6px}.hist-ms-actions button{flex:1;padding:6px!important;font-size:9px!important}.hist-ms-option{display:flex;align-items:center;gap:7px;padding:5px;border-radius:6px;font-size:10px}.hist-ms-option:hover{background:#f4f8fc}.hist-ms-option input{width:auto}.hist-mode-segment{display:grid;grid-template-columns:1fr 1fr;border:1px solid #cddff0;border-radius:9px;overflow:hidden;background:#fff}.hist-mode-segment button{border:0!important;border-radius:0!important;background:#fff!important;color:#31516f!important;box-shadow:none!important;padding:10px!important}.hist-mode-segment button.active{background:#2f80ed!important;color:#fff!important}.history-table{table-layout:auto}.history-table td,.history-table th{white-space:normal;overflow-wrap:anywhere;vertical-align:top}.hist-two-col{align-items:start}.hist-two-col>div{min-width:0}.history-table-wrap{overflow-x:auto}.hist-ranking-name{min-width:210px}.hist-ranking-plant{min-width:120px}.hist-ranking-value{min-width:72px}.hist-ranking-delta{min-width:86px}@media(max-width:900px){.hist-two-col{grid-template-columns:1fr}.hist-ranking-name{min-width:180px}}
+.hist-ms-picked{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px;min-height:0}.hist-ms-chip{display:inline-flex;align-items:center;gap:4px;background:#eef6ff;border:1px solid #c9def4;border-radius:999px;padding:3px 7px;font-size:9px;color:#244764}.hist-ms-chip button{border:0!important;background:transparent!important;color:#55738e!important;padding:0!important;min-width:auto!important;box-shadow:none!important;font-size:11px!important;line-height:1!important}.hist-ms-chip-more{font-size:9px;color:#5b7287;padding:3px 2px}.hist-ms{position:relative}.hist-ms-btn{width:100%;min-height:38px;border:1px solid #cddff0;background:#fff;border-radius:8px;padding:8px 34px 8px 10px;text-align:left;font-size:10px;color:#244764;position:relative}.hist-ms-btn:after{content:"▾";position:absolute;right:11px;top:10px}.hist-ms.open .hist-ms-btn:after{content:"▴"}.hist-ms-menu{display:none;position:absolute;z-index:50;top:42px;left:0;right:0;background:#fff;border:1px solid #cddff0;border-radius:10px;box-shadow:0 10px 28px rgba(35,74,111,.14);padding:8px;max-height:300px;overflow:auto}.hist-ms.open .hist-ms-menu{display:block}.hist-ms-search{width:100%;margin-bottom:6px}.hist-ms-actions{display:flex;gap:6px;margin-bottom:6px}.hist-ms-actions button{flex:1;padding:6px!important;font-size:9px!important}.hist-ms-option{display:flex;align-items:center;gap:7px;padding:5px;border-radius:6px;font-size:10px}.hist-ms-option:hover{background:#f4f8fc}.hist-ms-option input{width:auto}.hist-mode-segment{display:grid;grid-template-columns:1fr 1fr;border:1px solid #cddff0;border-radius:9px;overflow:hidden;background:#fff}.hist-mode-segment button{border:0!important;border-radius:0!important;background:#fff!important;color:#31516f!important;box-shadow:none!important;padding:10px!important}.hist-mode-segment button.active{background:#2f80ed!important;color:#fff!important}.history-table{table-layout:auto}.history-table td,.history-table th{white-space:normal;overflow-wrap:anywhere;vertical-align:top}.hist-two-col{align-items:start}.hist-two-col>div{min-width:0}.history-table-wrap{overflow-x:auto}.hist-ranking-name{min-width:210px}.hist-ranking-plant{min-width:120px}.hist-ranking-value{min-width:72px}.hist-ranking-delta{min-width:86px}@media(max-width:900px){.hist-two-col{grid-template-columns:1fr}.hist-ranking-name{min-width:180px}}
 
 /* ===== v3.9.2 · diagnóstico plegable + rendimiento ===== */
 .hist-diagnostics-details{border:1px solid #d8e7f5;border-radius:12px;background:#fff;margin:10px 0 14px;overflow:hidden}
@@ -725,6 +725,17 @@ table{border-collapse:separate!important;border-spacing:0!important}
           <span id="histProgressText_tam">0% · Esperando archivo</span>
         </div>
         <div class="hist-source-status" id="histSource_tam">Sin datos</div><div class="hist-file-list" id="histFileList_tam"></div>
+      </div>
+      <div class="hist-drop-card" data-source="gtiempos" id="drop_gtiempos">
+        <div class="hist-drop-icon">📊</div><b>Base KPI GTIEMPOS</b>
+        <div class="small">Horas trabajadas · vueltas · HHEE · volumen · zona · planta</div>
+        <input type="file" id="histFiles_gtiempos" multiple accept=".xlsx,.xls,.csv,.txt,.pdf" hidden>
+        <button type="button" class="secondary hist-file-btn" data-source="gtiempos">Seleccionar archivos</button>
+        <div class="hist-progress" id="histProgress_gtiempos" aria-label="Progreso de carga">
+          <div class="hist-progress-bar" id="histProgressBar_gtiempos" style="width:0%"></div>
+          <span id="histProgressText_gtiempos">0% · Esperando archivo</span>
+        </div>
+        <div class="hist-source-status" id="histSource_gtiempos">Sin datos</div><div class="hist-file-list" id="histFileList_gtiempos"></div>
       </div>
     </div>
     <div class="history-note">También puedes <b>arrastrar y soltar</b> uno o varios archivos sobre cada tarjeta. XLSX/XLS/CSV/TXT participan en los cálculos. PDF se registra como <b>solo lectura</b> y no genera KPI si no contiene datos estructurados extraíbles.</div>
@@ -2941,7 +2952,7 @@ window.towerDragStart=towerDragStart;window.towerDragOver=towerDragOver;window.t
 
 let historicoUltimo=null;
 let histCatalogo={plants:[],zones:[],operators:[],sources:[]};
-const HIST_SOURCE_KEYS=['turnos','citaciones','status','tam'];
+const HIST_SOURCE_KEYS=['turnos','citaciones','status','tam','gtiempos'];
 const histCharts={};
 let histFilesReadOnly={turnos:[],citaciones:[],status:[],tam:[]};
 
@@ -3268,7 +3279,7 @@ async function histProcessWorkbook(source,file,wb,diag){
 function histDiagFromServer(source,fileName,d){
   const diag={
     id:d?.id||`srv-${source}-${fileName}`,file:fileName,source,
-    sourceLabel:source==='turnos'?'Turnos':source==='citaciones'?'Citaciones':source==='tam'?'Marcaje TAM':'StatusBreakdown',
+    sourceLabel:source==='turnos'?'Turnos':source==='citaciones'?'Citaciones':source==='tam'?'Marcaje TAM':source==='gtiempos'?'Base KPI GTIEMPOS':'StatusBreakdown',
     startedAt:d?.startedAt||new Date().toISOString(),status:d?.status||'procesando',
     rowsFound:Number(d?.rowsFound||0),rowsStored:Number(d?.rowsStored||0),
     rowsDiscarded:Number(d?.rowsRejected||0)+Number(d?.rowsFiltered||0),
@@ -3408,7 +3419,7 @@ async function procesarArchivosHistoricos(source,files){
   let ok=0,partial=0,errors=0,totalStored=0;
 
   const tasks=selected.map(async file=>{
-    const diag={id:`local-${Date.now()}-${Math.random()}`,file:file.name,source,sourceLabel:source==='turnos'?'Turnos':source==='citaciones'?'Citaciones':source==='tam'?'Marcaje TAM':'StatusBreakdown',startedAt:new Date().toISOString(),status:'procesando',rowsFound:0,rowsStored:0,rowsDiscarded:0,columnCount:0,columns:[],missing:[],reason:'Archivo recibido · preparando cola...',log:[]};
+    const diag={id:`local-${Date.now()}-${Math.random()}`,file:file.name,source,sourceLabel:source==='turnos'?'Turnos':source==='citaciones'?'Citaciones':source==='tam'?'Marcaje TAM':source==='gtiempos'?'Base KPI GTIEMPOS':'StatusBreakdown',startedAt:new Date().toISOString(),status:'procesando',rowsFound:0,rowsStored:0,rowsDiscarded:0,columnCount:0,columns:[],missing:[],reason:'Archivo recibido · preparando cola...',log:[]};
     histSetDiagnostic(source,diag);
     try{
       const r=await histReadFile(source,file,diag),d=r.diagnostic||diag;
@@ -3490,14 +3501,61 @@ function renderHistFileLists(){
 }
 
 const histSelections={zonas:new Set(),plantas:new Set(),operadores:new Set()};
+const HIST_SELECTION_STORAGE='cco_hist_filters_v485';
+function saveHistSelections(){
+  try{localStorage.setItem(HIST_SELECTION_STORAGE,JSON.stringify({
+    zonas:[...histSelections.zonas],plantas:[...histSelections.plantas],operadores:[...histSelections.operadores]
+  }));}catch{}
+}
+function restoreHistSelections(){
+  try{
+    const x=JSON.parse(localStorage.getItem(HIST_SELECTION_STORAGE)||'{}');
+    for(const v of x.zonas||[])histSelections.zonas.add(v);
+    for(const v of x.plantas||[])histSelections.plantas.add(v);
+    for(const v of x.operadores||[])histSelections.operadores.add(v);
+  }catch{}
+}
+function histCascadeSelection(rootId){
+  if(rootId==='histZonaMs' && histSelections.zonas.size===0){
+    histSelections.plantas.clear();
+    histSelections.operadores.clear();
+  }
+  saveHistSelections();
+}
 function createHistMultiSelect(rootId,items,selected,onChange,placeholder){
-  const root=document.getElementById(rootId);if(!root)return;const list=(items||[]).map(x=>typeof x==='string'?{value:x,label:x}:x),selectedSet=selected||new Set();
-  root.innerHTML=`<button type="button" class="hist-ms-btn">${placeholder}</button><div class="hist-ms-menu"><input class="hist-ms-search" placeholder="Buscar..."><div class="hist-ms-actions"><button type="button" data-act="all" class="secondary">Seleccionar todo</button><button type="button" data-act="clear" class="secondary">Limpiar</button></div><div class="hist-ms-options"></div></div>`;
-  const btn=root.querySelector('.hist-ms-btn'),options=root.querySelector('.hist-ms-options'),search=root.querySelector('.hist-ms-search');
-  const label=()=>btn.textContent=selectedSet.size?`${selectedSet.size} seleccionado(s)`:placeholder;
-  const draw=()=>{const q=(search.value||'').toLowerCase();options.innerHTML=list.filter(x=>String(x.label).toLowerCase().includes(q)).map(x=>`<label class="hist-ms-option"><input type="checkbox" value="${escapeHtml(x.value)}" ${selectedSet.has(x.value)?'checked':''}><span>${escapeHtml(x.label)}</span></label>`).join('');options.querySelectorAll('input').forEach(cb=>cb.onchange=()=>{cb.checked?selectedSet.add(cb.value):selectedSet.delete(cb.value);label();onChange?.();});};
+  const root=document.getElementById(rootId);if(!root)return;
+  const list=(items||[]).map(x=>typeof x==='string'?{value:x,label:x}:x),selectedSet=selected||new Set();
+  root.innerHTML=`<button type="button" class="hist-ms-btn">${placeholder}</button><div class="hist-ms-picked"></div><div class="hist-ms-menu"><input class="hist-ms-search" placeholder="Buscar..."><div class="hist-ms-actions"><button type="button" data-act="all" class="secondary">Seleccionar todo</button><button type="button" data-act="clear" class="secondary">Limpiar</button></div><div class="hist-ms-options"></div></div>`;
+  const btn=root.querySelector('.hist-ms-btn'),picked=root.querySelector('.hist-ms-picked'),options=root.querySelector('.hist-ms-options'),search=root.querySelector('.hist-ms-search');
+  const itemMap=new Map(list.map(x=>[x.value,x.label]));
+  const label=()=>{
+    const vals=[...selectedSet].filter(v=>itemMap.has(v));
+    btn.textContent=vals.length?`${vals.length} seleccionado(s)`:placeholder;
+    const first=vals.slice(0,5);
+    picked.innerHTML=first.map(v=>`<span class="hist-ms-chip">${escapeHtml(itemMap.get(v)||v)}<button type="button" data-remove="${encodeURIComponent(v)}" title="Quitar">×</button></span>`).join('')+(vals.length>5?`<span class="hist-ms-chip-more">+${vals.length-5} más</span>`:'');
+    picked.querySelectorAll('[data-remove]').forEach(b=>b.onclick=e=>{
+      e.stopPropagation();selectedSet.delete(decodeURIComponent(b.dataset.remove||''));histCascadeSelection(rootId);draw();label();onChange?.();
+    });
+  };
+  const draw=()=>{
+    const q=(search.value||'').toLowerCase();
+    options.innerHTML=list.filter(x=>String(x.label).toLowerCase().includes(q)).map(x=>`<label class="hist-ms-option"><input type="checkbox" value="${escapeHtml(x.value)}" ${selectedSet.has(x.value)?'checked':''}><span>${escapeHtml(x.label)}</span></label>`).join('');
+    options.querySelectorAll('input').forEach(cb=>cb.onchange=()=>{
+      cb.checked?selectedSet.add(cb.value):selectedSet.delete(cb.value);
+      histCascadeSelection(rootId);label();onChange?.();
+    });
+  };
   btn.onclick=e=>{e.stopPropagation();document.querySelectorAll('.hist-ms.open').forEach(x=>{if(x!==root)x.classList.remove('open')});root.classList.toggle('open')};
-  root.querySelector('[data-act="all"]').onclick=()=>{list.forEach(x=>selectedSet.add(x.value));draw();label();onChange?.()};root.querySelector('[data-act="clear"]').onclick=()=>{selectedSet.clear();draw();label();onChange?.()};search.oninput=draw;draw();label();
+  root.querySelector('[data-act="all"]').onclick=()=>{
+    list.forEach(x=>selectedSet.add(x.value));histCascadeSelection(rootId);draw();label();onChange?.();
+  };
+  root.querySelector('[data-act="clear"]').onclick=()=>{
+    selectedSet.clear();
+    if(rootId==='histZonaMs'){histSelections.plantas.clear();histSelections.operadores.clear();}
+    if(rootId==='histPlantaMs')histSelections.operadores.clear();
+    histCascadeSelection(rootId);draw();label();onChange?.();
+  };
+  search.oninput=draw;draw();label();
 }
 document.addEventListener('click',e=>{if(!e.target.closest('.hist-ms'))document.querySelectorAll('.hist-ms.open').forEach(x=>x.classList.remove('open'))});
 function currentHistMode(){return document.querySelector('#histModeSegment button.active')?.dataset.mode||'logeo';}
@@ -3519,10 +3577,12 @@ async function cargarPlantasHistoricasPorModo(){
 
 function poblarFiltrosHistoricos(){
   const catalog=histCatalogo.plantCatalog||[], zoneItems=[...new Set((histCatalogo.zones||[]).filter(Boolean))].sort().map(x=>({value:x,label:x}));
-  const modeCatalog=(histCatalogo.modePlantCatalog||catalog);const plantItems=modeCatalog.filter(x=>!histSelections.zonas.size||histSelections.zonas.has(x.zona)).map(x=>({value:x.planta,label:x.registros?`${x.planta} · ${x.registros}`:x.planta}));
-  const validPlants=new Set(plantItems.map(x=>x.value));for(const p of [...histSelections.plantas])if(!validPlants.has(p))histSelections.plantas.delete(p);
+  const plantItems=catalog.filter(x=>!histSelections.zonas.size||histSelections.zonas.has(x.zona)).map(x=>({value:x.planta,label:x.planta}));
+  const validPlants=new Set(plantItems.map(x=>x.value));
+  for(const p of [...histSelections.plantas])if(!validPlants.has(p))histSelections.plantas.delete(p);
   const ops=(histCatalogo.operators||[]).filter(o=>(!histSelections.zonas.size||(o.zonas||[]).some(z=>histSelections.zonas.has(z)))&&(!histSelections.plantas.size||(o.plantas||[]).some(p=>histSelections.plantas.has(p)))).map(o=>({value:o.key,label:o.nombre||o.id||o.key}));
   const validOps=new Set(ops.map(x=>x.value));for(const o of [...histSelections.operadores])if(!validOps.has(o))histSelections.operadores.delete(o);
+  saveHistSelections();
   createHistMultiSelect('histZonaMs',zoneItems,histSelections.zonas,()=>{poblarFiltrosHistoricos();cargarHistorico()},'Nacional');
   createHistMultiSelect('histPlantaMs',plantItems,histSelections.plantas,()=>{poblarFiltrosHistoricos();cargarHistorico()},'Todas las plantas');
   createHistMultiSelect('histOperadorMs',ops,histSelections.operadores,()=>cargarHistorico(),'Todos los operadores');
@@ -3605,6 +3665,7 @@ function renderHistoricalCoverage(data){
     ['Citaciones período',od.citaciones||0,`${sr.citaciones||0} registros fuente`,od.citaciones?'hist-cross-good':'hist-cross-bad'],
     ['Status período',od.status||0,`${sr.status||0} registros consolidados`,od.status?'hist-cross-good':'hist-cross-bad'],
     ['TAM período',od.tam||0,`${sr.tam||0} registros TAM`,od.tam?'hist-cross-good':'hist-cross-warn'],
+    ['GTIEMPOS período',od.gtiempos||0,`${sr.gtiempos||0} registros GTIEMPOS`,od.gtiempos?'hist-cross-good':'hist-cross-warn'],
     ['Cruce Turno ↔ Citación',x.turnoCitacion||0,`${u.turnoSinCitacion||0} turnos sin citación`,x.turnoCitacion?'hist-cross-good':'hist-cross-bad'],
     ['Cruce Turno ↔ Status',x.turnoStatus||0,`${u.turnoSinStatus||0} turnos sin Status`,x.turnoStatus?'hist-cross-good':'hist-cross-bad'],
     ['Cruce 3 fuentes',x.tresFuentes||0,`${x.citacionLogin||0} citación + login`,x.tresFuentes?'hist-cross-good':'hist-cross-warn']
@@ -3796,7 +3857,12 @@ function renderHistoricoDashboard(data){
     histMetricCard('Operadores',hfmt(m.operadores),`${m.registros||0} operador/día`),
     histMetricCard('Plantas',hfmt(m.plantas),'Detectadas automáticamente')
   ].join('');
-  document.getElementById('histKpiRow2').innerHTML='';renderHistChartsV34(data);renderRankingOperacional();renderPlantRanking(data);renderFindings(data);requestAnimationFrame(()=>renderDetail(data));
+  document.getElementById('histKpiRow2').innerHTML=[
+    histMetricCard('Horas trabajadas',hfmt(m.horasTrabajadas,' h'),`${Number(m.horasTrabajadasN||0).toLocaleString('es-CL')} operador/día con dato`),
+    histMetricCard('Vueltas',hfmt(m.vueltas),`${Number(m.vueltasN||0).toLocaleString('es-CL')} operador/día con dato`),
+    histMetricCard('Horas extras',hfmt(m.horasExtras,' h'),`${Number(m.horasExtrasN||0).toLocaleString('es-CL')} operador/día con dato`),
+    histMetricCard('Volumen transportado',hfmt(m.volumenTransportado,' m³'),`${Number(m.volumenTransportadoN||0).toLocaleString('es-CL')} operador/día con dato`)
+  ].join('');renderHistChartsV34(data);renderRankingOperacional();renderPlantRanking(data);renderFindings(data);requestAnimationFrame(()=>renderDetail(data));
 }
 function destroyHistChart(id){if(histCharts[id]){histCharts[id].destroy();delete histCharts[id];}}
 function histChartEmpty(id,empty){
@@ -4056,6 +4122,7 @@ async function exportarHistoricoCSV(){
   }
 }
 function initHistIntelligence(){
+  restoreHistSelections();
   renderHistDiagnostics();
   HIST_SOURCE_KEYS.forEach(histDropSetup);
   document.getElementById('histConsultar')?.addEventListener('click',cargarHistorico);
@@ -4063,7 +4130,7 @@ function initHistIntelligence(){
   document.getElementById('histExportarAdherencia')?.addEventListener('click',exportarHistoricoAdherenciaCSV);
   document.getElementById('histExportarAuditoria')?.addEventListener('click',exportarHistoricoAuditoriaXLSX);
   document.getElementById('histPeriodoTipo')?.addEventListener('change',()=>{renderHistPeriodControls();cargarHistorico();});
-  document.querySelectorAll('#histModeSegment button').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('#histModeSegment button').forEach(x=>x.classList.toggle('active',x===btn));histModePlantCacheKey='';histCatalogo.modePlantCatalog=null;histSelections.plantas.clear();renderHistPeriodControls();syncRankingMetricOptions();cargarHistorico();}));
+  document.querySelectorAll('#histModeSegment button').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('#histModeSegment button').forEach(x=>x.classList.toggle('active',x===btn));histModePlantCacheKey='';histCatalogo.modePlantCatalog=null;saveHistSelections();renderHistPeriodControls();syncRankingMetricOptions();cargarHistorico();}));
   ['histTolTurnCitation','histTolAssignment','histTolTurn','histTolCitation','histAtrasoLeve','histAtrasoModerado'].forEach(id=>document.getElementById(id)?.addEventListener('change',cargarHistorico));
   document.getElementById('histRankingMetric')?.addEventListener('change',renderRankingOperacional);
   document.getElementById('histPlantDetail')?.addEventListener('change',renderPlantDetail);
@@ -4077,7 +4144,7 @@ function initHistIntelligence(){
 
 /* ===== Extensión Trazabilidad de solo lectura ===== */
 const histReadOnlyState={plants:new Set(),data:null,enabled:true,loading:false};
-function histReadOnlyQuery(includePlants=true){const p=histParams();p.delete('plantas');if(includePlants&&histReadOnlyState.plants.size)p.set('aiPlants',[...histReadOnlyState.plants].join(','));return p;}
+function histReadOnlyQuery(includePlants=true){const p=histParams();if(includePlants&&histReadOnlyState.plants.size)p.set('aiPlants',[...histReadOnlyState.plants].join(','));return p;}
 function renderHistReadOnlyPlants(data){const items=(data?.eligiblePlants||[]).map(x=>({value:x.planta,label:`${x.planta} · ${x.registros} ${data.mode==='citacion'?'citaciones':'logeos'}`})),valid=new Set(items.map(x=>x.value));for(const p of [...histReadOnlyState.plants])if(!valid.has(p))histReadOnlyState.plants.delete(p);createHistMultiSelect('histAiPlantMs',items,histReadOnlyState.plants,()=>refreshHistReadOnlyExtension(true),'Todas las plantas con datos');const box=document.getElementById('histAiPlantScope');if(box)box.textContent=`Modo ${String(data?.mode||currentHistMode()).toUpperCase()} · ${items.length} planta(s) con datos válidos · ${histReadOnlyState.plants.size?histReadOnlyState.plants.size+' seleccionada(s)':'todas por alcance'}.`;}
 function renderHistReadOnlyAnalysis(data){histReadOnlyState.data=data;renderHistReadOnlyPlants(data);const k=document.getElementById('histAiKpis');if(k)k.innerHTML=(data.auditedMetricRows||data.metricRows||[]).map(x=>{const value=x.value==null?'—':`${hfmt(x.value)}${x.unit||''}`;let sub=`Base válida: ${Number(x.denominator??x.n??0).toLocaleString('es-CL')}`;if(x.numerator!=null)sub=`${Number(x.numerator).toLocaleString('es-CL')} de ${Number(x.denominator||0).toLocaleString('es-CL')} · sin base: ${Number(x.missing||0).toLocaleString('es-CL')}`;else sub+=` · sin base: ${Number(x.missing||0).toLocaleString('es-CL')}`;if(x.coveragePct!=null)sub+=` · cobertura: ${hfmt(x.coveragePct,'%')}`;return histMetricCard(x.label,value,sub);}).join('');const adh=document.getElementById('histAiAdherence');if(adh){const a=data.adherence||{},label=a.primary==='adherenciaCitacion'?'Adherencia a Citación':'Adherencia al Turno';adh.innerHTML=a.current==null?`⚠ <b>${label}:</b> sin base suficiente en el alcance seleccionado.`:`✅ <b>${label}:</b> ${hfmt(a.current,'%')} · período anterior: ${hfmt(a.previous,'%')} · variación: ${a.delta==null?'—':`${a.delta>0?'+':''}${hfmt(a.delta,' pp')}`}.`;}
   const primary=data.adherence?.primary||'adherenciaTurno',rows=[];(data.comparisons?.zones||[]).slice(0,6).forEach(x=>rows.push(['Zona',x.name,x[primary],x[primary==='adherenciaCitacion'?'adherenciaCitacionN':'adherenciaTurnoN']]));(data.comparisons?.plants||[]).slice(0,10).forEach(x=>rows.push(['Planta',x.name,x[primary],x[primary==='adherenciaCitacion'?'adherenciaCitacionN':'adherenciaTurnoN']]));(data.comparisons?.operators||[]).slice(0,10).forEach(x=>rows.push(['Operador',x.operador,x[primary],x[primary==='adherenciaCitacion'?'adherenciaCitacionN':'adherenciaTurnoN']]));const tb=document.getElementById('histAiComparisons');if(tb)tb.innerHTML=rows.length?rows.map(r=>`<tr><td>${escapeHtml(r[0])}</td><td>${escapeHtml(r[1])}</td><td>${hfmt(r[2],'%')}</td><td>${Number(r[3]||0).toLocaleString('es-CL')}</td></tr>`).join(''):'<tr><td colspan="4" class="history-empty">Sin comparaciones suficientes.</td></tr>';
