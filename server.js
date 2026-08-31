@@ -2114,6 +2114,7 @@ const HIST_QUEUES = {
   citaciones:{busy:false,items:[]},
   status:{busy:false,items:[]},
   tam:{busy:false,items:[]},
+  gtiempos:{busy:false,items:[]},
 };
 
 const HIST_ETL_HEADER_ALIASES = {
@@ -2130,12 +2131,19 @@ const HIST_ETL_HEADER_ALIASES = {
   estadoAsignacion:[...OP_STATUS.fields.assignmentState],
   tamIngreso:['a.hora inicio','a hora inicio','a_hora_inicio','hora inicio tam','ingreso tam'],
   tamSalida:['a. hora fin','a hora fin','a_hora_fin','hora fin tam','salida tam'],
+  zona:['zona','zona_gtiempos','zona gtiempos'],
+  vueltas:['cantidad_tickets_dia','cantidad tickets dia','tickets dia','vueltas'],
+  volumen:['volumen_total_dia','volumen total dia','volumen'],
+  horasTrabajadas:['horas_trabajadas','horas trabajadas'],
+  hheeEntrada:['hhee_entrada','hhee entrada'],
+  hheeSalida:['hhee_salida','hhee salida'],
 };
 const HIST_ETL_REQUIRED = {
   turnos:[['operadorId','operador'],['fecha','semana']],
   citaciones:[['operadorId','operador'],['fecha']],
   status:[['operadorId','operador'],['fecha'],['estado','loginEstado']],
   tam:[['operadorId'],['fecha']],
+  gtiempos:[['operadorId','operador'],['fecha'],['planta']],
 };
 function etlCanonicalHeader(v){
   const k=normalizeKey(v);
@@ -2238,7 +2246,7 @@ function etlRecordQuality(rec){
 }
 function etlNormalizeRow(source,row,archivo,rowNumber,diag,statusAccumulator=null){
   const r=normalizeRows([row])[0]||{};
-  const base={source,archivo,rowIndex:rowNumber,fecha:null,planta:'',zona:'',operadorId:'',operadorNombre:'',operadorKey:'',camion:'',turnoMin:null,citacionMin:null,loginMin:null,asignacionMin:null,primeraCargaMin:null,tamIngresoMin:null,tamSalidaMin:null,tamSindicato:'',tamSubdivision:'',tamJefatura:'',quality:'completo',qualityIssues:[]};
+  const base={source,archivo,rowIndex:rowNumber,fecha:null,planta:'',zona:'',operadorId:'',operadorNombre:'',operadorKey:'',camion:'',turnoMin:null,citacionMin:null,loginMin:null,asignacionMin:null,primeraCargaMin:null,tamIngresoMin:null,tamSalidaMin:null,tamSindicato:'',tamSubdivision:'',tamJefatura:'',horasTrabajadas:null,vueltas:null,horasExtras:null,volumenTransportado:null,quality:'completo',qualityIssues:[]};
 
   if(source==='turnos'){
     const id=histPick(r,HIST_FIELD.turnos.operatorId),name=safeText(histPick(r,HIST_FIELD.turnos.operatorName)),key=histOperatorKey(id,name);
@@ -2340,6 +2348,30 @@ function etlNormalizeRow(source,row,archivo,rowNumber,diag,statusAccumulator=nul
       etlReason(diag,rowNumber,'PLANTA_NO_INFORMADA','PLANTA','El archivo no contiene planta para esta fila; se conserva para KPI nacional/operador.','partial');
     }
     return [rec];
+  }
+
+
+  if(source==='gtiempos'){
+    const id=histPick(r,HIST_FIELD.gtiempos.operatorId);
+    const name=safeText(histPick(r,HIST_FIELD.gtiempos.operatorName));
+    const key=histOperatorKey(id,name);
+    const fecha=parseDateKey(histPick(r,HIST_FIELD.gtiempos.date));
+    const plant=histResolvePlant(histPick(r,HIST_FIELD.gtiempos.plant));
+    const zoneRaw=safeText(histPick(r,HIST_FIELD.gtiempos.zone));
+    if(!key){etlReason(diag,rowNumber,'OPERADOR_NO_IDENTIFICABLE','ID_Operador','GTIEMPOS sin operador identificable','rejected');return [];}
+    if(!fecha){etlReason(diag,rowNumber,'FECHA_NO_RECONOCIBLE','Fecha','GTIEMPOS sin fecha válida','rejected');return [];}
+    if(!plant){etlReason(diag,rowNumber,'PLANTA_NO_HOMOLOGADA','Planta_GTiempos','GTIEMPOS sin planta homologable','partial');}
+    const hheeIn=histNumber(histPick(r,HIST_FIELD.gtiempos.overtimeIn))||0;
+    const hheeOut=histNumber(histPick(r,HIST_FIELD.gtiempos.overtimeOut))||0;
+    return [{
+      ...base,
+      fecha,planta:plant,zona:zoneRaw|| (plant?inferZona(plant):''),
+      operadorId:normalizeId(id),operadorNombre:name,operadorKey:key,
+      horasTrabajadas:histNumber(histPick(r,HIST_FIELD.gtiempos.worked)),
+      vueltas:histNumber(histPick(r,HIST_FIELD.gtiempos.tickets)),
+      horasExtras:round1((hheeIn+hheeOut)/60),
+      volumenTransportado:histNumber(histPick(r,HIST_FIELD.gtiempos.volume))
+    }];
   }
 
   // Status: LOGEO y ASIGNACIÓN usan fuentes de estado distintas.
@@ -2716,6 +2748,7 @@ const HISTORICAL_SOURCES = {
   citaciones: { label:'Citaciones' },
   status: { label:'Status Black / StatusBreakdown' },
   tam: { label:'Marcaje TAM' },
+  gtiempos: { label:'Base KPI GTIEMPOS' },
 };
 
 const HIST_FIELD = {
@@ -2762,6 +2795,18 @@ const HIST_FIELD = {
     endDate:['fecha fin'],
     in:['a.hora inicio','a hora inicio','a_hora_inicio','inicio'],
     out:['a. hora fin','a hora fin','a_hora_fin','fin'],
+  },
+  gtiempos: {
+    date:['fecha'],
+    operatorId:['id_operador','id operador'],
+    operatorName:['conductor_gtiempos','conductor gtiempos','conductor','operador'],
+    plant:['planta_gtiempos','planta gtiempos','planta'],
+    zone:['zona','zona_gtiempos','zona gtiempos'],
+    tickets:['cantidad_tickets_dia','cantidad tickets dia'],
+    volume:['volumen_total_dia','volumen total dia'],
+    worked:['horas_trabajadas','horas trabajadas'],
+    overtimeIn:['hhee_entrada','hhee entrada'],
+    overtimeOut:['hhee_salida','hhee salida'],
   }
 };
 
@@ -2814,12 +2859,20 @@ function histStatusKind(v){
   return 'otro';
 }
 function histTime(v){ return parseTimeMinutes(v); }
+function histNumber(v){
+  if(v===null||v===undefined||v==='')return null;
+  if(typeof v==='number')return Number.isFinite(v)?v:null;
+  const s=String(v).trim().replace(/\s/g,'').replace(',','.');
+  const n=Number(s);
+  return Number.isFinite(n)?n:null;
+}
 function histBaseRecord(source,archivo,rowIndex){
   return {
     source, archivo:safeText(archivo), rowIndex:Number(rowIndex||0),
     fecha:null, planta:'', zona:'', operadorId:'', operadorNombre:'',
     operadorKey:'', camion:'', turnoMin:null, citacionMin:null,
-    eventoMin:null, estado:'', eventoKind:'', ticket:''
+    eventoMin:null, estado:'', eventoKind:'', ticket:'',
+    horasTrabajadas:null,vueltas:null,horasExtras:null,volumenTransportado:null
   };
 }
 function historicalNormalizeMany(source,row,archivo='',rowIndex=0){
@@ -2866,6 +2919,27 @@ function historicalNormalizeMany(source,row,archivo='',rowIndex=0){
     });
     return [rec];
   }
+
+  if(source==='gtiempos'){
+    const id=histPick(r,HIST_FIELD.gtiempos.operatorId),name=safeText(histPick(r,HIST_FIELD.gtiempos.operatorName)),key=histOperatorKey(id,name);
+    const fecha=parseDateKey(histPick(r,HIST_FIELD.gtiempos.date));
+    if(!key||!fecha)return [];
+    const plant=histResolvePlant(histPick(r,HIST_FIELD.gtiempos.plant));
+    const zoneRaw=safeText(histPick(r,HIST_FIELD.gtiempos.zone));
+    const hheeIn=histNumber(histPick(r,HIST_FIELD.gtiempos.overtimeIn))||0;
+    const hheeOut=histNumber(histPick(r,HIST_FIELD.gtiempos.overtimeOut))||0;
+    const rec=histBaseRecord(source,archivo,rowIndex);
+    Object.assign(rec,{
+      fecha,planta:plant,zona:zoneRaw||(plant?inferZona(plant):''),
+      operadorId:normalizeId(id),operadorNombre:name,operadorKey:key,
+      horasTrabajadas:histNumber(histPick(r,HIST_FIELD.gtiempos.worked)),
+      vueltas:histNumber(histPick(r,HIST_FIELD.gtiempos.tickets)),
+      horasExtras:round1((hheeIn+hheeOut)/60),
+      volumenTransportado:histNumber(histPick(r,HIST_FIELD.gtiempos.volume))
+    });
+    return [rec];
+  }
+
   const dt=histPick(r,HIST_FIELD.status.datetime);
   const fecha=parseDateKey(dt)||parseDateKey(histPick(r,HIST_FIELD.status.date));
   const eventMin=histTime(dt);
@@ -2908,12 +2982,14 @@ function validateHistoricalRecord(source,rec){
     if(source==='turnos' && rec.turnoMin===null) errors.push('Falta hora de turno');
     if(source==='citaciones' && rec.citacionMin===null) errors.push('Falta hora de citación');
     if(source==='status' && (!rec.eventoKind||rec.eventoMin===null)) errors.push('Falta evento histórico utilizable');
+    if(source==='gtiempos' && !rec.planta) errors.push('Falta planta GTIEMPOS');
   }
   return errors;
 }
 function histDedupeKey(r){
   if(r.source==='turnos') return `T|${r.fecha}|${r.operadorKey}|${r.turnoMin}`;
   if(r.source==='citaciones') return `C|${r.fecha}|${r.operadorKey}|${r.citacionMin}`;
+  if(r.source==='gtiempos') return `G|${r.fecha}|${r.operadorKey}|${r.planta}|${r.vueltas??''}|${r.volumenTransportado??''}`;
   return `S|${r.fecha}|${r.operadorKey}|${r.eventoKind}|${r.eventoMin}|${r.camion||''}`;
 }
 function historicalSourceMeta(source){
@@ -2978,7 +3054,8 @@ function getHistoricalDailyIndex(){
         fecha:r.fecha,operadorKey:canonicalOperatorKey,
         operadorId:r.operadorId||'',operadorNombre:r.operadorNombre||r.operador||'',
         planta:'',zona:'',camion:'',turnoMin:null,citacionMin:null,loginMin:null,
-        asignacionMin:null,primeraCargaMin:null,tamIngresoMin:null,tamSalidaMin:null,fuentes:new Set()
+        asignacionMin:null,primeraCargaMin:null,tamIngresoMin:null,tamSalidaMin:null,
+        horasTrabajadas:null,vueltas:null,horasExtras:null,volumenTransportado:null,fuentes:new Set()
       });
     }
     const d=map.get(key);d.fuentes.add(source);
@@ -3002,6 +3079,16 @@ function getHistoricalDailyIndex(){
       if(r.tamIngresoMin!==null&&r.tamIngresoMin!==undefined&&(d.tamIngresoMin===null||r.tamIngresoMin<d.tamIngresoMin))d.tamIngresoMin=r.tamIngresoMin;
       if(r.tamSalidaMin!==null&&r.tamSalidaMin!==undefined&&(d.tamSalidaMin===null||r.tamSalidaMin>d.tamSalidaMin))d.tamSalidaMin=r.tamSalidaMin;
       // TAM no asigna planta. Planta proviene de Turnos/Status y diccionario.
+    }
+
+
+    if(source==='gtiempos'){
+      if(r.horasTrabajadas!==null&&r.horasTrabajadas!==undefined)d.horasTrabajadas=Number(r.horasTrabajadas);
+      if(r.vueltas!==null&&r.vueltas!==undefined)d.vueltas=Number(r.vueltas);
+      if(r.horasExtras!==null&&r.horasExtras!==undefined)d.horasExtras=Number(r.horasExtras);
+      if(r.volumenTransportado!==null&&r.volumenTransportado!==undefined)d.volumenTransportado=Number(r.volumenTransportado);
+      if(!d.planta&&r.planta){d.planta=r.planta;d.zona=r.zona||inferZona(r.planta);}
+      else if(!d.zona&&r.zona)d.zona=r.zona;
     }
 
     if(source==='status'){
@@ -3083,7 +3170,13 @@ function histMetricsForMode(rows,cfg,mode='logeo'){
 function histMetrics(rows,cfg){
   let tvcN=0,tvcOk=0,tvaN=0,tvaOk=0,atN=0,atOk=0,acN=0,acOk=0;
   const dead=[],delayCit=[],delayTurn=[],tamVsTurno=[],tamVsLogeo=[],tamVsAsignacion=[];
+  let totalHorasTrabajadas=0,totalVueltas=0,totalHorasExtras=0,totalVolumenTransportado=0;
+  let nHorasTrabajadas=0,nVueltas=0,nHorasExtras=0,nVolumen=0;
   for(const r of rows){
+    if(Number.isFinite(Number(r.horasTrabajadas))){totalHorasTrabajadas+=Number(r.horasTrabajadas);nHorasTrabajadas++;}
+    if(Number.isFinite(Number(r.vueltas))){totalVueltas+=Number(r.vueltas);nVueltas++;}
+    if(Number.isFinite(Number(r.horasExtras))){totalHorasExtras+=Number(r.horasExtras);nHorasExtras++;}
+    if(Number.isFinite(Number(r.volumenTransportado))){totalVolumenTransportado+=Number(r.volumenTransportado);nVolumen++;}
     if(r.turnoMin!==null&&r.citacionMin!==null){tvcN++;const d=histMinutesDiff(r.citacionMin,r.turnoMin);if(d!==null&&d>=-cfg.tolTurnCitationBefore&&d<=cfg.tolTurnCitationAfter)tvcOk++;}
     if(r.turnoMin!==null&&r.asignacionMin!==null){tvaN++;const d=histMinutesDiff(r.asignacionMin,r.turnoMin);if(d!==null&&d>=-cfg.tolAssignmentBefore&&d<=cfg.tolAssignmentAfter)tvaOk++;}
     if(r.turnoMin!==null&&r.loginMin!==null){atN++;const d=histMinutesDiff(r.loginMin,r.turnoMin);if(d!==null&&d>=-cfg.tolTurnBefore&&d<=cfg.tolTurnAfter)atOk++;if(d!==null&&d>0)delayTurn.push(d);}
@@ -3109,6 +3202,10 @@ function histMetrics(rows,cfg){
     tamVsTurno:histStats(tamVsTurno),
     tamVsLogeo:histStats(tamVsLogeo),
     tamVsAsignacion:histStats(tamVsAsignacion),
+    horasTrabajadas:round1(totalHorasTrabajadas),horasTrabajadasN:nHorasTrabajadas,
+    vueltas:round1(totalVueltas),vueltasN:nVueltas,
+    horasExtras:round1(totalHorasExtras),horasExtrasN:nHorasExtras,
+    volumenTransportado:round1(totalVolumenTransportado),volumenTransportadoN:nVolumen,
     registros:rows.length,
     operadores:new Set(rows.map(r=>r.operadorKey)).size,
     plantas:new Set(rows.map(r=>r.planta).filter(p=>p&&p!=='Sin planta')).size,
@@ -3123,12 +3220,13 @@ function histFilterBase(query={},rangeOverride=null){
   return idx.rows.filter(r=>(!from||r.fecha>=from)&&(!to||r.fecha<=to)&&(!zones.length||zones.includes(r.zona))&&(!plants.length||plants.includes(r.planta))&&(!operators.length||operators.includes(r.operadorKey)));
 }
 function histReadOnlyAdapterQuery(query={}){
-  const q={...query};delete q.plantas;
+  const q={...query};
   const mode=String(q.mode||'logeo')==='citacion'?'citacion':'logeo';
   const idx=getHistoricalDailyIndex(),from=safeText(q.from),to=safeText(q.to);
   const zones=String(q.zonas||q.zona||'').split(',').map(safeText).filter(Boolean);
+  const plants=String(q.plantas||'').split(',').map(safeText).filter(Boolean);
   const operators=String(q.operators||q.operator||'').split(',').map(safeText).filter(Boolean);
-  const base=idx.rows.filter(r=>(!from||r.fecha>=from)&&(!to||r.fecha<=to)&&(!zones.length||zones.includes(r.zona))&&(!operators.length||operators.includes(r.operadorKey)));
+  const base=idx.rows.filter(r=>(!from||r.fecha>=from)&&(!to||r.fecha<=to)&&(!zones.length||zones.includes(r.zona))&&(!plants.length||plants.includes(r.planta))&&(!operators.length||operators.includes(r.operadorKey)));
   const eventRows=base.filter(r=>mode==='citacion'?(r.citacionMin!==null&&r.citacionMin!==undefined):(r.loginMin!==null&&r.loginMin!==undefined));
   const m=new Map();
   for(const r of eventRows){if(!r.planta||r.planta==='Sin planta')continue;if(!m.has(r.planta))m.set(r.planta,{planta:r.planta,zona:r.zona||inferZona(r.planta),registros:0,operadores:new Set(),dias:new Set()});const x=m.get(r.planta);x.registros++;x.operadores.add(r.operadorKey);x.dias.add(r.fecha);}
