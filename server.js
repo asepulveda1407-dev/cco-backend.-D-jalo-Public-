@@ -2163,9 +2163,9 @@ const HIST_QUEUES = {
 };
 
 const HIST_ETL_HEADER_ALIASES = {
-  operador:['operador','nombre operador','nombre_operador','conductor','chofer','nombre de operador','nombre_de_operador','primero empleado','primero_empleado'],
+  operador:['operador','nombre operador','nombre_operador','conductor','conductor_gtiempos','conductor gtiempos','chofer','nombre de operador','nombre_de_operador','primero empleado','primero_empleado'],
   operadorId:['id operador','id_operador','id','numero funcionario','número funcionario','numero_funcionario','rut','codigo operador'],
-  planta:['planta','planta original','planta_original','descripcion planta','descripción planta','descripcion_planta','centro','sucursal','base'],
+  planta:['planta','planta_gtiempos','planta gtiempos','planta original','planta_original','descripcion planta','descripción planta','descripcion_planta','centro','sucursal','base'],
   camion:['camion','camión','equipo','mixer','patente','numero equipo','número equipo','numero_equipo','n° camion','n_camion'],
   turno:['hora ingreso','hora_ingreso','turno','inicio turno','inicio_turno','hora turno'],
   citacion:['hora citacion','hora citación','hora_citacion','citacion','citación','citacion sugerida'],
