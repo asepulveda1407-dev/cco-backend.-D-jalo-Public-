@@ -2408,6 +2408,7 @@ function etlNormalizeRow(source,row,archivo,rowNumber,diag,statusAccumulator=nul
     if(!plant){etlReason(diag,rowNumber,'PLANTA_NO_HOMOLOGADA','Planta_GTiempos','GTIEMPOS sin planta homologable','partial');}
     const hheeIn=histNumber(histPick(r,HIST_FIELD.gtiempos.overtimeIn))||0;
     const hheeOut=histNumber(histPick(r,HIST_FIELD.gtiempos.overtimeOut))||0;
+    const loginMin=histTime(histPick(r,HIST_FIELD.gtiempos.login));
     return [{
       ...base,
       fecha,planta:plant,zona:zoneRaw|| (plant?inferZona(plant):''),
@@ -2415,8 +2416,8 @@ function etlNormalizeRow(source,row,archivo,rowNumber,diag,statusAccumulator=nul
       camion:safeText(histPick(r,HIST_FIELD.gtiempos.truck)),
       turnoMin:histTime(histPick(r,HIST_FIELD.gtiempos.shift)),
       citacionMin:histTime(histPick(r,HIST_FIELD.gtiempos.citation)),
-      loginMin:histTime(histPick(r,HIST_FIELD.gtiempos.login)),
-      asignacionMin:histTime(histPick(r,HIST_FIELD.gtiempos.assignment)),
+      loginMin,
+      asignacionMin:histResolveAssignmentMin(r,loginMin),
       primeraCargaMin:histTime(histPick(r,HIST_FIELD.gtiempos.firstLoad)),
       tamIngresoMin:histTime(histPick(r,HIST_FIELD.gtiempos.tamIn)),
       tamSalidaMin:histTime(histPick(r,HIST_FIELD.gtiempos.tamOut)),
@@ -2866,6 +2867,7 @@ const HIST_FIELD = {
     citation:['hora_citacion','hora citación','hora citacion','citacion','citación','citacion_sugerida'],
     login:['hora_logeo','hora logeo','logeo','login','login_previaje','login previaje','hora_inicio_login'],
     assignment:['hora_asignacion','hora asignación','hora asignacion','asignacion','asignación','primer_asignado','primera_asignacion'],
+    assignmentDiffFromLogin:['dif_logeo_asignacion_min','dif logeo asignacion min','dif_logeo_asignacion','diferencia_logeo_asignacion_min'],
     firstLoad:['hora_primera_carga','hora primera carga','primera_carga','primera carga','salida_primera_carga'],
     tamIn:['tam_ingreso','tam ingreso','hora_ingreso_tam','hora ingreso tam','a.hora inicio','a hora inicio'],
     tamOut:['tam_salida','tam salida','hora_salida_tam','hora salida tam','a. hora fin','a hora fin'],
@@ -2926,6 +2928,16 @@ function histStatusKind(v){
   return 'otro';
 }
 function histTime(v){ return parseTimeMinutes(v); }
+function histResolveAssignmentMin(r,loginMin){
+  const direct=histTime(histPick(r,HIST_FIELD.gtiempos.assignment));
+  if(direct!==null) return direct;
+  // Algunas bases GTIEMPOS no exponen la hora absoluta de asignación, solo
+  // la diferencia precalculada Logeo→Asignación (minutos). Reconstruimos el
+  // reloj de asignación a partir del login + esa diferencia.
+  const diffFromLogin=histNumber(histPick(r,HIST_FIELD.gtiempos.assignmentDiffFromLogin));
+  if(loginMin===null||diffFromLogin===null) return null;
+  return ((loginMin+diffFromLogin)%1440+1440)%1440;
+}
 function histNumber(v){
   if(v===null||v===undefined||v==='')return null;
   if(typeof v==='number')return Number.isFinite(v)?v:null;
@@ -2995,6 +3007,7 @@ function historicalNormalizeMany(source,row,archivo='',rowIndex=0){
     const zoneRaw=safeText(histPick(r,HIST_FIELD.gtiempos.zone));
     const hheeIn=histNumber(histPick(r,HIST_FIELD.gtiempos.overtimeIn))||0;
     const hheeOut=histNumber(histPick(r,HIST_FIELD.gtiempos.overtimeOut))||0;
+    const loginMin=histTime(histPick(r,HIST_FIELD.gtiempos.login));
     const rec=histBaseRecord(source,archivo,rowIndex);
     Object.assign(rec,{
       fecha,planta:plant,zona:zoneRaw||(plant?inferZona(plant):''),
@@ -3002,8 +3015,8 @@ function historicalNormalizeMany(source,row,archivo='',rowIndex=0){
       camion:safeText(histPick(r,HIST_FIELD.gtiempos.truck)),
       turnoMin:histTime(histPick(r,HIST_FIELD.gtiempos.shift)),
       citacionMin:histTime(histPick(r,HIST_FIELD.gtiempos.citation)),
-      loginMin:histTime(histPick(r,HIST_FIELD.gtiempos.login)),
-      asignacionMin:histTime(histPick(r,HIST_FIELD.gtiempos.assignment)),
+      loginMin,
+      asignacionMin:histResolveAssignmentMin(r,loginMin),
       primeraCargaMin:histTime(histPick(r,HIST_FIELD.gtiempos.firstLoad)),
       tamIngresoMin:histTime(histPick(r,HIST_FIELD.gtiempos.tamIn)),
       tamSalidaMin:histTime(histPick(r,HIST_FIELD.gtiempos.tamOut)),
