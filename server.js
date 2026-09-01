@@ -1551,7 +1551,7 @@ app.post('/api/auth/login', (req, res) => {
   const region = safeText(req.body?.region || '');
   const fecha = safeText(req.body?.fecha || '');
   if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
-  const allowedRoles = new Set(['admin','gerencia','supervisor_nacional','supervisor_zona','supervisor_planta','coordinador','lectura']);
+  const allowedRoles = new Set(['admin','gerencia','supervisor_nacional','supervisor_zona','supervisor_planta','coordinador','mantencion','lectura']);
   if (!allowedRoles.has(rol)) return res.status(400).json({ error: 'Rol inválido' });
   const user = { nombre, rol, zona, region, planta, fecha };
   res.json({ token: authToken(user), user });
