@@ -630,6 +630,7 @@ table{border-collapse:separate!important;border-spacing:0!important}
             <div><label>Zona</label><select id="towerZoneFilter"><option value="all">Todas las zonas</option></select></div>
             <div><label>Planta</label><select id="towerPlantFilter"><option value="all">Todas las plantas</option></select></div>
             <div><label>Estado</label><select id="towerStatusFilter"><option value="all">Todos los estados</option></select></div>
+            <div><label>Clasificación camión</label><select id="towerClassFilter" multiple size="2" aria-label="Clasificación del camión"><option value="operativo">Operativo</option><option value="operativo_recuperable">Operativo recuperable</option></select><small id="towerClassActive">Todas las clasificaciones</small></div>
             <div><label>Buscar equipo</label><input id="towerSearch" placeholder="ID, número, patente o marca"></div>
             <button type="button" class="secondary" id="towerReset">Limpiar</button>
           </div>
@@ -676,13 +677,13 @@ table{border-collapse:separate!important;border-spacing:0!important}
     <div class="hist-title-row">
       <div>
         <h2>📈 Trazabilidad CCO Intelligence <span class="small">(análisis histórico avanzado · archivos adjuntos)</span></h2>
-        <p class="small"><b>Separación absoluta:</b> esta vista utiliza exclusivamente los archivos cargados aquí. No consulta Turnos, Citaciones ni StatusBreakdown activos de Operación Nacional.</p>
+        <p class="small"><b>Fuente única:</b> esta vista utiliza exclusivamente Base KPI G Tiempos. Turnos, Citaciones, Status y Marcaje TAM se obtienen solo cuando sus columnas existen en esta base.</p>
       </div>
       <span class="pill" id="histEngineStatus">Base histórica independiente</span>
     </div>
 
     <div class="hist-upload-grid">
-      <div class="hist-drop-card" data-source="turnos" id="drop_turnos">
+      <div class="hist-drop-card" data-source="turnos" id="drop_turnos" hidden>
         <div class="hist-drop-icon">🗓️</div><b>Turnos</b>
         <div class="small">Programación semanal/diaria por operador y planta</div>
         <input type="file" id="histFiles_turnos" multiple accept=".xlsx,.xls,.csv,.txt,.pdf" hidden>
@@ -693,7 +694,7 @@ table{border-collapse:separate!important;border-spacing:0!important}
         </div>
         <div class="hist-source-status" id="histSource_turnos">Sin datos</div><div class="hist-file-list" id="histFileList_turnos"></div>
       </div>
-      <div class="hist-drop-card" data-source="citaciones" id="drop_citaciones">
+      <div class="hist-drop-card" data-source="citaciones" id="drop_citaciones" hidden>
         <div class="hist-drop-icon">⏰</div><b>Citaciones</b>
         <div class="small">Hora citada, operador, camión y fecha</div>
         <input type="file" id="histFiles_citaciones" multiple accept=".xlsx,.xls,.csv,.txt,.pdf" hidden>
@@ -704,7 +705,7 @@ table{border-collapse:separate!important;border-spacing:0!important}
         </div>
         <div class="hist-source-status" id="histSource_citaciones">Sin datos</div><div class="hist-file-list" id="histFileList_citaciones"></div>
       </div>
-      <div class="hist-drop-card" data-source="status" id="drop_status">
+      <div class="hist-drop-card" data-source="status" id="drop_status" hidden>
         <div class="hist-drop-icon">🚦</div><b>Status Black / StatusBreakdown</b>
         <div class="small">LOGIN, ASIGNADO y primera carga</div>
         <input type="file" id="histFiles_status" multiple accept=".xlsx,.xls,.csv,.txt,.pdf" hidden>
@@ -715,7 +716,7 @@ table{border-collapse:separate!important;border-spacing:0!important}
         </div>
         <div class="hist-source-status" id="histSource_status">Sin datos</div><div class="hist-file-list" id="histFileList_status"></div>
       </div>
-      <div class="hist-drop-card" data-source="tam" id="drop_tam">
+      <div class="hist-drop-card" data-source="tam" id="drop_tam" hidden>
         <div class="hist-drop-icon">🪪</div><b>Marcaje TAM</b>
         <div class="small">Cruce obligatorio por ID columna A + Fecha · ingreso y salida TAM</div>
         <input type="file" id="histFiles_tam" multiple accept=".xlsx,.xls,.csv,.txt,.pdf" hidden>
@@ -729,7 +730,7 @@ table{border-collapse:separate!important;border-spacing:0!important}
       <div class="hist-drop-card" data-source="gtiempos" id="drop_gtiempos">
         <div class="hist-drop-icon">📊</div><b>Base KPI GTIEMPOS</b>
         <div class="small">Horas trabajadas · vueltas · HHEE · volumen · zona · planta</div>
-        <input type="file" id="histFiles_gtiempos" multiple accept=".xlsx,.xls,.csv,.txt,.pdf" hidden>
+        <input type="file" id="histFiles_gtiempos" accept=".xlsx,.xls,.csv,.txt" hidden>
         <button type="button" class="secondary hist-file-btn" data-source="gtiempos">Seleccionar archivos</button>
         <div class="hist-progress" id="histProgress_gtiempos" aria-label="Progreso de carga">
           <div class="hist-progress-bar" id="histProgressBar_gtiempos" style="width:0%"></div>
@@ -738,7 +739,7 @@ table{border-collapse:separate!important;border-spacing:0!important}
         <div class="hist-source-status" id="histSource_gtiempos">Sin datos</div><div class="hist-file-list" id="histFileList_gtiempos"></div>
       </div>
     </div>
-    <div class="history-note">También puedes <b>arrastrar y soltar</b> uno o varios archivos sobre cada tarjeta. XLSX/XLS/CSV/TXT participan en los cálculos. PDF se registra como <b>solo lectura</b> y no genera KPI si no contiene datos estructurados extraíbles.</div>
+    <div class="history-note">Carga o arrastra la <b>Base KPI G Tiempos</b>. Al cargar una base nueva, reemplaza por completo la anterior para impedir mezclas y duplicaciones. XLSX/XLS/CSV/TXT participan en los cálculos.</div>
 
     <div class="hist-audit-strip" id="histAuditStrip"></div><div class="history-note" id="histPlantDictionaryState">Diccionario de plantas: se aplicará después de leer y normalizar cada archivo.</div>
     <details class="hist-diagnostics-details" id="histDiagnosticsDetails">
@@ -1087,6 +1088,10 @@ table{border-collapse:separate!important;border-spacing:0!important}
           <option>Capacitación planta</option>
           <option>Otras funciones</option>
           <option>Dirigente sindical</option>
+          <option>Atraso</option>
+          <option>Problemas en tablet</option>
+          <option>Permiso día completo</option>
+          <option>Desvinculado</option>
         </select>
       </div>
     </div>
@@ -1099,6 +1104,8 @@ table{border-collapse:separate!important;border-spacing:0!important}
     <select id="bitFiltroOperador" onchange="renderBitacoraFiltrada()">
       <option value="">Todos los operadores</option>
     </select>
+    <label>Filtrar registros por tipo de evento</label>
+    <select id="bitFiltroTipo" onchange="renderBitacoraFiltrada()"><option value="">Todos los tipos</option></select>
 
     <div id="bitLog" style="margin-top:14px"></div>
   </div>
@@ -1314,6 +1321,7 @@ function iniciar(){
     scheduleRealtime('operacion',refreshOperacionRealtime);
   });
   socket.on('bitacora:nueva', (registro)=>{ realtimeWasSeen(registro);prependBitacora(registro,true); });
+  socket.on('bitacora:actualizada', (registro)=>{ realtimeWasSeen(registro);const i=bitacoraCache.findIndex(x=>x.id===registro.id);if(i>=0)bitacoraCache[i]=registro;else bitacoraCache.unshift(registro);renderBitacoraFiltrada(); });
   socket.on('ingesta:actualizada', (info)=>{
     realtimeWasSeen(info);marcarIngestaStatus(info.tipo,info.cantidad,info.subido_por,true);
     scheduleRealtime('operacion',refreshOperacionRealtime);
@@ -2484,11 +2492,12 @@ function bitacoraEntryHtml(r){
   const quien = r.operador_nombre ? ` · 👤 ${r.operador_nombre}` : '';
   return `<div class="log-entry" id="bit-${r.id}">
     <div class="meta">${formatoFechaHoraCL(r.creado_en)} · ${r.usuario} (${r.rol}) · ${r.planta}${quien} · <b>${r.tipo}</b></div>
-    ${r.detalle}</div>`;
+    ${r.detalle}<div><button type="button" class="secondary" style="margin:6px 0 0" onclick="editarBitacora('${r.id}')">Editar</button></div></div>`;
 }
 function renderBitacoraFiltrada(){
   const filtroOp = document.getElementById('bitFiltroOperador').value;
-  const filtradas = filtroOp ? bitacoraCache.filter(r=>r.operador_nombre===filtroOp) : bitacoraCache;
+  const filtroTipo = document.getElementById('bitFiltroTipo')?.value||'';
+  const filtradas = bitacoraCache.filter(r=>(!filtroOp||r.operador_nombre===filtroOp)&&(!filtroTipo||r.tipo===filtroTipo));
   document.getElementById('bitLog').innerHTML = filtradas.length
     ? filtradas.map(bitacoraEntryHtml).join('')
     : '<div class="small">Sin registros para este filtro.</div>';
@@ -2499,6 +2508,8 @@ function poblarFiltroOperadorBitacora(){
   const nombres = [...new Set(bitacoraCache.filter(r=>r.operador_nombre).map(r=>r.operador_nombre))].sort();
   sel.innerHTML = '<option value="">Todos los operadores</option>' + nombres.map(n=>`<option>${n}</option>`).join('');
   if(nombres.includes(valorActual)) sel.value = valorActual;
+  const tipoSel=document.getElementById('bitFiltroTipo');
+  if(tipoSel){const current=tipoSel.value,tipos=[...new Set(bitacoraCache.map(r=>r.tipo).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));tipoSel.innerHTML='<option value="">Todos los tipos</option>'+tipos.map(t=>`<option>${t}</option>`).join('');if(tipos.includes(current))tipoSel.value=current;}
 }
 function prependBitacora(r, remota){
   // El servidor reenvía el evento por WebSocket a TODOS los conectados a esa sala,
@@ -2545,10 +2556,21 @@ function registrarBitacora(){
   };
   if(!body.detalle){ alert('Escribe un detalle'); return; }
   fetch(API+'/api/bitacora',{method:'POST',headers:authHeaders(),body:JSON.stringify(body)})
-    .then(r=>r.json()).then(r=>{
+    .then(async response=>{const r=await response.json();if(!response.ok)throw new Error(r.error||'No fue posible guardar');return r;}).then(r=>{
       document.getElementById('bitDetalle').value='';
       prependBitacora(r, false);
-    });
+    }).catch(err=>alert(err.message||err));
+}
+
+async function editarBitacora(id){
+  const actual=bitacoraCache.find(x=>x.id===id);if(!actual)return;
+  const tipo=prompt('Tipo de evento:',actual.tipo);if(tipo===null)return;
+  const detalle=prompt('Detalle:',actual.detalle);if(detalle===null||!detalle.trim())return;
+  try{
+    const response=await fetch(API+'/api/bitacora/'+encodeURIComponent(id),{method:'PATCH',headers:authHeaders(),body:JSON.stringify({tipo,detalle:detalle.trim()})});
+    const data=await response.json();if(!response.ok)throw new Error(data.error||'No fue posible editar');
+    const i=bitacoraCache.findIndex(x=>x.id===id);if(i>=0)bitacoraCache[i]=data;renderBitacoraFiltrada();
+  }catch(err){alert(err.message||err);}
 }
 
 function exportarBitacoraCSV(){
@@ -2859,10 +2881,13 @@ function towerRelocationTitle(t){
 
 function towerFiltered(){
   const z=document.getElementById('towerZoneFilter')?.value||'all',p=document.getElementById('towerPlantFilter')?.value||'all',st=document.getElementById('towerStatusFilter')?.value||'all',q=(document.getElementById('towerSearch')?.value||'').toLowerCase().trim();
-  return towerFleet.filter(t=>(z==='all'||t.zone===z)&&(p==='all'||t.plant===p)&&(st==='all'||t.status===st)&&(!q||[t.id,t.number,t.plate,t.brand,t.plant].join(' ').toLowerCase().includes(q)));
+  const classSelect=document.getElementById('towerClassFilter');
+  const classes=new Set([...(classSelect?.selectedOptions||[])].map(o=>o.value));
+  return towerFleet.filter(t=>(z==='all'||t.zone===z)&&(p==='all'||t.plant===p)&&(st==='all'||t.status===st)&&(!classes.size||classes.has(t.classification))&&(!q||[t.id,t.number,t.plate,t.brand,t.plant].join(' ').toLowerCase().includes(q)));
 }
-function towerCounts(list=towerFleet){const total=list.length,available=list.filter(x=>x.status==='available'||x.status==='operational_nonrecoverable').length,maint=list.filter(x=>TOWER_MAINT_STATUS.has(x.status)).length,oos=list.filter(x=>x.status==='oos').length,parts=list.filter(x=>x.status==='parts').length;return{total,available,maint,oos,parts,pct:total?available/total*100:0};}
-function renderTowerKpis(){const c=towerCounts();const cards=[['Flota registrada',c.total,'Equipos cargados',''],['Disponibles',c.available,'Disponibles para operación','ok'],['En mantención',c.maint,'Preventiva / talleres / repuestos','warn'],['Fuera servicio',c.oos,'No disponibles','crit'],['Esperando repuestos',c.parts,'Bloqueados por repuesto','warn'],['Disponibilidad',c.pct.toFixed(1)+'%','Disponible / total',c.pct>=90?'ok':c.pct>=80?'warn':'crit']];document.getElementById('towerKpis').innerHTML=cards.map(x=>`<div class="tower-kpi ${x[3]}"><div class="l">${x[0]}</div><div class="v">${x[1]}</div><div class="s">${x[2]}</div></div>`).join('');}
+function towerKpiEligible(list){return list.filter(x=>x.isThirdParty!==true);}
+function towerCounts(list=towerFleet){const eligible=towerKpiEligible(list),total=eligible.length,available=eligible.filter(x=>x.status==='available'||x.status==='operational_nonrecoverable').length,maint=eligible.filter(x=>TOWER_MAINT_STATUS.has(x.status)).length,oos=eligible.filter(x=>x.status==='oos').length,parts=eligible.filter(x=>x.status==='parts').length;return{total,available,maint,oos,parts,pct:total?available/total*100:0};}
+function renderTowerKpis(list=towerFiltered()){const c=towerCounts(list);const cards=[['Flota propia filtrada',c.total,'Terceros/Spot excluidos',''],['Disponibles',c.available,'Disponibles para operación','ok'],['En mantención',c.maint,'Preventiva / talleres / repuestos','warn'],['Fuera servicio',c.oos,'No disponibles','crit'],['Esperando repuestos',c.parts,'Bloqueados por repuesto','warn'],['Disponibilidad',c.pct.toFixed(1)+'%','Disponible / total propio',c.pct>=90?'ok':c.pct>=80?'warn':'crit']];document.getElementById('towerKpis').innerHTML=cards.map(x=>`<div class="tower-kpi ${x[3]}"><div class="l">${x[0]}</div><div class="v">${x[1]}</div><div class="s">${x[2]}</div></div>`).join('');}
 function poblarTowerFiltros(){
   const z=document.getElementById('towerZoneFilter'),p=document.getElementById('towerPlantFilter'),st=document.getElementById('towerStatusFilter');if(!z||!p||!st)return;
   const zv=z.value,pv=p.value,sv=st.value;const zones=[...new Set(towerFleet.map(x=>x.zone).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));const plants=[...new Set(towerFleet.map(x=>x.plant).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
@@ -2881,11 +2906,11 @@ function renderTowerDetail(){
   const t=towerSelected(),box=document.getElementById('towerDetail'),badge=document.getElementById('towerDetailBadge');if(!t){badge.textContent='—';box.innerHTML='<div class="tower-detail-empty">Seleccione un mixer para ver su detalle.</div>';return;}badge.textContent=TOWER_STATUS_LABELS[t.status]||t.status;
   const hist=(Array.isArray(t.history)?t.history:[]).slice().reverse().slice(0,8);box.innerHTML=`<div class="tower-truck-hero"><div class="ico">🚛</div><div class="id">${towerEsc(t.id||t.number||'Equipo')}</div><div class="state">${towerEsc(TOWER_STATUS_LABELS[t.status]||t.status)}</div></div><div class="tower-info"><div class="k">Número</div><div class="val">${towerEsc(t.number||'—')}</div><div class="k">Patente</div><div class="val">${towerEsc(t.plate||'—')}</div><div class="k">Marca / modelo / año</div><div class="val">${towerEsc([t.brand,t.model,t.year].filter(Boolean).join(' · ')||'—')}</div><div class="k">Origen</div><div class="val">${towerEsc(t.sourceSheet||'Flota')}</div><div class="k">Compañía</div><div class="val">${towerEsc(t.company||'—')}</div><div class="k">Zona</div><div class="val">${towerEsc(t.zone||'—')}</div><div class="k">Planta</div><div class="val">${towerEsc(t.plant||'—')}</div><div class="k">Planta origen</div><div class="val">${towerEsc(t.homePlant||t.plant||'—')}</div><div class="k">Estado registro</div><div class="val">${towerEsc(t.sourceStatus||'—')}</div><div class="k">Taller</div><div class="val">${towerEsc(t.workshop||'—')}</div><div class="k">Responsable</div><div class="val">${towerEsc(t.responsible||'—')}</div><div class="k">ETA</div><div class="val">${towerEsc(t.eta||'—')}</div><div class="k">Avance</div><div class="val">${Number(t.progress||0)}%</div><div class="k">Causa</div><div class="val">${towerEsc(t.cause||'—')}</div><div class="k">Observación</div><div class="val">${towerEsc(t.observation||'—')}</div>${t.lastRelocation?`<div class="k">Última reubicación</div><div class="val">${towerEsc(t.lastRelocation.from||'—')} → ${towerEsc(t.lastRelocation.to||'—')} · ${towerEsc(t.lastRelocation.user||'CCO')} · ${towerEsc(new Date(t.lastRelocation.at).toLocaleString('es-CL'))}</div>`:''}</div><div class="tower-detail-actions"><button type="button" onclick="abrirTowerEditor()">Editar estado</button></div><div class="tower-history">${hist.length?hist.map(h=>`<div class="tower-history-item"><b>${new Date(h.timestamp).toLocaleString('es-CL')}</b> · ${towerEsc(h.usuario||'CCO')}<br>${towerEsc(Object.entries(h.cambios||{}).map(([k,v])=>`${k}: ${v.antes||'—'} → ${v.despues||'—'}`).join(' · '))}</div>`).join(''):'<div class="small" style="padding:8px">Sin cambios registrados.</div>'}</div>`;
 }
-function renderTowerTables(){
-  const groups={};towerFleet.forEach(t=>(groups[t.plant||'Sin planta asignada']??=[]).push(t));const rows=Object.entries(groups).sort((a,b)=>a[0].localeCompare(b[0],'es'));document.getElementById('towerPlantCount').textContent=`${rows.length} plantas`;document.getElementById('towerPlantTable').innerHTML=rows.map(([plant,arr])=>{const c=towerCounts(arr);return `<tr><td>${towerEsc(arr[0]?.zone||'—')}</td><td><b>${towerEsc(plant)}</b></td><td>${c.total}</td><td>${c.available}</td><td>${c.maint}</td><td>${c.oos}</td><td>${c.pct.toFixed(1)}%</td></tr>`}).join('')||'<tr><td colspan="7" class="history-empty">Sin flota cargada.</td></tr>';
-  const by={};towerFleet.forEach(t=>by[t.status]=(by[t.status]||0)+1);document.getElementById('towerStateTable').innerHTML=Object.entries(by).sort((a,b)=>b[1]-a[1]).map(([st,n])=>`<tr><td><span class="tower-status-pill ${st}">${towerEsc(TOWER_STATUS_LABELS[st]||st)}</span></td><td>${n}</td><td>${towerFleet.length?(n/towerFleet.length*100).toFixed(1):'0.0'}%</td></tr>`).join('')||'<tr><td colspan="3" class="history-empty">Sin datos.</td></tr>';
+function renderTowerTables(list=towerFiltered()){
+  const kpiList=towerKpiEligible(list),groups={};kpiList.forEach(t=>(groups[t.plant||'Sin planta asignada']??=[]).push(t));const rows=Object.entries(groups).sort((a,b)=>a[0].localeCompare(b[0],'es'));document.getElementById('towerPlantCount').textContent=`${rows.length} plantas`;document.getElementById('towerPlantTable').innerHTML=rows.map(([plant,arr])=>{const c=towerCounts(arr);return `<tr><td>${towerEsc(arr[0]?.zone||'—')}</td><td><b>${towerEsc(plant)}</b></td><td>${c.total}</td><td>${c.available}</td><td>${c.maint}</td><td>${c.oos}</td><td>${c.pct.toFixed(1)}%</td></tr>`}).join('')||'<tr><td colspan="7" class="history-empty">Sin datos para los filtros seleccionados.</td></tr>';
+  const by={};kpiList.forEach(t=>by[t.status]=(by[t.status]||0)+1);document.getElementById('towerStateTable').innerHTML=Object.entries(by).sort((a,b)=>b[1]-a[1]).map(([st,n])=>`<tr><td><span class="tower-status-pill ${st}">${towerEsc(TOWER_STATUS_LABELS[st]||st)}</span></td><td>${n}</td><td>${kpiList.length?(n/kpiList.length*100).toFixed(1):'0.0'}%</td></tr>`).join('')||'<tr><td colspan="3" class="history-empty">Sin datos.</td></tr>';
 }
-function renderTorre(){renderTowerKpis();poblarTowerFiltros();renderTowerPlants();renderTowerDetail();renderTowerTables();}
+function renderTorre(){poblarTowerFiltros();const list=towerFiltered();renderTowerKpis(list);renderTowerPlants();renderTowerDetail();renderTowerTables(list);const active=document.getElementById('towerClassActive'),sel=document.getElementById('towerClassFilter');if(active&&sel){const labels=[...sel.selectedOptions].map(o=>o.textContent);active.textContent=labels.length?labels.join(' + '):'Todas las clasificaciones';}}
 function seleccionarTowerEquipo(key){towerSelectedKey=key;renderTowerPlants();renderTowerDetail();}
 async function cargarTorreFlota(){
   try{towerSetStatus('Sincronizando flota...');const r=await fetch(API+'/api/flota',{headers:authHeaders()});const data=await leerRespuestaApiSegura(r);towerFleet=Array.isArray(data.datos)?data.datos:[];towerRevision=Number(data.revision||0);document.getElementById('towerRevision').textContent=towerFleet.length?`Rev. ${towerRevision} · ${towerFleet.length} equipos`:'Sin flota cargada';if(towerFleet.length&&!towerSelectedKey)towerSelectedKey=towerFleet[0].key;const m=data.metadatos||{};towerSetStatus(towerFleet.length?`${towerFleet.length} equipos · ${m.archivo||'fuente cargada'} · ${m.cargado_en?new Date(m.cargado_en).toLocaleString('es-CL'):''}`:'Seleccione el archivo de flota.','ok');renderTorre();}catch(err){towerSetStatus('No se pudo cargar flota: '+(err.message||err),'err');}
@@ -2946,15 +2971,15 @@ async function actualizarTowerEquipo(key,patch){
 function abrirTowerEditor(){const t=towerSelected();if(!t)return;document.getElementById('towerEditTitle').textContent=`Editar · ${t.id||t.number}`;towerEditStatus.value=t.status||'stale';const plants=[...new Set(towerFleet.map(x=>x.plant).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));towerEditPlant.innerHTML=plants.map(x=>`<option value="${towerEsc(x)}">${towerEsc(x)}</option>`).join('');if(!plants.includes(t.plant))towerEditPlant.insertAdjacentHTML('afterbegin',`<option value="${towerEsc(t.plant)}">${towerEsc(t.plant)}</option>`);towerEditPlant.value=t.plant;towerEditWorkshop.value=t.workshop||'';towerEditResponsible.value=t.responsible||'';towerEditEta.value=(t.eta||'').slice(0,16);towerEditProgress.value=Number(t.progress||0);towerEditCause.value=t.cause||'';towerEditObservation.value=t.observation||'';towerEditMsg.textContent='';towerEditModal.classList.add('open');towerEditModal.setAttribute('aria-hidden','false');}
 function cerrarTowerEditor(){towerEditModal.classList.remove('open');towerEditModal.setAttribute('aria-hidden','true');}
 async function guardarTowerEditor(){const t=towerSelected();if(!t)return;try{towerEditMsg.textContent='Guardando...';await actualizarTowerEquipo(t.key,{status:towerEditStatus.value,plant:towerEditPlant.value,workshop:towerEditWorkshop.value,responsible:towerEditResponsible.value,eta:towerEditEta.value,progress:Number(towerEditProgress.value||0),cause:towerEditCause.value,observation:towerEditObservation.value});towerEditMsg.textContent='Cambio guardado.';cerrarTowerEditor();renderTorre();}catch(err){towerEditMsg.textContent='Error: '+(err.message||err);}}
-function initTower(){document.getElementById('towerFleetFile')?.addEventListener('change',e=>{const f=e.target.files?.[0];if(f)procesarTowerFleetFile(f);e.target.value='';});['towerZoneFilter','towerPlantFilter','towerStatusFilter'].forEach(id=>document.getElementById(id)?.addEventListener('change',()=>{renderTowerPlants();renderTowerDetail();}));document.getElementById('towerSearch')?.addEventListener('input',renderTowerPlants);document.getElementById('towerReset')?.addEventListener('click',()=>{towerZoneFilter.value='all';towerPlantFilter.value='all';towerStatusFilter.value='all';towerSearch.value='';renderTowerPlants();});document.getElementById('towerEditModal')?.addEventListener('click',e=>{if(e.target.id==='towerEditModal')cerrarTowerEditor();});}
+function initTower(){document.getElementById('towerFleetFile')?.addEventListener('change',e=>{const f=e.target.files?.[0];if(f)procesarTowerFleetFile(f);e.target.value='';});['towerZoneFilter','towerPlantFilter','towerStatusFilter','towerClassFilter'].forEach(id=>document.getElementById(id)?.addEventListener('change',renderTorre));document.getElementById('towerSearch')?.addEventListener('input',renderTorre);document.getElementById('towerReset')?.addEventListener('click',()=>{towerZoneFilter.value='all';towerPlantFilter.value='all';towerStatusFilter.value='all';[...towerClassFilter.options].forEach(o=>o.selected=false);towerSearch.value='';renderTorre();});document.getElementById('towerEditModal')?.addEventListener('click',e=>{if(e.target.id==='towerEditModal')cerrarTowerEditor();});}
 window.towerDragStart=towerDragStart;window.towerDragOver=towerDragOver;window.towerDragLeave=towerDragLeave;window.towerDrop=towerDrop;window.seleccionarTowerEquipo=seleccionarTowerEquipo;window.abrirTowerEditor=abrirTowerEditor;window.cerrarTowerEditor=cerrarTowerEditor;window.guardarTowerEditor=guardarTowerEditor;window.cargarTorreFlota=cargarTorreFlota;
 
 
 let historicoUltimo=null;
 let histCatalogo={plants:[],zones:[],operators:[],sources:[]};
-const HIST_SOURCE_KEYS=['turnos','citaciones','status','tam','gtiempos'];
+const HIST_SOURCE_KEYS=['gtiempos'];
 const histCharts={};
-let histFilesReadOnly={turnos:[],citaciones:[],status:[],tam:[]};
+let histFilesReadOnly={gtiempos:[]};
 
 let modulosInicializados=false;
 function enlazarBotonModulo(id, modulo, scrollTop=false){
@@ -3004,12 +3029,20 @@ const HIST_FIELD_ALIASES={
   citacion:['hora_citacion','hora citacion','citacion','citación','citacion_sugerida'],
   fecha:['fecha','date','fecha_turno','fecha_programada','fecha_inicio_semana','hora_inicio'],
   estado:['descripcion_estado','descripción estado','estado','status'],
-  semana:['anosemana','ano_semana','semana','semana_iso']
+  semana:['anosemana','ano_semana','semana','semana_iso'],
+  zona:['zona','zona_gtiempos','zona gtiempos'],
+  login:['hora_logeo','hora logeo','logeo','login','login_previaje','login previaje'],
+  asignacion:['hora_asignacion','hora asignacion','asignacion','primera_asignacion'],
+  tam_ingreso:['tam_ingreso','tam ingreso','hora_ingreso_tam','a.hora inicio'],
+  horas_trabajadas:['horas_trabajadas','horas trabajadas'],
+  tickets:['cantidad_tickets_dia','cantidad tickets dia','vueltas'],
+  volumen:['volumen_total_dia','volumen total dia','volumen']
 };
 const HIST_REQUIRED_BY_SOURCE={
   turnos:[['operador_id','operador'],['turno'],['fecha','semana']],
   citaciones:[['operador_id','operador'],['citacion'],['fecha']],
-  status:[['operador_id','operador'],['estado'],['fecha']]
+  status:[['operador_id','operador'],['estado'],['fecha']],
+  gtiempos:[['operador_id','operador'],['fecha'],['planta']]
 };
 function histCanonicalField(header){
   const h=histKey(header);
@@ -3109,10 +3142,10 @@ function histRowsFromRange(ws,headers,start,end,range){
 
 
 const HIST_DIAG_STORAGE='cco_hist_load_diagnostics_v35';
-let histLoadDiagnostics={turnos:[],citaciones:[],status:[],tam:[]};
+let histLoadDiagnostics={gtiempos:[]};
 try{
   const saved=JSON.parse(localStorage.getItem(HIST_DIAG_STORAGE)||'null');
-  if(saved&&typeof saved==='object')histLoadDiagnostics={turnos:saved.turnos||[],citaciones:saved.citaciones||[],status:saved.status||[],tam:saved.tam||[]};
+  if(saved&&typeof saved==='object')histLoadDiagnostics={gtiempos:saved.gtiempos||[]};
 }catch{}
 let histDiagSaveTimer=null,histDiagRenderQueued=false;
 function histSaveDiagnostics(){
@@ -3342,7 +3375,7 @@ function histUploadOne(source,file){
   });
 }
 async function histPollJob(source,fileName,jobId,diag){
-  const hardDeadline=Date.now()+10*60*1000;
+  const hardDeadline=Date.now()+20*60*1000;
   let lastActivityAt=Date.now(),lastProgress=-1,lastRows=-1,lastStage='',pollDelay=350,lastServerDiag=diag;
   while(Date.now()<hardDeadline){
     await new Promise(r=>setTimeout(r,pollDelay));
@@ -3372,12 +3405,12 @@ async function histPollJob(source,fileName,jobId,diag){
     }
     if(data.done)return {data,diag:lastServerDiag};
 
-    // Regla correcta: cancelar solo si durante 10 s no cambia etapa,
-    // porcentaje ni cantidad de filas. Un archivo que sigue avanzando NO se cancela.
-    if(Date.now()-lastActivityAt>10_000){
+    // XLSX de gran volumen puede requerir tiempo para abrirse antes de reportar
+    // la primera fila. Se cancela solo tras 60 s reales sin ninguna actividad.
+    if(Date.now()-lastActivityAt>60_000){
       try{await fetch(API+'/api/historico/job/'+encodeURIComponent(jobId)+'/cancel',{method:'POST',headers:authHeaders()});}catch{}
-      const msg=`La carga quedó sin progreso durante más de 10 segundos en la etapa "${stage}". Verifique el archivo y vuelva a intentar.`;
-      histProgress(source,100,'ERROR · Sin progreso > 10 s');
+      const msg=`La carga quedó sin progreso durante más de 60 segundos en la etapa "${stage}". Verifique el archivo y vuelva a intentar.`;
+      histProgress(source,100,'ERROR · Sin progreso > 60 s');
       const failed={...lastServerDiag,status:'error',reason:msg};
       histSetDiagnostic(source,failed);
       updateSystemStatus({module:'Trazabilidad',stage:`ERROR DETECTADO EN: ${stage}`,file:fileName,errors:1,errorDetail:msg});
@@ -3413,7 +3446,7 @@ async function histReadFile(source,file,diag){
   return {diagnostic:finalDiag};
 }
 async function procesarArchivosHistoricos(source,files){
-  const selected=[...files];
+  const selected=[...files].slice(0,1);
   if(!selected.length)return;
   histFileStatus(source,`Archivo(s) seleccionado(s): ${selected.length} · iniciando validación`,'busy');
   let ok=0,partial=0,errors=0,totalStored=0;
@@ -3450,7 +3483,7 @@ async function cargarCatalogoHistorico(){
       ['Registros analíticos',Number(data.totalRecords||0).toLocaleString('es-CL')],
       ['Operador/día',Number(data.totalDays||0).toLocaleString('es-CL')],
       ['Cobertura',`${histDateFmt(data.minDate)} → ${histDateFmt(data.maxDate)}`],
-      ['Fuentes cargadas',(data.sources||[]).filter(x=>x.records>0).length+' / 4']
+      ['Fuente Base KPI',(data.sources||[]).some(x=>x.source==='gtiempos'&&x.records>0)?'Cargada':'Sin cargar']
     ].map(x=>`<div class="hist-audit-mini"><span>${x[0]}</span><b>${x[1]}</b></div>`).join('');
     (data.sources||[]).forEach(s=>{
       const pdf=(histFilesReadOnly[s.source]||[]).length;
