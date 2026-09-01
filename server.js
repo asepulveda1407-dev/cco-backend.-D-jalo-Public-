@@ -1841,6 +1841,16 @@ function fleetStatusFromSource(sourceStatus, activeFlag){
   if(s.includes('operativo') || a==='activo') return 'available';
   return 'stale';
 }
+function fleetClassification(value){
+  const n=normHeaderText(value);
+  if(n==='operativo')return 'operativo';
+  if(n==='operativo recuperable')return 'operativo_recuperable';
+  return '';
+}
+function fleetThirdPartyCategory(...values){
+  const tokens=values.flatMap(v=>normHeaderText(v).split(/\s+/).filter(Boolean));
+  return tokens.some(v=>v==='tercero'||v==='terceros'||v==='spot');
+}
 function normalizeFleetRow(row, index){
   const id=fleetPick(row,['Mixer','ID','ID Equipo','Equipo','Código Equipo','Codigo Equipo','Código','Codigo','Unit ID','Unidad']);
   const number=fleetPick(row,['Número','Numero','N°','Nro','Camión','Camion','Mixer','N° Camión','Numero Camion']);
@@ -1871,8 +1881,12 @@ function normalizeFleetRow(row, index){
   const company=fleetPick(row,['Compañía','Compania','Empresa','Proveedor']);
   const plantType=fleetPick(row,['Tipo planta','Tipo Planta','Tipo']);
   const sourceSheet=fleetPick(row,['__source_sheet']) || '';
+  const classificationRaw=fleetPick(row,['Clasificación camión','Clasificacion camion','Clasificación','Clasificacion','Macro clasificación','Macro clasificacion']);
+  const ownershipRaw=fleetPick(row,['Tipo flota','Propiedad','Clasificación flota','Clasificacion flota','Categoría','Categoria']);
+  const classification=fleetClassification(classificationRaw||sourceStatus);
+  const isThirdParty=fleetThirdPartyCategory(ownershipRaw,company,sourceSheet,plantType);
   const key=(id||number||plate||`ROW${index+1}`)+'-'+(plate||number||index+1);
-  return {key,id:id||number||plate||`Equipo ${index+1}`,number,brand,model,plate,year,zone,plantCode,plantType,plant,homePlant:plant,company,sourceSheet,sourceStatus,activeFlag,observation,status:fleetStatusFromSource(sourceStatus,activeFlag),workshop:'',responsible:'',eta:'',progress:0,cause:'',history:[],version:1};
+  return {key,id:id||number||plate||`Equipo ${index+1}`,number,brand,model,plate,year,zone,plantCode,plantType,plant,homePlant:plant,company,sourceSheet,sourceStatus,activeFlag,classificationRaw,classification,ownershipRaw,isThirdParty,observation,status:fleetStatusFromSource(sourceStatus,activeFlag),workshop:'',responsible:'',eta:'',progress:0,cause:'',history:[],version:1};
 }
 function sanitizeFleetItem(item){
   const x={...item};
@@ -1988,12 +2002,25 @@ app.get('/api/bitacora', requireAuth, (req, res) => {
   res.json(rows.slice(0,1000));
 });
 
+const BITACORA_TIPOS = new Set([
+  'Falta','Permiso medio día','Vacaciones','Licencia médica','Accidente trayecto',
+  'Exámenes ACHS','Capacitación planta','Otras funciones','Dirigente sindical',
+  'Atraso','Problemas en tablet','Permiso día completo','Desvinculado'
+]);
+function bitacoraDuplicateKey(x){
+  return [safeText(x.planta),safeText(x.operador_id),safeText(x.tipo),safeText(x.detalle).toLowerCase()].join('|');
+}
+
 app.post('/api/bitacora', requireAuth, (req, res) => {
   const planta = safeText(req.body?.planta);
   const tipo = safeText(req.body?.tipo);
   const detalle = safeText(req.body?.detalle);
   if (!planta || !tipo || !detalle) return res.status(400).json({ error:'Planta, tipo y detalle son requeridos' });
+  if (!BITACORA_TIPOS.has(tipo)) return res.status(400).json({error:'Tipo de evento no reconocido'});
   ensurePlant(planta);
+  const duplicateKey=bitacoraDuplicateKey({...req.body,planta,tipo,detalle});
+  const duplicate=state.bitacora.find(x=>bitacoraDuplicateKey(x)===duplicateKey && Date.now()-Date.parse(x.creado_en)<60_000);
+  if(duplicate)return res.status(409).json({error:'Este registro ya fue guardado',registro:duplicate});
   const entry = {
     id: crypto.randomUUID(),
     creado_en: nowIso(),
@@ -2010,6 +2037,24 @@ app.post('/api/bitacora', requireAuth, (req, res) => {
   persistState();
   emitRealtime('bitacora:nueva',entry,'bitacora','bitacora_nueva',req.user,{id:entry.id});
   res.status(201).json(entry);
+});
+
+app.patch('/api/bitacora/:id', requireAuth, (req,res)=>{
+  const index=state.bitacora.findIndex(x=>x.id===req.params.id);
+  if(index<0)return res.status(404).json({error:'Registro de bitácora no encontrado'});
+  const current=state.bitacora[index];
+  const next={...current};
+  for(const field of ['planta','operador_id','operador_nombre','tipo','detalle']){
+    if(req.body?.[field]!==undefined)next[field]=safeText(req.body[field]);
+  }
+  if(!next.planta||!next.tipo||!next.detalle)return res.status(400).json({error:'Planta, tipo y detalle son requeridos'});
+  if(!BITACORA_TIPOS.has(next.tipo))return res.status(400).json({error:'Tipo de evento no reconocido'});
+  const duplicateKey=bitacoraDuplicateKey(next);
+  if(state.bitacora.some((x,i)=>i!==index&&bitacoraDuplicateKey(x)===duplicateKey))return res.status(409).json({error:'Ya existe un registro idéntico'});
+  next.editado_en=nowIso();next.editado_por=req.user.nombre;
+  state.bitacora[index]=next;persistState();
+  emitRealtime('bitacora:actualizada',next,'bitacora','bitacora_editada',req.user,{id:next.id});
+  return res.json(next);
 });
 
 app.get('/api/tabla-operadores', requireAuth, (req, res) => {
@@ -2367,6 +2412,14 @@ function etlNormalizeRow(source,row,archivo,rowNumber,diag,statusAccumulator=nul
       ...base,
       fecha,planta:plant,zona:zoneRaw|| (plant?inferZona(plant):''),
       operadorId:normalizeId(id),operadorNombre:name,operadorKey:key,
+      camion:safeText(histPick(r,HIST_FIELD.gtiempos.truck)),
+      turnoMin:histTime(histPick(r,HIST_FIELD.gtiempos.shift)),
+      citacionMin:histTime(histPick(r,HIST_FIELD.gtiempos.citation)),
+      loginMin:histTime(histPick(r,HIST_FIELD.gtiempos.login)),
+      asignacionMin:histTime(histPick(r,HIST_FIELD.gtiempos.assignment)),
+      primeraCargaMin:histTime(histPick(r,HIST_FIELD.gtiempos.firstLoad)),
+      tamIngresoMin:histTime(histPick(r,HIST_FIELD.gtiempos.tamIn)),
+      tamSalidaMin:histTime(histPick(r,HIST_FIELD.gtiempos.tamOut)),
       horasTrabajadas:histNumber(histPick(r,HIST_FIELD.gtiempos.worked)),
       vueltas:histNumber(histPick(r,HIST_FIELD.gtiempos.tickets)),
       horasExtras:round1((hheeIn+hheeOut)/60),
@@ -2619,8 +2672,11 @@ async function etlProcessNonXlsx(filePath,ext,source,archivo,job,diag){
 
 function replaceHistoricalFileRecords(source,archivo,newRecords,diag){
   const before=historicalWarehouse.records||[];
-  const old=before.filter(r=>r.source===source && safeText(r.archivo)===safeText(archivo));
-  const keep=before.filter(r=>!(r.source===source && safeText(r.archivo)===safeText(archivo)));
+  // Base KPI es una instantánea autoritativa: una carga nueva sustituye por
+  // completo la anterior, incluso cuando cambia el nombre del archivo.
+  const replaceWholeSource=source==='gtiempos';
+  const old=before.filter(r=>r.source===source && (replaceWholeSource||safeText(r.archivo)===safeText(archivo)));
+  const keep=before.filter(r=>!(r.source===source && (replaceWholeSource||safeText(r.archivo)===safeText(archivo))));
   historicalWarehouse.records=[...keep,...newRecords];
   diag.replacedPreviousRecords=old.length;
   etlLog(diag,`Reproceso controlado: ${old.length.toLocaleString('es-CL')} registros anteriores del mismo archivo fueron reemplazados por ${newRecords.length.toLocaleString('es-CL')} registros nuevos.`);
@@ -2637,7 +2693,7 @@ function hashFileMd5(filePath){
     s.on('data',d=>h.update(d));s.on('error',reject);s.on('end',()=>resolve(h.digest('hex')));
   });
 }
-const HIST_ETL_CACHE_VERSION='4.8.3';
+const HIST_ETL_CACHE_VERSION='4.9.0';
 function histCacheKey(source,md5){return `${HIST_ETL_CACHE_VERSION}:${source}:${md5}`;}
 function publicDiagnostic(diag){if(!diag)return null;const {_errorRows,...safe}=diag;return safe;}
 function finalizeDiagRuntime(diag){
@@ -2750,6 +2806,9 @@ const HISTORICAL_SOURCES = {
   tam: { label:'Marcaje TAM' },
   gtiempos: { label:'Base KPI GTIEMPOS' },
 };
+// v4.9.0: Trazabilidad expone una sola fuente. Las definiciones antiguas se
+// conservan internamente para no romper datos históricos ni rutas compartidas.
+const HISTORICAL_ACTIVE_SOURCES = new Set(['gtiempos']);
 
 const HIST_FIELD = {
   turnos: {
@@ -2797,11 +2856,19 @@ const HIST_FIELD = {
     out:['a. hora fin','a hora fin','a_hora_fin','fin'],
   },
   gtiempos: {
-    date:['fecha'],
-    operatorId:['id_operador','id operador'],
+    date:['fecha','fecha_operacion','fecha operación','dia','día'],
+    operatorId:['id_operador','id operador','id','numero_funcionario','número funcionario','rut'],
     operatorName:['conductor_gtiempos','conductor gtiempos','conductor','operador'],
     plant:['planta_gtiempos','planta gtiempos','planta'],
     zone:['zona','zona_gtiempos','zona gtiempos'],
+    truck:['camion','camión','mixer','numero_equipo','número equipo','patente'],
+    shift:['hora_turno','hora turno','turno','hora_ingreso','hora ingreso','inicio_turno'],
+    citation:['hora_citacion','hora citación','hora citacion','citacion','citación','citacion_sugerida'],
+    login:['hora_logeo','hora logeo','logeo','login','login_previaje','login previaje','hora_inicio_login'],
+    assignment:['hora_asignacion','hora asignación','hora asignacion','asignacion','asignación','primer_asignado','primera_asignacion'],
+    firstLoad:['hora_primera_carga','hora primera carga','primera_carga','primera carga','salida_primera_carga'],
+    tamIn:['tam_ingreso','tam ingreso','hora_ingreso_tam','hora ingreso tam','a.hora inicio','a hora inicio'],
+    tamOut:['tam_salida','tam salida','hora_salida_tam','hora salida tam','a. hora fin','a hora fin'],
     tickets:['cantidad_tickets_dia','cantidad tickets dia'],
     volume:['volumen_total_dia','volumen total dia'],
     worked:['horas_trabajadas','horas trabajadas'],
@@ -2932,6 +2999,14 @@ function historicalNormalizeMany(source,row,archivo='',rowIndex=0){
     Object.assign(rec,{
       fecha,planta:plant,zona:zoneRaw||(plant?inferZona(plant):''),
       operadorId:normalizeId(id),operadorNombre:name,operadorKey:key,
+      camion:safeText(histPick(r,HIST_FIELD.gtiempos.truck)),
+      turnoMin:histTime(histPick(r,HIST_FIELD.gtiempos.shift)),
+      citacionMin:histTime(histPick(r,HIST_FIELD.gtiempos.citation)),
+      loginMin:histTime(histPick(r,HIST_FIELD.gtiempos.login)),
+      asignacionMin:histTime(histPick(r,HIST_FIELD.gtiempos.assignment)),
+      primeraCargaMin:histTime(histPick(r,HIST_FIELD.gtiempos.firstLoad)),
+      tamIngresoMin:histTime(histPick(r,HIST_FIELD.gtiempos.tamIn)),
+      tamSalidaMin:histTime(histPick(r,HIST_FIELD.gtiempos.tamOut)),
       horasTrabajadas:histNumber(histPick(r,HIST_FIELD.gtiempos.worked)),
       vueltas:histNumber(histPick(r,HIST_FIELD.gtiempos.tickets)),
       horasExtras:round1((hheeIn+hheeOut)/60),
@@ -3083,6 +3158,9 @@ function getHistoricalDailyIndex(){
 
 
     if(source==='gtiempos'){
+      for(const field of ['turnoMin','citacionMin','loginMin','asignacionMin','primeraCargaMin','tamIngresoMin','tamSalidaMin']){
+        if(r[field]!==null&&r[field]!==undefined)d[field]=Number(r[field]);
+      }
       if(r.horasTrabajadas!==null&&r.horasTrabajadas!==undefined)d.horasTrabajadas=Number(r.horasTrabajadas);
       if(r.vueltas!==null&&r.vueltas!==undefined)d.vueltas=Number(r.vueltas);
       if(r.horasExtras!==null&&r.horasExtras!==undefined)d.horasExtras=Number(r.horasExtras);
@@ -3359,7 +3437,7 @@ function histInsights(metrics,plants,zones,ops){
 app.post('/api/historico/upload',requireAuth,historicalUpload.single('file'),(req,res)=>{
   try{
     const source=safeText(req.body?.source);
-    if(!HISTORICAL_SOURCES[source]){if(req.file?.path)try{fs.unlinkSync(req.file.path)}catch{};return res.status(400).json({error:'Fuente histórica inválida'});}
+    if(!HISTORICAL_ACTIVE_SOURCES.has(source)){if(req.file?.path)try{fs.unlinkSync(req.file.path)}catch{};return res.status(400).json({error:'Trazabilidad Histórica acepta únicamente Base KPI GTIEMPOS'});}
     if(!req.file)return res.status(400).json({error:'No se recibió archivo'});
     const id=crypto.randomUUID(),job={id,source,file:req.file,user:req.user?.nombre||'Sistema',progress:5,stage:'Archivo recibido',createdAt:nowIso(),updatedAt:nowIso(),diagnostic:null,error:null};
     HIST_JOBS.set(id,job);
@@ -3720,14 +3798,17 @@ function historicalCoverage(query={}){
   const idx=getHistoricalDailyIndex();
   const rows=idx.rows.filter(r=>(!from||r.fecha>=from)&&(!to||r.fecha<=to)&&(!zones.length||zones.includes(r.zona))&&(!plants.length||plants.includes(r.planta))&&(!operators.length||operators.includes(r.operadorKey)));
   const raw=(historicalWarehouse.records||[]).filter(r=>(!from||r.fecha>=from)&&(!to||r.fecha<=to));
-  const sourceRows={turnos:0,citaciones:0,status:0,tam:0};
-  for(const r of raw){const s=r.source||r.fuente;if(sourceRows[s]!==undefined)sourceRows[s]++;}
+  const sourceRows={turnos:0,citaciones:0,status:0,tam:0,gtiempos:raw.filter(r=>(r.source||r.fuente)==='gtiempos').length};
   const withTurn=r=>r.turnoMin!==null&&r.turnoMin!==undefined;
   const withCit=r=>r.citacionMin!==null&&r.citacionMin!==undefined;
   const withLogin=r=>r.loginMin!==null&&r.loginMin!==undefined;
   const withAssign=r=>r.asignacionMin!==null&&r.asignacionMin!==undefined;
   const withTam=r=>r.tamIngresoMin!==null&&r.tamIngresoMin!==undefined;
   const withStatus=r=>withLogin(r)||withAssign(r)||(r.primeraCargaMin!==null&&r.primeraCargaMin!==undefined);
+  sourceRows.turnos=rows.filter(withTurn).length;
+  sourceRows.citaciones=rows.filter(withCit).length;
+  sourceRows.status=rows.filter(withStatus).length;
+  sourceRows.tam=rows.filter(withTam).length;
 
   const turnDays=rows.filter(withTurn).length,citDays=rows.filter(withCit).length,statusDays=rows.filter(withStatus).length,tamDays=rows.filter(withTam).length;
   const turnoCit=rows.filter(r=>withTurn(r)&&withCit(r)).length;
@@ -3784,14 +3865,8 @@ function historicalValidPlantsByMode(mode='logeo',from='',to=''){
   const normalizedMode=String(mode||'logeo')==='citacion'?'citacion':'logeo';
   const idx=getHistoricalDailyIndex();
 
-  // Regla:
-  // - CITACIÓN: la existencia del registro proviene exclusivamente de la fuente Citaciones.
-  //   La planta se obtiene del registro consolidado operador+fecha, porque Citaciones puede no traer planta.
-  // - LOGEO: la existencia del registro proviene exclusivamente de Status con LOGIN real.
-  //
-  // Esto evita que una planta aparezca solo por existir en Turnos/Status sin tener el evento seleccionado,
-  // pero permite mostrar la planta correctamente cuando la fuente del evento no contiene esa columna.
-  const source=normalizedMode==='citacion'?'citaciones':'status';
+  // La existencia del evento y su planta provienen de la misma Base KPI.
+  const source='gtiempos';
 
   const raw=(historicalWarehouse.records||[]).filter(r=>{
     if((r.source||r.fuente)!==source)return false;
@@ -3847,12 +3922,15 @@ function historicalValidPlantsByMode(mode='logeo',from='',to=''){
     .sort((a,b)=>a.zona.localeCompare(b.zona,'es')||a.planta.localeCompare(b.planta,'es'));
 }
 function historicalRawFilesForKeys(source,keys,from='',to=''){
+  // Todos los campos históricos activos provienen de la Base KPI única.
+  source='gtiempos';
   const set=new Set(keys);
   const rows=(historicalWarehouse.records||[]).filter(r=>(r.source||r.fuente)===source&&(!from||r.fecha>=from)&&(!to||r.fecha<=to)&&set.has(`${r.fecha}|${r.operadorKey}`));
   return [...new Set(rows.map(r=>safeText(r.archivo)).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
 }
 function historicalKpiAudit(query={},cfg=histCfg(query)){
   const rows=histFilterBase(query),from=safeText(query.from),to=safeText(query.to),mode=String(query.mode||'logeo')==='citacion'?'citacion':'logeo',sourceAudit=Object.fromEntries(Object.keys(HISTORICAL_SOURCES).map(s=>[s,historicalSourceProcessingAudit(s)])),diff=(a,b)=>histMinutesDiff(a,b);
+  for(const legacy of ['turnos','citaciones','status','tam'])sourceAudit[legacy]=sourceAudit.gtiempos;
   const defs={
     adherenciaTurno:{label:'Adherencia al Turno',sources:['turnos','status'],marks:['turnoMin','loginMin'],formula:`Cumplen / comparaciones válidas × 100; cumple si LOGIN−TURNO está entre -${cfg.tolTurnBefore} y +${cfg.tolTurnAfter} min.`,calc(rs){let ok=0,n=0;for(const r of rs){const d=diff(r.loginMin,r.turnoMin);if(d===null)continue;n++;if(d>=-cfg.tolTurnBefore&&d<=cfg.tolTurnAfter)ok++;}return {value:n?round1(ok/n*100):null,used:n,numerator:ok};}},
     turnVsAssignment:{label:'Turno vs Asignación',sources:['turnos','status'],marks:['turnoMin','asignacionMin'],formula:`Cumplen / comparaciones válidas × 100; cumple si ASIGNACIÓN−TURNO está entre -${cfg.tolAssignmentBefore} y +${cfg.tolAssignmentAfter} min.`,calc(rs){let ok=0,n=0;for(const r of rs){const d=diff(r.asignacionMin,r.turnoMin);if(d===null)continue;n++;if(d>=-cfg.tolAssignmentBefore&&d<=cfg.tolAssignmentAfter)ok++;}return {value:n?round1(ok/n*100):null,used:n,numerator:ok};}},
@@ -3987,7 +4065,7 @@ app.get('/api/historico/fuentes',requireAuth,(req,res)=>{
   return res.json({
     ok:true,revision:Number(historicalWarehouse?.revision||0),totalRecords:records.length,totalDays:idx.rows.length,loadedAt:historicalWarehouse?.loaded_at||null,
     minDate:dates[0]||null,maxDate:dates.at(-1)||null,
-    sources:Object.keys(HISTORICAL_SOURCES).map(k=>({source:k,label:HISTORICAL_SOURCES[k].label,...historicalSourceMeta(k),fileDetails:historicalFileDetails(k)})),
+    sources:[...HISTORICAL_ACTIVE_SOURCES].map(k=>({source:k,label:HISTORICAL_SOURCES[k].label,...historicalSourceMeta(k),fileDetails:historicalFileDetails(k)})),
     plants:idx.plants,
     plantCatalog:idx.plants.map(planta=>({planta,zona:(idx.rows.find(r=>r.planta===planta)?.zona)||inferZona(planta)})),
     zones:idx.zones,operators:idx.operators,
