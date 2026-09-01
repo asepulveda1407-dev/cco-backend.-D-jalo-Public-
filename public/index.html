@@ -534,6 +534,7 @@ table{border-collapse:separate!important;border-spacing:0!important}
     <option value="gerencia">Gerencia</option>
     <option value="supervisor_planta">Supervisor Planta</option>
     <option value="coordinador">Coordinador</option>
+    <option value="mantencion">Mantención</option>
   </select>
   <label>Fecha operacional</label>
   <div class="pill" style="display:inline-block;margin:2px 0 8px">Hoy · <span id="gFechaLabel">—</span></div>
@@ -683,50 +684,6 @@ table{border-collapse:separate!important;border-spacing:0!important}
     </div>
 
     <div class="hist-upload-grid">
-      <div class="hist-drop-card" data-source="turnos" id="drop_turnos" hidden>
-        <div class="hist-drop-icon">🗓️</div><b>Turnos</b>
-        <div class="small">Programación semanal/diaria por operador y planta</div>
-        <input type="file" id="histFiles_turnos" multiple accept=".xlsx,.xls,.csv,.txt,.pdf" hidden>
-        <button type="button" class="secondary hist-file-btn" data-source="turnos">Seleccionar archivos</button>
-        <div class="hist-progress" id="histProgress_turnos" aria-label="Progreso de carga">
-          <div class="hist-progress-bar" id="histProgressBar_turnos" style="width:0%"></div>
-          <span id="histProgressText_turnos">0% · Esperando archivo</span>
-        </div>
-        <div class="hist-source-status" id="histSource_turnos">Sin datos</div><div class="hist-file-list" id="histFileList_turnos"></div>
-      </div>
-      <div class="hist-drop-card" data-source="citaciones" id="drop_citaciones" hidden>
-        <div class="hist-drop-icon">⏰</div><b>Citaciones</b>
-        <div class="small">Hora citada, operador, camión y fecha</div>
-        <input type="file" id="histFiles_citaciones" multiple accept=".xlsx,.xls,.csv,.txt,.pdf" hidden>
-        <button type="button" class="secondary hist-file-btn" data-source="citaciones">Seleccionar archivos</button>
-        <div class="hist-progress" id="histProgress_citaciones" aria-label="Progreso de carga">
-          <div class="hist-progress-bar" id="histProgressBar_citaciones" style="width:0%"></div>
-          <span id="histProgressText_citaciones">0% · Esperando archivo</span>
-        </div>
-        <div class="hist-source-status" id="histSource_citaciones">Sin datos</div><div class="hist-file-list" id="histFileList_citaciones"></div>
-      </div>
-      <div class="hist-drop-card" data-source="status" id="drop_status" hidden>
-        <div class="hist-drop-icon">🚦</div><b>Status Black / StatusBreakdown</b>
-        <div class="small">LOGIN, ASIGNADO y primera carga</div>
-        <input type="file" id="histFiles_status" multiple accept=".xlsx,.xls,.csv,.txt,.pdf" hidden>
-        <button type="button" class="secondary hist-file-btn" data-source="status">Seleccionar archivos</button>
-        <div class="hist-progress" id="histProgress_status" aria-label="Progreso de carga">
-          <div class="hist-progress-bar" id="histProgressBar_status" style="width:0%"></div>
-          <span id="histProgressText_status">0% · Esperando archivo</span>
-        </div>
-        <div class="hist-source-status" id="histSource_status">Sin datos</div><div class="hist-file-list" id="histFileList_status"></div>
-      </div>
-      <div class="hist-drop-card" data-source="tam" id="drop_tam" hidden>
-        <div class="hist-drop-icon">🪪</div><b>Marcaje TAM</b>
-        <div class="small">Cruce obligatorio por ID columna A + Fecha · ingreso y salida TAM</div>
-        <input type="file" id="histFiles_tam" multiple accept=".xlsx,.xls,.csv,.txt,.pdf" hidden>
-        <button type="button" class="secondary hist-file-btn" data-source="tam">Seleccionar archivos</button>
-        <div class="hist-progress" id="histProgress_tam" aria-label="Progreso de carga">
-          <div class="hist-progress-bar" id="histProgressBar_tam" style="width:0%"></div>
-          <span id="histProgressText_tam">0% · Esperando archivo</span>
-        </div>
-        <div class="hist-source-status" id="histSource_tam">Sin datos</div><div class="hist-file-list" id="histFileList_tam"></div>
-      </div>
       <div class="hist-drop-card" data-source="gtiempos" id="drop_gtiempos">
         <div class="hist-drop-icon">📊</div><b>Base KPI GTIEMPOS</b>
         <div class="small">Horas trabajadas · vueltas · HHEE · volumen · zona · planta</div>
