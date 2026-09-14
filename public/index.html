@@ -534,24 +534,10 @@ table{border-collapse:separate!important;border-spacing:0!important}
   <div class="pill" style="display:inline-block;margin:2px 0 8px">Hoy · <span id="gFechaLabel">—</span></div>
   <input id="gFecha" type="hidden">
   <button onclick="entrar()">Entrar</button>
-  <button type="button" class="secondary" onclick="abrirRegistro()">Registrarme</button>
   <div id="gateErr" class="errbox"></div>
   <p class="small">Acceso operacional en tiempo real. Los cambios de configuración, bitácora e ingesta se sincronizan entre usuarios conectados.</p>
 </div>
 
-<div id="registerGate" class="gate card" style="display:none">
-  <h2>Solicitar acceso CCO</h2>
-  <label>Nombre completo</label><input id="rNombre" autocomplete="name">
-  <label>Correo corporativo</label><input id="rEmail" type="email" placeholder="nombre@polpaicosoluciones.cl">
-  <label>Clave personal</label><input id="rPassword" type="password" minlength="10">
-  <label>Confirmar clave</label><input id="rPassword2" type="password" minlength="10">
-  <label>Cargo</label><select id="rCargo"><option value="">Seleccione cargo</option><option value="coordinador">Coordinador</option><option value="supervisor_nacional">Supervisor Nacional</option><option value="gerencia">Gerencia</option><option value="mantenimiento">Mantención</option><option value="supervisor_planta">Supervisor de Planta</option></select>
-  <label>Región</label><input id="rRegion" placeholder="Ej: RM">
-  <label>Planta</label><input id="rPlanta" placeholder="Solo cuando corresponda">
-  <button type="button" onclick="registrarse()">Solicitar registro</button> <button type="button" class="secondary" onclick="cerrarRegistro()">Volver</button>
-  <div id="registerErr" class="errbox"></div>
-  <p class="small">El cargo solicitado queda pendiente de validación. Los privilegios se habilitan solo después de la aprobación.</p>
-</div>
 <div id="app" style="display:none">
 <header>
   <div class="cco-brand-block">
@@ -576,6 +562,12 @@ table{border-collapse:separate!important;border-spacing:0!important}
   <button type="button" id="quickOperacion" class="active" onclick="console.log('Botón ejecutado correctamente'); cambiarModulo('operacion',true)">📊 Operación Nacional</button>
   <button type="button" id="quickHistorico" class="secondary" onclick="console.log('Botón ejecutado correctamente'); cambiarModulo('historico',true)">📈 Trazabilidad Histórica</button>
   <button type="button" id="quickTorre" class="secondary" onclick="console.log('Botón ejecutado correctamente'); cambiarModulo('torre',true)">🚛 Torre de Control</button>
+  <button type="button" id="adminUsersBtn" class="secondary" style="display:none" onclick="abrirAdminUsuarios()">👥 Usuarios</button>
+</div>
+<div id="adminUsersPanel" class="card" style="display:none;margin-top:10px;margin-bottom:12px">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><h2 style="margin:0">Administración de usuarios</h2><div class="small">Aprobación y control de accesos CCO.</div></div><button type="button" class="secondary" onclick="cerrarAdminUsuarios()">Cerrar</button></div>
+  <div id="adminUsersMsg" class="small" style="margin:10px 0"></div>
+  <div style="overflow:auto"><table style="width:100%"><thead><tr><th>Nombre</th><th>Correo</th><th>Cargo solicitado</th><th>Región / Planta</th><th>Estado</th><th>Acciones</th></tr></thead><tbody id="adminUsersBody"></tbody></table></div>
 </div>
 <details id="globalSystemStatus" class="global-system-status" open>
   <summary><b>Estado Sistema</b><span id="sysHeadline">Sistema operativo</span></summary>
@@ -1158,15 +1150,6 @@ function cargarPlantasLogin(){
 }
 
 
-function abrirRegistro(){document.getElementById('gate').style.display='none';document.getElementById('registerGate').style.display='block';}
-function cerrarRegistro(){document.getElementById('registerGate').style.display='none';document.getElementById('gate').style.display='block';}
-async function registrarse(){
- const box=document.getElementById('registerErr');box.style.display='none';
- const body={nombre:rNombre.value.trim(),email:rEmail.value.trim().toLowerCase(),password:rPassword.value,cargo:rCargo.value,region:rRegion.value.trim(),planta:rPlanta.value.trim()};
- if(rPassword.value!==rPassword2.value){box.textContent='Las claves no coinciden.';box.style.display='block';return;}
- try{const r=await fetch(API+'/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(body)});const ct=(r.headers.get('content-type')||'').toLowerCase();if(!ct.includes('application/json')){throw new Error('El servidor publicado no tiene activa la ruta de registro. Reemplace también server.js y vuelva a desplegar.');}const d=await r.json();if(!r.ok)throw new Error(d.error||'No fue posible registrar');box.textContent=d.mensaje;box.style.display='block';box.style.background='#ecf9f2';box.style.color='#217047';box.style.borderColor='#b8e5cc';rPassword.value='';rPassword2.value='';}
- catch(e){box.textContent=e.message;box.style.display='block';}
-}
 function mostrarErrorGate(msg){
   const box = document.getElementById('gateErr');
   box.textContent = msg;
@@ -1186,7 +1169,7 @@ function entrar(){
 
   fetch(API+'/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({email,password,fecha})})
-    .then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+    .then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||('HTTP '+r.status));return d;})
     .then(data=>{
       token = data.token; user = {...data.user, fecha:hoyKey};
       document.getElementById('gate').style.display='none';
@@ -1195,6 +1178,7 @@ function entrar(){
       document.getElementById('userInfo').textContent = user.nombre+' · '+user.rol+(user.zona?' · '+user.zona:'')+(user.region?' · '+user.region:'')+(user.planta?' · '+user.planta:'')+(user.fecha?' · '+user.fecha:'');
       document.getElementById('scopeFecha').value = hoyKey;
       document.getElementById('scopeFechaLabel').textContent = hoyLabelCL;
+      document.getElementById('adminUsersBtn').style.display=['admin','supervisor_nacional'].includes(user.rol)?'':'none';
       iniciar();
     })
     .catch(err=>mostrarErrorGate(err.message||'No fue posible iniciar sesión.'));
@@ -1207,6 +1191,11 @@ function cambiarFechaOperacional(){
   const hidden=document.getElementById('scopeFecha'); if(hidden) hidden.value=hoyKey;
   const lbl=document.getElementById('scopeFechaLabel'); if(lbl) lbl.textContent=hoyLabelCL;
 }
+
+async function abrirAdminUsuarios(){document.getElementById('adminUsersPanel').style.display='block';await cargarAdminUsuarios();document.getElementById('adminUsersPanel').scrollIntoView({behavior:'smooth',block:'start'});}
+function cerrarAdminUsuarios(){document.getElementById('adminUsersPanel').style.display='none';}
+async function cargarAdminUsuarios(){const body=document.getElementById('adminUsersBody'),msg=document.getElementById('adminUsersMsg');body.innerHTML='<tr><td colspan="6">Cargando...</td></tr>';try{const r=await fetch(API+'/api/admin/users',{headers:authHeaders(),cache:'no-store'}),d=await r.json();if(!r.ok)throw new Error(d.error||'No fue posible cargar usuarios');body.innerHTML=d.map(u=>`<tr><td>${escapeHtml(u.nombre||'')}</td><td>${escapeHtml(u.email||'')}</td><td>${escapeHtml(u.cargoSolicitado||'')}</td><td>${escapeHtml([u.region,u.planta].filter(Boolean).join(' · '))}</td><td><b>${escapeHtml(u.estado||'')}</b></td><td>${u.estado==='pendiente'?`<button onclick="accionUsuario('${encodeURIComponent(u.email)}','approve')">Aprobar</button> <button class="secondary" onclick="accionUsuario('${encodeURIComponent(u.email)}','reject')">Rechazar</button>`:`<button class="secondary" onclick="accionUsuario('${encodeURIComponent(u.email)}','${u.activo?'block':'activate'}')">${u.activo?'Bloquear':'Activar'}</button>`}</td></tr>`).join('')||'<tr><td colspan="6">Sin usuarios registrados.</td></tr>';msg.textContent=`${d.filter(x=>x.estado==='pendiente').length} solicitud(es) pendiente(s).`;}catch(e){body.innerHTML='<tr><td colspan="6">Error al cargar usuarios.</td></tr>';msg.textContent=e.message;}}
+async function accionUsuario(email,action){try{const r=await fetch(API+'/api/admin/users/'+email,{method:'PATCH',headers:authHeaders(),body:JSON.stringify({action})}),d=await r.json();if(!r.ok)throw new Error(d.error||'No fue posible actualizar');await cargarAdminUsuarios();}catch(e){document.getElementById('adminUsersMsg').textContent=e.message;}}
 
 function salir(){
   document.getElementById('app').style.display='none';
