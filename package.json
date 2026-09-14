@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node server.js",
     "test": "node tests/run-tests.js",
-    "check": "node --check server.js"
+    "check": "node --check server.js",
+    "user:add": "node manage-users.js add",
+    "user:list": "node manage-users.js list"
   },
   "dependencies": {
     "cors": "^2.8.5",
