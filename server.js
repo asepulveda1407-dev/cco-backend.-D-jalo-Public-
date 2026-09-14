@@ -1178,8 +1178,12 @@ const RBAC=Object.freeze({
 function normalizeEmail(v){return safeText(v).toLowerCase();}
 function loadUsers(){try{if(!fs.existsSync(USERS_FILE))return [];const x=JSON.parse(fs.readFileSync(USERS_FILE,'utf8'));return Array.isArray(x)?x:(Array.isArray(x.users)?x.users:[]);}catch(e){console.error('[CCO][AUTH]',e.message);return [];}}
 function saveUsers(users){fs.mkdirSync(path.dirname(USERS_FILE),{recursive:true});const tmp=USERS_FILE+'.tmp';fs.writeFileSync(tmp,JSON.stringify({version:2,users},null,2),'utf8');fs.renameSync(tmp,USERS_FILE);}
-function makePasswordHash(password){const salt=crypto.randomBytes(16);const hash=crypto.scryptSync(String(password),salt,64);return `scrypt$${salt.toString('hex')}$${hash.toString('hex')}`;}
+function makePasswordHash(password){const salt=crypto.randomBytes(16),hash=crypto.scryptSync(String(password),salt,64);return `scrypt$${salt.toString('hex')}$${hash.toString('hex')}`;}
 const REGISTER_ROLES=new Set(['coordinador','supervisor_nacional','gerencia','mantenimiento','supervisor_planta']);
+const PRIMARY_ADMIN_EMAIL=normalizeEmail(process.env.PRIMARY_ADMIN_EMAIL||'alberto.sepulveda@polpaicosoluciones.cl');
+function ensurePrimaryAdmin(){const users=loadUsers();const i=users.findIndex(u=>normalizeEmail(u.email)===PRIMARY_ADMIN_EMAIL);if(i<0)return false;const u=users[i];let changed=false;if(u.rol!=='admin'){u.rol='admin';changed=true;}if(u.estado!=='activo'){u.estado='activo';changed=true;}if(u.activo!==true){u.activo=true;changed=true;}if(changed){u.cargoSolicitado=u.cargoSolicitado||'admin';u.updatedAt=nowIso();users[i]=u;saveUsers(users);}return true;}
+function isUserAdmin(u){return ['admin','supervisor_nacional'].includes(u?.rol);}
+function requireUserAdmin(req,res,next){if(!isUserAdmin(req.user))return res.status(403).json({error:'Solo Supervisor Nacional o Administrador puede gestionar usuarios'});next();}
 function publicUser(u){return {email:u.email,nombre:u.nombre,rol:u.rol,zona:u.zona||'',region:u.region||'',planta:u.planta||'',permissions:RBAC[u.rol]||{}};}
 function verifyPassword(p,stored){try{const [v,salt,hash]=String(stored||'').split('$');if(v!=='scrypt')return false;const expected=Buffer.from(hash,'hex'),actual=crypto.scryptSync(String(p||''),Buffer.from(salt,'hex'),expected.length);return crypto.timingSafeEqual(actual,expected);}catch{return false;}}
 function routePolicy(req){const p=String(req.path||'').toLowerCase();let domain=p.startsWith('/api/flota')?'tower':p.startsWith('/api/historico')?'trace':'operation';if(p.includes('audit'))domain='audit';const action=domain==='audit'?'view':(/export|\.xlsx|\.csv/.test(p)?'export':(req.method==='GET'?'view':'edit'));return {domain,action};}
@@ -1569,49 +1573,27 @@ app.get('/health', (req, res) => res.json({
   historical_records: Array.isArray(historicalWarehouse?.records) ? historicalWarehouse.records.length : 0,
 }));
 
-app.get('/api/auth/register',(req,res)=>res.status(200).json({ok:true,route:'POST /api/auth/register',release:'registro-rbac-2026-09-14'}));
-
+app.get('/api/auth/register',(req,res)=>res.status(200).json({ok:true,route:'POST /api/auth/register',release:'registro-rbac-admin-2026-09-14'}));
 app.post('/api/auth/register',(req,res)=>{
-  try{
-    const email=normalizeEmail(req.body?.email);
-    const nombre=safeText(req.body?.nombre);
-    const password=String(req.body?.password||'');
-    const cargo=safeText(req.body?.cargo);
-    const zona=safeText(req.body?.zona||'');
-    const region=safeText(req.body?.region||'');
-    const planta=safeText(req.body?.planta||'');
-    if(!CORPORATE_EMAIL_RE.test(email))return res.status(400).json({error:'Use su correo corporativo @polpaicosoluciones.cl'});
-    if(nombre.length<3)return res.status(400).json({error:'Nombre completo requerido'});
-    if(password.length<8)return res.status(400).json({error:'La clave debe tener al menos 8 caracteres'});
-    if(!REGISTER_ROLES.has(cargo))return res.status(400).json({error:'Seleccione un cargo válido'});
-    const users=loadUsers();
-    if(users.some(u=>normalizeEmail(u.email)===email))return res.status(409).json({error:'Este correo ya está registrado'});
-    users.push({email,nombre,cargoSolicitado:cargo,rol:null,zona,region,planta,estado:'pendiente',activo:false,passwordHash:makePasswordHash(password),creadoEn:nowIso(),updatedAt:nowIso()});
-    saveUsers(users);
-    return res.status(201).json({ok:true,estado:'pendiente',mensaje:'Registro recibido. Tu cuenta quedó pendiente de aprobación.'});
-  }catch(err){
-    console.error('[CCO][AUTH][REGISTER]',err);
-    return res.status(500).json({error:'No fue posible registrar la cuenta'});
-  }
-});
-
-app.get('/api/auth/registration-status',(req,res)=>{
-  const email=normalizeEmail(req.query?.email);
-  const account=loadUsers().find(u=>normalizeEmail(u.email)===email);
-  if(!account)return res.status(404).json({error:'Cuenta no encontrada'});
-  res.json({email:account.email,estado:account.estado||(account.activo?'activo':'pendiente'),cargoSolicitado:account.cargoSolicitado||account.rol||''});
+ try{const email=normalizeEmail(req.body?.email),nombre=safeText(req.body?.nombre),password=String(req.body?.password||''),cargo=safeText(req.body?.cargo),zona=safeText(req.body?.zona||''),region=safeText(req.body?.region||''),planta=safeText(req.body?.planta||'');
+ if(!CORPORATE_EMAIL_RE.test(email))return res.status(400).json({error:'Use su correo corporativo @polpaicosoluciones.cl'});if(nombre.length<3)return res.status(400).json({error:'Nombre completo requerido'});if(password.length<8)return res.status(400).json({error:'La clave debe tener al menos 8 caracteres'});if(!REGISTER_ROLES.has(cargo))return res.status(400).json({error:'Seleccione un cargo válido'});
+ const users=loadUsers();if(users.some(u=>normalizeEmail(u.email)===email))return res.status(409).json({error:'Este correo ya está registrado'});const primaryAdmin=email===PRIMARY_ADMIN_EMAIL;users.push({email,nombre,cargoSolicitado:primaryAdmin?'admin':cargo,rol:primaryAdmin?'admin':null,zona,region,planta,estado:primaryAdmin?'activo':'pendiente',activo:primaryAdmin,passwordHash:makePasswordHash(password),creadoEn:nowIso(),updatedAt:nowIso()});saveUsers(users);return res.status(201).json({ok:true,estado:primaryAdmin?'activo':'pendiente',mensaje:primaryAdmin?'Cuenta administradora activada correctamente. Ya puedes iniciar sesión.':'Registro recibido. Tu cuenta quedó pendiente de aprobación.'});}catch(err){console.error('[CCO][AUTH][REGISTER]',err);return res.status(500).json({error:'No fue posible registrar la cuenta'});}
 });
 
 app.post('/api/auth/login',(req,res)=>{
   const email=normalizeEmail(req.body?.email),password=String(req.body?.password||''),fecha=safeText(req.body?.fecha||'');
+  if(email===PRIMARY_ADMIN_EMAIL)ensurePrimaryAdmin();
   if(!CORPORATE_EMAIL_RE.test(email))return res.status(400).json({error:'Use su correo corporativo @polpaicosoluciones.cl'});
   const account=loadUsers().find(u=>normalizeEmail(u.email)===email);
   if(!account||!verifyPassword(password,account.passwordHash))return res.status(401).json({error:'Correo o clave incorrectos'});
-  if(account.estado==='pendiente'||account.activo===false)return res.status(403).json({error:'Cuenta pendiente de aprobación'});
+  if(account.estado==='pendiente'||account.activo===false)return res.status(403).json({error:'Cuenta pendiente de aprobación. Un Supervisor Nacional o Administrador debe validar tu cargo.'});
   if(!RBAC[account.rol])return res.status(403).json({error:'Rol de cuenta inválido'});
   const user={...publicUser(account),fecha};
   res.json({token:authToken(user),user});
 });
+
+app.get('/api/admin/users',requireAuth,requireUserAdmin,(req,res)=>{res.json(loadUsers().map(u=>({email:u.email,nombre:u.nombre,cargoSolicitado:u.cargoSolicitado||u.rol||'',rol:u.rol||'',zona:u.zona||'',region:u.region||'',planta:u.planta||'',estado:u.estado||(u.activo?'activo':'pendiente'),activo:u.activo===true,creadoEn:u.creadoEn||'',updatedAt:u.updatedAt||''})));});
+app.patch('/api/admin/users/:email',requireAuth,requireUserAdmin,(req,res)=>{const email=normalizeEmail(req.params.email),action=safeText(req.body?.action),requestedRole=safeText(req.body?.rol||'');const users=loadUsers(),i=users.findIndex(u=>normalizeEmail(u.email)===email);if(i<0)return res.status(404).json({error:'Usuario no encontrado'});const u=users[i];if(action==='approve'){const role=requestedRole||u.cargoSolicitado;if(!REGISTER_ROLES.has(role)&&role!=='admin')return res.status(400).json({error:'Rol inválido'});u.rol=role;u.estado='activo';u.activo=true;}else if(action==='reject'){u.estado='rechazado';u.activo=false;}else if(action==='block'){u.estado='bloqueado';u.activo=false;}else if(action==='activate'){if(!u.rol)return res.status(400).json({error:'Asigne un rol antes de activar'});u.estado='activo';u.activo=true;}else return res.status(400).json({error:'Acción inválida'});u.updatedAt=nowIso();users[i]=u;saveUsers(users);res.json({ok:true,email:u.email,estado:u.estado,rol:u.rol});});
 
 
 const activeIngestions=new Map();
