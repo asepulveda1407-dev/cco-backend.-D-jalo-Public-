@@ -1569,6 +1569,8 @@ app.get('/health', (req, res) => res.json({
   historical_records: Array.isArray(historicalWarehouse?.records) ? historicalWarehouse.records.length : 0,
 }));
 
+app.get('/api/auth/register',(req,res)=>res.status(200).json({ok:true,route:'POST /api/auth/register',release:'registro-rbac-2026-09-14'}));
+
 app.post('/api/auth/register',(req,res)=>{
   try{
     const email=normalizeEmail(req.body?.email);
