@@ -21,7 +21,7 @@ const APP_ORIGIN = process.env.APP_ORIGIN || '';
 const AUTH_SECRET = process.env.AUTH_SECRET || 'cco-dev-secret-change-me';
 const TOKEN_TTL_MS = Math.max(15*60*1000, Number(process.env.TOKEN_TTL_MS || 12*60*60*1000));
 const DATA_FILE = path.resolve(process.env.DATA_FILE || path.join(__dirname, 'data', 'cco-state.json'));
-const PUBLIC_DIR = path.join(__dirname, 'public');
+const PUBLIC_DIR = fs.existsSync(path.join(__dirname, 'public', 'index.html')) ? path.join(__dirname, 'public') : __dirname;
 const PLANT_DICTIONARY_FILE = path.join(__dirname, 'config', 'plant-dictionary.json');
 const HISTORICAL_FILE = path.resolve(process.env.HISTORICAL_FILE || path.join(__dirname, 'data', 'cco-historical.json'));
 
