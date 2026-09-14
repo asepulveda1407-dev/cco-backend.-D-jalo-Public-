@@ -534,11 +534,23 @@ table{border-collapse:separate!important;border-spacing:0!important}
   <div class="pill" style="display:inline-block;margin:2px 0 8px">Hoy · <span id="gFechaLabel">—</span></div>
   <input id="gFecha" type="hidden">
   <button onclick="entrar()">Entrar</button>
+  <button type="button" class="secondary" onclick="abrirRegistro()">Registrarme</button>
   <button type="button" class="secondary" onclick="abrirRecuperacionAdmin()">¿Olvidaste tu clave?</button>
   <div id="gateErr" class="errbox"></div>
   <p class="small">Acceso operacional en tiempo real. Los cambios de configuración, bitácora e ingesta se sincronizan entre usuarios conectados.</p>
 </div>
 
+<div id="registerGate" class="gate card" style="display:none">
+  <h2>Crear cuenta CCO</h2>
+  <div class="small">Las cuentas nuevas quedan pendientes de aprobación. La cuenta administradora principal se activa automáticamente.</div>
+  <label>Nombre completo</label><input id="rNombre" autocomplete="name" placeholder="Nombre y apellido">
+  <label>Correo corporativo</label><input id="rEmail" type="email" autocomplete="username" placeholder="nombre@polpaicosoluciones.cl">
+  <label>Clave personal</label><input id="rPassword" type="password" autocomplete="new-password" minlength="10" placeholder="Mínimo 10 caracteres">
+  <label>Confirmar clave</label><input id="rPassword2" type="password" autocomplete="new-password" minlength="10">
+  <label>Cargo</label><select id="rCargo"><option value="coordinador">Coordinador</option><option value="supervisor_nacional">Supervisor Nacional</option><option value="gerencia">Gerencia</option><option value="mantenimiento">Mantención</option><option value="supervisor_planta">Supervisor de Planta</option></select>
+  <button type="button" onclick="registrarCuenta()">Crear cuenta</button> <button type="button" class="secondary" onclick="cerrarRegistro()">Volver</button>
+  <div id="rMsg" class="errbox" style="display:none"></div>
+</div>
 <div id="adminResetGate" class="gate card" style="display:none">
   <h2>Recuperar acceso administrador</h2>
   <div class="small">Restablecimiento protegido para la cuenta administradora principal.</div>
@@ -1170,6 +1182,17 @@ function cargarPlantasLogin(){
 }
 
 
+function abrirRegistro(){document.getElementById('gate').style.display='none';document.getElementById('registerGate').style.display='block';document.getElementById('rMsg').style.display='none';document.getElementById('rEmail').value=document.getElementById('gEmail').value.trim().toLowerCase();}
+function cerrarRegistro(){document.getElementById('registerGate').style.display='none';document.getElementById('gate').style.display='block';}
+async function registrarCuenta(){
+  const msg=document.getElementById('rMsg'),nombre=document.getElementById('rNombre').value.trim(),email=document.getElementById('rEmail').value.trim().toLowerCase(),password=document.getElementById('rPassword').value,confirm=document.getElementById('rPassword2').value,cargo=document.getElementById('rCargo').value;
+  msg.style.display='none';msg.style.background='';msg.style.color='';msg.style.borderColor='';
+  if(nombre.length<3){msg.textContent='Ingresa tu nombre completo.';msg.style.display='block';return;}
+  if(!email.endsWith('@polpaicosoluciones.cl')){msg.textContent='Usa tu correo corporativo @polpaicosoluciones.cl.';msg.style.display='block';return;}
+  if(password.length<10){msg.textContent='La clave debe tener al menos 10 caracteres.';msg.style.display='block';return;}
+  if(password!==confirm){msg.textContent='Las claves no coinciden.';msg.style.display='block';return;}
+  try{const api=document.getElementById('gApi').value.trim().replace(/\/+$/,'');const r=await fetch(api+'/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({nombre,email,password,cargo,zona:'',region:'',planta:''})}),d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||('HTTP '+r.status));msg.textContent=d.mensaje||'Cuenta creada correctamente.';msg.style.display='block';msg.style.background='#ecf9f2';msg.style.color='#217047';msg.style.borderColor='#b8e5cc';document.getElementById('gEmail').value=email;document.getElementById('gPassword').value='';}catch(e){msg.textContent=e.message;msg.style.display='block';}
+}
 function abrirRecuperacionAdmin(){document.getElementById('gate').style.display='none';document.getElementById('adminResetGate').style.display='block';}
 function cerrarRecuperacionAdmin(){document.getElementById('adminResetGate').style.display='none';document.getElementById('gate').style.display='block';}
 async function restablecerAdmin(){const msg=document.getElementById('arMsg'),email=document.getElementById('arEmail').value.trim().toLowerCase(),resetKey=document.getElementById('arKey').value,newPassword=document.getElementById('arPassword').value,confirm=document.getElementById('arPassword2').value;msg.style.display='none';if(newPassword!==confirm){msg.textContent='Las claves no coinciden.';msg.style.display='block';return;}if(newPassword.length<10){msg.textContent='La nueva clave debe tener al menos 10 caracteres.';msg.style.display='block';return;}try{const api=document.getElementById('gApi').value.trim().replace(/\/+$/,'');const r=await fetch(api+'/api/auth/admin-reset-password',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({email,resetKey,newPassword})}),d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||('HTTP '+r.status));msg.textContent=d.mensaje;msg.style.display='block';msg.style.background='#ecf9f2';msg.style.color='#217047';msg.style.borderColor='#b8e5cc';document.getElementById('arKey').value='';document.getElementById('arPassword').value='';document.getElementById('arPassword2').value='';}catch(e){msg.textContent=e.message;msg.style.display='block';}}
