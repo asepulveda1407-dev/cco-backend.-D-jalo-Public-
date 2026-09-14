@@ -1592,6 +1592,19 @@ app.post('/api/auth/login',(req,res)=>{
   res.json({token:authToken(user),user});
 });
 
+app.post('/api/auth/change-password',requireAuth,(req,res)=>{
+  try{
+    const currentPassword=String(req.body?.currentPassword||'');
+    const newPassword=String(req.body?.newPassword||'');
+    if(newPassword.length<10)return res.status(400).json({error:'La nueva clave debe tener al menos 10 caracteres'});
+    const users=loadUsers();const i=users.findIndex(u=>normalizeEmail(u.email)===normalizeEmail(req.user.email));
+    if(i<0)return res.status(404).json({error:'Cuenta no encontrada'});
+    if(!verifyPassword(currentPassword,users[i].passwordHash))return res.status(400).json({error:'La clave actual no es correcta'});
+    users[i].passwordHash=makePasswordHash(newPassword);users[i].updatedAt=nowIso();saveUsers(users);
+    return res.json({ok:true,mensaje:'Clave actualizada correctamente'});
+  }catch(err){console.error('[CCO][AUTH][CHANGE_PASSWORD]',err);return res.status(500).json({error:'No fue posible actualizar la clave'});}
+});
+
 app.get('/api/admin/users',requireAuth,requireUserAdmin,(req,res)=>{res.json(loadUsers().map(u=>({email:u.email,nombre:u.nombre,cargoSolicitado:u.cargoSolicitado||u.rol||'',rol:u.rol||'',zona:u.zona||'',region:u.region||'',planta:u.planta||'',estado:u.estado||(u.activo?'activo':'pendiente'),activo:u.activo===true,creadoEn:u.creadoEn||'',updatedAt:u.updatedAt||''})));});
 app.patch('/api/admin/users/:email',requireAuth,requireUserAdmin,(req,res)=>{const email=normalizeEmail(req.params.email),action=safeText(req.body?.action),requestedRole=safeText(req.body?.rol||'');const users=loadUsers(),i=users.findIndex(u=>normalizeEmail(u.email)===email);if(i<0)return res.status(404).json({error:'Usuario no encontrado'});const u=users[i];if(action==='approve'){const role=requestedRole||u.cargoSolicitado;if(!REGISTER_ROLES.has(role)&&role!=='admin')return res.status(400).json({error:'Rol inválido'});u.rol=role;u.estado='activo';u.activo=true;}else if(action==='reject'){u.estado='rechazado';u.activo=false;}else if(action==='block'){u.estado='bloqueado';u.activo=false;}else if(action==='activate'){if(!u.rol)return res.status(400).json({error:'Asigne un rol antes de activar'});u.estado='activo';u.activo=true;}else return res.status(400).json({error:'Acción inválida'});u.updatedAt=nowIso();users[i]=u;saveUsers(users);res.json({ok:true,email:u.email,estado:u.estado,rol:u.rol});});
 
