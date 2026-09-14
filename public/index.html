@@ -1164,7 +1164,7 @@ async function registrarse(){
  const box=document.getElementById('registerErr');box.style.display='none';
  const body={nombre:rNombre.value.trim(),email:rEmail.value.trim().toLowerCase(),password:rPassword.value,cargo:rCargo.value,region:rRegion.value.trim(),planta:rPlanta.value.trim()};
  if(rPassword.value!==rPassword2.value){box.textContent='Las claves no coinciden.';box.style.display='block';return;}
- try{const r=await fetch(API+'/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw new Error(d.error||'No fue posible registrar');box.textContent=d.mensaje;box.style.display='block';box.style.background='#ecf9f2';box.style.color='#217047';box.style.borderColor='#b8e5cc';}
+ try{const r=await fetch(API+'/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(body)});const ct=(r.headers.get('content-type')||'').toLowerCase();if(!ct.includes('application/json')){throw new Error('El servidor publicado no tiene activa la ruta de registro. Reemplace también server.js y vuelva a desplegar.');}const d=await r.json();if(!r.ok)throw new Error(d.error||'No fue posible registrar');box.textContent=d.mensaje;box.style.display='block';box.style.background='#ecf9f2';box.style.color='#217047';box.style.borderColor='#b8e5cc';rPassword.value='';rPassword2.value='';}
  catch(e){box.textContent=e.message;box.style.display='block';}
 }
 function mostrarErrorGate(msg){
