@@ -1164,7 +1164,7 @@ function validateDataset(type, rows) {
 }
 
 
-const USERS_FILE=path.resolve(process.env.USERS_FILE||path.join(__dirname,'config','users.json'));
+const USERS_FILE=path.resolve(process.env.USERS_FILE||path.join(path.dirname(DATA_FILE),'users.json'));
 const CORPORATE_EMAIL_RE=/^[a-z0-9._%+-]+@polpaicosoluciones\.cl$/i;
 const RBAC=Object.freeze({
  admin:{operation:['view','edit','export'],tower:['view','edit','export'],trace:['view','edit','export'],audit:['view']},
@@ -1177,6 +1177,9 @@ const RBAC=Object.freeze({
 });
 function normalizeEmail(v){return safeText(v).toLowerCase();}
 function loadUsers(){try{if(!fs.existsSync(USERS_FILE))return [];const x=JSON.parse(fs.readFileSync(USERS_FILE,'utf8'));return Array.isArray(x)?x:(Array.isArray(x.users)?x.users:[]);}catch(e){console.error('[CCO][AUTH]',e.message);return [];}}
+function saveUsers(users){fs.mkdirSync(path.dirname(USERS_FILE),{recursive:true});const tmp=USERS_FILE+'.tmp';fs.writeFileSync(tmp,JSON.stringify({version:2,users},null,2));fs.renameSync(tmp,USERS_FILE);}
+function passwordHash(password){const salt=crypto.randomBytes(16),hash=crypto.scryptSync(String(password),salt,64);return `scrypt$${salt.toString('hex')}$${hash.toString('hex')}`;}
+const SELF_REGISTER_ROLES=new Set(['coordinador','supervisor_nacional','gerencia','mantenimiento','supervisor_planta']);
 function publicUser(u){return {email:u.email,nombre:u.nombre,rol:u.rol,zona:u.zona||'',region:u.region||'',planta:u.planta||'',permissions:RBAC[u.rol]||{}};}
 function verifyPassword(p,stored){try{const [v,salt,hash]=String(stored||'').split('$');if(v!=='scrypt')return false;const expected=Buffer.from(hash,'hex'),actual=crypto.scryptSync(String(p||''),Buffer.from(salt,'hex'),expected.length);return crypto.timingSafeEqual(actual,expected);}catch{return false;}}
 function routePolicy(req){const p=String(req.path||'').toLowerCase();let domain=p.startsWith('/api/flota')?'tower':p.startsWith('/api/historico')?'trace':'operation';if(p.includes('audit'))domain='audit';const action=domain==='audit'?'view':(/export|\.xlsx|\.csv/.test(p)?'export':(req.method==='GET'?'view':'edit'));return {domain,action};}
@@ -1566,11 +1569,27 @@ app.get('/health', (req, res) => res.json({
   historical_records: Array.isArray(historicalWarehouse?.records) ? historicalWarehouse.records.length : 0,
 }));
 
+app.post('/api/auth/register',(req,res)=>{
+  try{
+    const email=normalizeEmail(req.body?.email),password=String(req.body?.password||''),nombre=safeText(req.body?.nombre),cargo=safeText(req.body?.cargo);
+    const region=safeText(req.body?.region||''),planta=safeText(req.body?.planta||''),zona=safeText(req.body?.zona||'');
+    if(!CORPORATE_EMAIL_RE.test(email))return res.status(400).json({error:'Use su correo corporativo @polpaicosoluciones.cl'});
+    if(!nombre||nombre.length<3)return res.status(400).json({error:'Nombre completo requerido'});
+    if(!SELF_REGISTER_ROLES.has(cargo))return res.status(400).json({error:'Cargo no válido'});
+    if(password.length<10)return res.status(400).json({error:'La clave debe tener al menos 10 caracteres'});
+    const users=loadUsers();if(users.some(u=>normalizeEmail(u.email)===email))return res.status(409).json({error:'Este correo ya está registrado'});
+    users.push({email,nombre,cargoSolicitado:cargo,rol:null,zona,region,planta,estado:'pendiente',activo:false,passwordHash:passwordHash(password),creadoEn:nowIso(),updatedAt:nowIso()});saveUsers(users);
+    return res.status(201).json({ok:true,estado:'pendiente',mensaje:'Registro recibido. Un administrador debe validar el cargo y activar la cuenta.'});
+  }catch(err){return res.status(500).json({error:'No fue posible registrar la cuenta',detalle:err.message});}
+});
+app.get('/api/auth/registration-status',(req,res)=>{const email=normalizeEmail(req.query?.email);const u=loadUsers().find(x=>normalizeEmail(x.email)===email);if(!u)return res.status(404).json({error:'Cuenta no encontrada'});return res.json({email:u.email,estado:u.estado||(u.activo?'activo':'pendiente'),cargoSolicitado:u.cargoSolicitado||u.rol||''});});
+
 app.post('/api/auth/login',(req,res)=>{
   const email=normalizeEmail(req.body?.email),password=String(req.body?.password||''),fecha=safeText(req.body?.fecha||'');
   if(!CORPORATE_EMAIL_RE.test(email))return res.status(400).json({error:'Use su correo corporativo @polpaicosoluciones.cl'});
   const account=loadUsers().find(u=>normalizeEmail(u.email)===email);
-  if(!account||account.activo===false||!verifyPassword(password,account.passwordHash))return res.status(401).json({error:'Correo o clave incorrectos'});
+  if(!account||!verifyPassword(password,account.passwordHash))return res.status(401).json({error:'Correo o clave incorrectos'});
+  if(account.estado==='pendiente'||account.activo===false)return res.status(403).json({error:'Cuenta pendiente de aprobación por administrador'});
   if(!RBAC[account.rol])return res.status(403).json({error:'Rol de cuenta inválido'});
   const user={...publicUser(account),fecha};
   res.json({token:authToken(user),user});
