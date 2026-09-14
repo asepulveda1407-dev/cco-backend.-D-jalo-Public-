@@ -1580,22 +1580,6 @@ app.post('/api/auth/register',(req,res)=>{
  const users=loadUsers();if(users.some(u=>normalizeEmail(u.email)===email))return res.status(409).json({error:'Este correo ya está registrado'});const primaryAdmin=email===PRIMARY_ADMIN_EMAIL;users.push({email,nombre,cargoSolicitado:primaryAdmin?'admin':cargo,rol:primaryAdmin?'admin':null,zona,region,planta,estado:primaryAdmin?'activo':'pendiente',activo:primaryAdmin,passwordHash:makePasswordHash(password),creadoEn:nowIso(),updatedAt:nowIso()});saveUsers(users);return res.status(201).json({ok:true,estado:primaryAdmin?'activo':'pendiente',mensaje:primaryAdmin?'Cuenta administradora activada correctamente. Ya puedes iniciar sesión.':'Registro recibido. Tu cuenta quedó pendiente de aprobación.'});}catch(err){console.error('[CCO][AUTH][REGISTER]',err);return res.status(500).json({error:'No fue posible registrar la cuenta'});}
 });
 
-app.post('/api/auth/admin-reset-password',(req,res)=>{
-  try{
-    const email=normalizeEmail(req.body?.email),newPassword=String(req.body?.newPassword||'');
-    const resetKey=String(req.body?.resetKey||'');
-    const configured=String(process.env.ADMIN_RESET_KEY||'');
-    if(!configured)return res.status(503).json({error:'Recuperación administrativa no configurada. Configure ADMIN_RESET_KEY en Render.'});
-    if(email!==PRIMARY_ADMIN_EMAIL)return res.status(403).json({error:'Esta recuperación está reservada para la cuenta administradora principal'});
-    const a=Buffer.from(resetKey),b=Buffer.from(configured);if(a.length!==b.length||!crypto.timingSafeEqual(a,b))return res.status(403).json({error:'Código de recuperación incorrecto'});
-    if(newPassword.length<10)return res.status(400).json({error:'La nueva clave debe tener al menos 10 caracteres'});
-    const users=loadUsers();const i=users.findIndex(u=>normalizeEmail(u.email)===email);
-    if(i<0)return res.status(404).json({error:'La cuenta administradora aún no está registrada'});
-    users[i].passwordHash=makePasswordHash(newPassword);users[i].rol='admin';users[i].estado='activo';users[i].activo=true;users[i].updatedAt=nowIso();saveUsers(users);
-    return res.json({ok:true,mensaje:'Clave restablecida. La cuenta administradora quedó activa.'});
-  }catch(err){console.error('[CCO][AUTH][ADMIN_RESET]',err);return res.status(500).json({error:'No fue posible restablecer la clave'});}
-});
-
 app.post('/api/auth/login',(req,res)=>{
   const email=normalizeEmail(req.body?.email),password=String(req.body?.password||''),fecha=safeText(req.body?.fecha||'');
   if(email===PRIMARY_ADMIN_EMAIL)ensurePrimaryAdmin();
