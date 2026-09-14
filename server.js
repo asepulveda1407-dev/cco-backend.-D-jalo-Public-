@@ -21,7 +21,7 @@ const APP_ORIGIN = process.env.APP_ORIGIN || '';
 const AUTH_SECRET = process.env.AUTH_SECRET || 'cco-dev-secret-change-me';
 const TOKEN_TTL_MS = Math.max(15*60*1000, Number(process.env.TOKEN_TTL_MS || 12*60*60*1000));
 const DATA_FILE = path.resolve(process.env.DATA_FILE || path.join(__dirname, 'data', 'cco-state.json'));
-const PUBLIC_DIR = fs.existsSync(path.join(__dirname, 'public', 'index.html')) ? path.join(__dirname, 'public') : __dirname;
+const PUBLIC_DIR = path.join(__dirname, 'public');
 const PLANT_DICTIONARY_FILE = path.join(__dirname, 'config', 'plant-dictionary.json');
 const HISTORICAL_FILE = path.resolve(process.env.HISTORICAL_FILE || path.join(__dirname, 'data', 'cco-historical.json'));
 
@@ -71,10 +71,10 @@ function loadHistoricalWarehouse() {
   try {
     if (!fs.existsSync(HISTORICAL_FILE)) return emptyHistoricalWarehouse();
     const parsed = JSON.parse(fs.readFileSync(HISTORICAL_FILE, 'utf8'));
-    // v3.4+ usa un modelo histórico distinto (operador/día + archivos adjuntos).
-    // No se mezclan registros heredados de la implementación por carpetas.
+    // v3.4+ usa un modelo histÃ³rico distinto (operador/dÃ­a + archivos adjuntos).
+    // No se mezclan registros heredados de la implementaciÃ³n por carpetas.
     if (Number(parsed?.version || 0) !== 3) {
-      console.warn('[CCO][historico] Base histórica anterior detectada; se inicia modelo v2 independiente.');
+      console.warn('[CCO][historico] Base histÃ³rica anterior detectada; se inicia modelo v2 independiente.');
       return emptyHistoricalWarehouse();
     }
     return {
@@ -87,7 +87,7 @@ function loadHistoricalWarehouse() {
       fileCache: parsed?.fileCache && typeof parsed.fileCache === 'object' ? parsed.fileCache : {},
     };
   } catch (err) {
-    console.error('[CCO][historico] No se pudo leer base histórica:', err?.message || err);
+    console.error('[CCO][historico] No se pudo leer base histÃ³rica:', err?.message || err);
     return emptyHistoricalWarehouse();
   }
 }
@@ -191,7 +191,7 @@ function emitRealtime(eventName,payload,domain,action,user=null,extra={}){
   return enriched;
 }
 
-function respuestaSinDatos(res, mensaje='Sin información disponible para el período seleccionado', extra={}) {
+function respuestaSinDatos(res, mensaje='Sin informaciÃ³n disponible para el perÃ­odo seleccionado', extra={}) {
   return res.json({ ok:true, empty:true, mensaje, ...extra });
 }
 
@@ -241,7 +241,7 @@ function pick(row, aliases) {
 function isAffirmative(value) {
   if (value === true || value === 1) return true;
   const s = normalizeName(value);
-  return ['si','sí','s','yes','y','true','1','x','requiere adelantar citacion','adelantar citacion','se recomienda adelantar','recomienda adelantar','adelanto recomendado'].includes(s)
+  return ['si','sÃ­','s','yes','y','true','1','x','requiere adelantar citacion','adelantar citacion','se recomienda adelantar','recomienda adelantar','adelanto recomendado'].includes(s)
     || s.includes('requiere adelantar')
     || s.includes('recomienda adelantar')
     || s.includes('recomendacion') && s.includes('adelantar');
@@ -264,16 +264,16 @@ function citationRequiresAdvance(row){
 const OP_STATUS = Object.freeze({
   fields:Object.freeze({
     generalState:Object.freeze([
-      'descripcion_estado','descripción estado','estado','status','status_description',
-      'descripcion status','descripción status'
+      'descripcion_estado','descripciÃ³n estado','estado','status','status_description',
+      'descripcion status','descripciÃ³n status'
     ]),
     loginState:Object.freeze([
       'login/pre-viaje','login pre-viaje','login pre viaje','login_pre_viaje',
       'estado login/pre-viaje','estado login pre-viaje','estado login pre viaje'
     ]),
     assignmentState:Object.freeze([
-      'estado asignacion','estado asignación','estado_asignacion',
-      'estado de asignacion','estado de asignación','assignment status'
+      'estado asignacion','estado asignaciÃ³n','estado_asignacion',
+      'estado de asignacion','estado de asignaciÃ³n','assignment status'
     ])
   }),
   values:Object.freeze({
@@ -326,28 +326,28 @@ function statusKindsFromRow(row){
 
 const FIELDS = {
   id: [
-    'id_operador','id operador','numero_funcionario','número funcionario','numero funcionario',
+    'id_operador','id operador','numero_funcionario','nÃºmero funcionario','numero funcionario',
     'id_funcionario','id funcionario','id_empleado','id empleado','employee_id','employee id',
-    'numero_empleado','número empleado','numero empleado','nro_empleado','nro empleado',
-    'codigo_funcionario','código funcionario','codigo empleado','código empleado',
+    'numero_empleado','nÃºmero empleado','numero empleado','nro_empleado','nro empleado',
+    'codigo_funcionario','cÃ³digo funcionario','codigo empleado','cÃ³digo empleado',
     'codigo_operador','cod_operador','legajo','id','rut'
   ],
   nombre: ['operador','nombre_operador','nom_operador','operario','nombre','employee_name','nombre_funcionario','nombre empleado','nombre_empleado','conductor','nombre_conductor','nombre conductor','chofer','nombre_chofer','nombre chofer'],
   firstName: ['primero_empleado','primero empleado','first_name','firstname','nombre_funcionario','nombre funcionario','primer nombre','nombres','nombre empleado'],
-  lastName: ['ultimo_empleado','último empleado','ultimo empleado','last_name','lastname','apellido_funcionario','apellido funcionario','apellidos','apellido empleado'],
-  planta: ['planta','planta_origen','origen','plta','descripcion_planta','descripción planta','plant','codigo_command','código command','cod_planta_command','cod planta command','local_cmd','local cmd','centro_sap','centro sap','puesto_carga','puesto carga','shortname','short_name','local_inventario','local inventario','puesto_expedicion','puesto expedición'],
-  zona: ['zona','region','región'],
+  lastName: ['ultimo_empleado','Ãºltimo empleado','ultimo empleado','last_name','lastname','apellido_funcionario','apellido funcionario','apellidos','apellido empleado'],
+  planta: ['planta','planta_origen','origen','plta','descripcion_planta','descripciÃ³n planta','plant','codigo_command','cÃ³digo command','cod_planta_command','cod planta command','local_cmd','local cmd','centro_sap','centro sap','puesto_carga','puesto carga','shortname','short_name','local_inventario','local inventario','puesto_expedicion','puesto expediciÃ³n'],
+  zona: ['zona','region','regiÃ³n'],
   turno: ['turno_inicio','hora_inicio','hora_ingreso','hora ingreso','horaingreso','turno','inicio_turno'],
-  citacion: ['citacion','citación','cita','hora_citacion','hora citacion','citacion_sugerida','citación sugerida'],
-  requiereAdelantarCitacion: ['requiere_adelantar_citacion','requiere adelantar citacion','requiere adelantar citación','adelantar_citacion','adelantar citacion','adelantar citación','requiere_citacion','requiere citacion','requiere citación','se recomienda adelantar','se_recomienda_adelantar','recomienda adelantar','recomendacion adelantar','recomendación adelantar','adelantar recomendado','adelanto recomendado'],
-  observacionCitacion: ['observacion','observación','comentario','comentarios','detalle','motivo'],
-  logeo: ['logeo','marcacion','marcación','hora_logeo','hora logeo','entrada','login','fecha_hora','fecha hora'],
+  citacion: ['citacion','citaciÃ³n','cita','hora_citacion','hora citacion','citacion_sugerida','citaciÃ³n sugerida'],
+  requiereAdelantarCitacion: ['requiere_adelantar_citacion','requiere adelantar citacion','requiere adelantar citaciÃ³n','adelantar_citacion','adelantar citacion','adelantar citaciÃ³n','requiere_citacion','requiere citacion','requiere citaciÃ³n','se recomienda adelantar','se_recomienda_adelantar','recomienda adelantar','recomendacion adelantar','recomendaciÃ³n adelantar','adelantar recomendado','adelanto recomendado'],
+  observacionCitacion: ['observacion','observaciÃ³n','comentario','comentarios','detalle','motivo'],
+  logeo: ['logeo','marcacion','marcaciÃ³n','hora_logeo','hora logeo','entrada','login','fecha_hora','fecha hora'],
   estado: [...OP_STATUS.fields.generalState],
   loginEstado: [...OP_STATUS.fields.loginState],
   estadoAsignacion: [...OP_STATUS.fields.assignmentState],
-  fecha: ['fecha','fecha_turno','fecha turno','dia_fecha','día_fecha','date','fecha_programada','fecha programada'],
-  diaSemana: ['dia','día','dia_semana','día_semana','day','weekday'],
-  semana: ['semana','n_semana','n° semana','numero_semana','número_semana','week','week_number','semana_iso'],
+  fecha: ['fecha','fecha_turno','fecha turno','dia_fecha','dÃ­a_fecha','date','fecha_programada','fecha programada'],
+  diaSemana: ['dia','dÃ­a','dia_semana','dÃ­a_semana','day','weekday'],
+  semana: ['semana','n_semana','nÂ° semana','numero_semana','nÃºmero_semana','week','week_number','semana_iso'],
   timestamp: [
     'timestamp','fecha_hora','fecha hora','fecha','hora_evento','fecha_evento',
     'fecha estado','fecha_estado','hora estado','hora_estado','inicio estado','inicio_estado',
@@ -357,20 +357,20 @@ const FIELDS = {
   sourceSheet: ['cco_source_sheet','__cco_source_sheet'],
   sourceRow: ['cco_source_row','__cco_source_row'],
   operationalDate: ['cco_operational_date','__cco_operational_date'],
-  equipoNumero: ['numero_equipo','número equipo','numero equipo'],
-  equipoDescripcion: ['descripcion_equipo','descripción equipo','descripcion equipo'],
+  equipoNumero: ['numero_equipo','nÃºmero equipo','numero equipo'],
+  equipoDescripcion: ['descripcion_equipo','descripciÃ³n equipo','descripcion equipo'],
 };
 
 
 const DATE_FIELDS = Object.freeze({
   turnosStart:['fecha_inicio_semana','fecha inicio semana','fecha_inicio','fecha inicio','inicio_semana','inicio semana'],
   turnosEnd:['fecha_fin_semana','fecha fin semana','fin_semana','fin semana'],
-  turnosWeek:['añosemana','ano semana','año semana','ano_semana','año_semana','semana','semana_iso','week'],
-  citationDate:['fecha_operacion','fecha operación','fecha operacion','fecha operacional','fecha'],
+  turnosWeek:['aÃ±osemana','ano semana','aÃ±o semana','ano_semana','aÃ±o_semana','semana','semana_iso','week'],
+  citationDate:['fecha_operacion','fecha operaciÃ³n','fecha operacion','fecha operacional','fecha'],
 });
 
-// StatusBreakdown puede traer la fecha/hora con nombres distintos según la exportación.
-// Esta función busca primero los alias conocidos y, si no existen, detecta de forma
+// StatusBreakdown puede traer la fecha/hora con nombres distintos segÃºn la exportaciÃ³n.
+// Esta funciÃ³n busca primero los alias conocidos y, si no existen, detecta de forma
 // conservadora columnas cuyo encabezado parece corresponder a fecha/hora/evento.
 function getEventTimeValue(row) {
   const direct = pick(row, FIELDS.timestamp) ?? pick(row, FIELDS.logeo);
@@ -524,7 +524,7 @@ function weekdayEs(dateKey) {
 }
 function normalizeWeekday(v) {
   const n = normalizeName(v);
-  const map = { 'miercoles':'miercoles','miércoles':'miercoles','sabado':'sabado','sábado':'sabado' };
+  const map = { 'miercoles':'miercoles','miÃ©rcoles':'miercoles','sabado':'sabado','sÃ¡bado':'sabado' };
   return map[n] || n;
 }
 function parseWeekNumber(value) {
@@ -702,7 +702,7 @@ function filterRowsForDate(rows, fecha, type) {
     return withRange.filter(x=>target>=x.range.min&&target<=x.range.max).map(x=>x.row);
   }
 
-  // Compatibilidad con archivos antiguos sin fecha: día de semana, luego timeless.
+  // Compatibilidad con archivos antiguos sin fecha: dÃ­a de semana, luego timeless.
   const targetDay=weekdayEs(target);
   const byWeekday=safeRows.filter(row=>{
     const wd=normalizeWeekday(pick(row,FIELDS.diaSemana));
@@ -770,7 +770,7 @@ function rowOperator(row) {
   return { id: id || normalizeName(nombre), nombre };
 }
 
-// Genera todas las claves útiles para conciliar un operador entre fuentes.
+// Genera todas las claves Ãºtiles para conciliar un operador entre fuentes.
 // StatusBreakdown suele identificar por Numero Funcionario, mientras otros
 // archivos pueden traer ID Operador y/o nombre. Indexamos por ambos cuando existen.
 
@@ -791,7 +791,7 @@ function thirdPartyEquipmentKey(row){
     return '';
   }
 
-  // StatusBreakdown: el número de equipo identifica el MX utilizado.
+  // StatusBreakdown: el nÃºmero de equipo identifica el MX utilizado.
   const eqNum=pick(row,FIELDS.equipoNumero);
   if(eqNum!==null&&eqNum!==undefined&&String(eqNum).trim()!==''){
     const n=String(eqNum).replace(/\.0$/,'').replace(/\D/g,'');
@@ -912,9 +912,9 @@ function classifyOperationalEvent(rawEstado) {
 // ============================================================================
 // DICCIONARIO CORPORATIVO DE PLANTAS (v2.8)
 // Fuente: config/plant-dictionary.json, derivado del Excel entregado por Operaciones.
-// Resuelve nombres, Código Command, LOCAL CMD, CENTRO SAP, ShortName y Local Inventario.
+// Resuelve nombres, CÃ³digo Command, LOCAL CMD, CENTRO SAP, ShortName y Local Inventario.
 // Los alias ambiguos (por ejemplo P13A compartido por Central/Oriente/Poniente) NO se
-// resuelven automáticamente: se exige una clave más específica para evitar cruces falsos.
+// resuelven automÃ¡ticamente: se exige una clave mÃ¡s especÃ­fica para evitar cruces falsos.
 // ============================================================================
 function loadPlantDictionary() {
   try {
@@ -972,7 +972,7 @@ function plantIdentifierCandidates(row) {
 }
 function resolvePlantFromRow(row) {
   const candidates = plantIdentifierCandidates(row);
-  // Prioridad 1: cualquier identificador inequívoco presente en el diccionario.
+  // Prioridad 1: cualquier identificador inequÃ­voco presente en el diccionario.
   for (const value of candidates) {
     const resolved = dictionaryCanonicalPlant(value);
     if (resolved) return resolved;
@@ -988,19 +988,19 @@ function resolvePlantFromRow(row) {
 // ============================================================================
 // DICCIONARIO MAESTRO DE ZONAS OPERACIONALES
 // Solo existen 3 zonas: Norte, Centro y Sur.
-// Centro agrupa RM + V + VI Región.
+// Centro agrupa RM + V + VI RegiÃ³n.
 // ============================================================================
 const MASTER_ZONE_REGIONS = {
   Norte: {
-    Norte: ['Arica','Iquique','Antofagasta','Copiapó','Vallenar','Coquimbo','Diego de Almagro']
+    Norte: ['Arica','Iquique','Antofagasta','CopiapÃ³','Vallenar','Coquimbo','Diego de Almagro']
   },
   Centro: {
     'RM': ['Central Mix','Lo Espejo','Planta Oriente','Planta Poniente'],
-    'V Región': ['Viña del Mar','Santo Domingo','Los Andes','Melipilla'],
-    'VI Región': ['Rancagua']
+    'V RegiÃ³n': ['ViÃ±a del Mar','Santo Domingo','Los Andes','Melipilla'],
+    'VI RegiÃ³n': ['Rancagua']
   },
   Sur: {
-    Sur: ['Curicó','Talca','Linares','Chillán','Los Ángeles','Concepción Hualpén','Coronel','Temuco','Villarrica','Puerto Montt','Castro']
+    Sur: ['CuricÃ³','Talca','Linares','ChillÃ¡n','Los Ãngeles','ConcepciÃ³n HualpÃ©n','Coronel','Temuco','Villarrica','Puerto Montt','Castro']
   }
 };
 
@@ -1024,12 +1024,12 @@ const PLANT_ALIASES = {
   'planta poniente': 'Planta Poniente',
   'divisa poniente': 'Planta Poniente',
   'la divisa poniente': 'Planta Poniente',
-  'vina': 'Viña del Mar',
-  'vina del mar': 'Viña del Mar',
-  'concepcion': 'Concepción Hualpén',
-  'concepcion 1': 'Concepción Hualpén',
-  'concepcion hualpen': 'Concepción Hualpén',
-  'hualpen': 'Concepción Hualpén',
+  'vina': 'ViÃ±a del Mar',
+  'vina del mar': 'ViÃ±a del Mar',
+  'concepcion': 'ConcepciÃ³n HualpÃ©n',
+  'concepcion 1': 'ConcepciÃ³n HualpÃ©n',
+  'concepcion hualpen': 'ConcepciÃ³n HualpÃ©n',
+  'hualpen': 'ConcepciÃ³n HualpÃ©n',
   'iquique ah': 'Iquique',
   'villarica': 'Villarrica'
 };
@@ -1045,7 +1045,7 @@ function canonicalPlantName(rawName) {
   if (/\b(divisa )?oriente\b/.test(norm)) return 'Planta Oriente';
   if (/\b(divisa )?poniente\b/.test(norm)) return 'Planta Poniente';
   if (/\blo espejo\b/.test(norm)) return 'Lo Espejo';
-  if (/^concepcion(\s|$)/.test(norm) || /hualpen/.test(norm)) return 'Concepción Hualpén';
+  if (/^concepcion(\s|$)/.test(norm) || /hualpen/.test(norm)) return 'ConcepciÃ³n HualpÃ©n';
   if (/^iquique(\s|$)/.test(norm)) return 'Iquique';
   for (const nombres of Object.values(MASTER_ZONE_PLANTS)) {
     const found = nombres.find(n => normalizeName(n) === norm);
@@ -1059,7 +1059,7 @@ function canonicalZone(rawZone) {
   if (!z) return '';
   if (/^(norte|zona norte)$/.test(z)) return 'Norte';
   if (/^(sur|zona sur)$/.test(z)) return 'Sur';
-  // RM, V y VI pertenecen a Centro por definición operacional.
+  // RM, V y VI pertenecen a Centro por definiciÃ³n operacional.
   if (/^(centro|zona centro|rm|region metropolitana|metropolitana|v|5|quinta|quinta region|vi|6|sexta|sexta region)$/.test(z)) return 'Centro';
   return '';
 }
@@ -1086,11 +1086,11 @@ function inferRegion(planta, rawRegion='', rawZone='') {
   if (z === 'Norte') return 'Norte';
   if (z === 'Sur') return 'Sur';
   if (/^(rm|region metropolitana|metropolitana)$/.test(r)) return 'RM';
-  if (/^(v|5|quinta|quinta region|v region)$/.test(r)) return 'V Región';
-  if (/^(vi|6|sexta|sexta region|vi region)$/.test(r)) return 'VI Región';
+  if (/^(v|5|quinta|quinta region|v region)$/.test(r)) return 'V RegiÃ³n';
+  if (/^(vi|6|sexta|sexta region|vi region)$/.test(r)) return 'VI RegiÃ³n';
   if (/central mix|lo espejo|(^| )espejo($| )|planta oriente|planta poniente/.test(p)) return 'RM';
-  if (/vina del mar|santo domingo|los andes|melipilla/.test(p)) return 'V Región';
-  if (/rancagua/.test(p)) return 'VI Región';
+  if (/vina del mar|santo domingo|los andes|melipilla/.test(p)) return 'V RegiÃ³n';
+  if (/rancagua/.test(p)) return 'VI RegiÃ³n';
   return 'Centro';
 }
 
@@ -1124,7 +1124,7 @@ function masterPlantCatalog() {
       for (const nombre of nombres) merged.set(normalizeName(nombre), { nombre, zona, region });
     }
   }
-  // El diccionario amplía el catálogo y cruza códigos/nombres; no reemplaza las reglas
+  // El diccionario amplÃ­a el catÃ¡logo y cruza cÃ³digos/nombres; no reemplaza las reglas
   // de negocio del CCO. Solo se incorporan plantas con zona operacional Norte/Centro/Sur.
   for (const rec of PLANT_DICTIONARY.plants) {
     const nombre = canonicalPlantName(rec?.canonical);
@@ -1146,15 +1146,15 @@ function validateDataset(type, rows) {
     if (type === 'turnos') {
       const plant = resolvePlantFromRow(row);
       const shift = pick(row, FIELDS.turno);
-      if (!plant || plant === 'Sin planta') { rejected.push(row); errors.push(`Fila ${index + 1}: planta/código no encontrado en diccionario`); return; }
-      if (parseTimeMinutes(shift) === null) { rejected.push(row); errors.push(`Fila ${index + 1}: hora de turno inválida`); return; }
+      if (!plant || plant === 'Sin planta') { rejected.push(row); errors.push(`Fila ${index + 1}: planta/cÃ³digo no encontrado en diccionario`); return; }
+      if (parseTimeMinutes(shift) === null) { rejected.push(row); errors.push(`Fila ${index + 1}: hora de turno invÃ¡lida`); return; }
     }
     if (type === 'logeo') {
       const log = getEventTimeValue(row);
       if (parseTimeMinutes(log) === null && !asDate(log)) {
         const columnas = Object.keys(row || {}).slice(0, 12).join(', ');
         rejected.push(row);
-        errors.push(`Fila ${index + 1}: no se detectó fecha/hora de evento. Columnas recibidas: ${columnas}`);
+        errors.push(`Fila ${index + 1}: no se detectÃ³ fecha/hora de evento. Columnas recibidas: ${columnas}`);
         return;
       }
     }
@@ -1162,28 +1162,6 @@ function validateDataset(type, rows) {
   });
   return { valid, rejected, errors };
 }
-
-
-const USERS_FILE=path.resolve(process.env.USERS_FILE||path.join(path.dirname(DATA_FILE),'users.json'));
-const CORPORATE_EMAIL_RE=/^[a-z0-9._%+-]+@polpaicosoluciones\.cl$/i;
-const RBAC=Object.freeze({
- admin:{operation:['view','edit','export'],tower:['view','edit','export'],trace:['view','edit','export'],audit:['view']},
- supervisor_nacional:{operation:['view','edit','export'],tower:['view','edit','export'],trace:['view','edit','export'],audit:['view']},
- coordinador:{operation:['view','edit','export'],tower:['view','edit','export'],trace:[],audit:[]},
- gerencia:{operation:['view','export'],tower:['view','export'],trace:['view','export'],audit:[]},
- mantenimiento:{operation:[],tower:['view','edit'],trace:[],audit:[]},
- supervisor_planta:{operation:['view'],tower:['view'],trace:['view'],audit:[]},
- lectura:{operation:['view'],tower:['view'],trace:['view'],audit:[]}
-});
-function normalizeEmail(v){return safeText(v).toLowerCase();}
-function loadUsers(){try{if(!fs.existsSync(USERS_FILE))return [];const x=JSON.parse(fs.readFileSync(USERS_FILE,'utf8'));return Array.isArray(x)?x:(Array.isArray(x.users)?x.users:[]);}catch(e){console.error('[CCO][AUTH]',e.message);return [];}}
-function saveUsers(users){fs.mkdirSync(path.dirname(USERS_FILE),{recursive:true});const tmp=USERS_FILE+'.tmp';fs.writeFileSync(tmp,JSON.stringify({version:2,users},null,2));fs.renameSync(tmp,USERS_FILE);}
-function passwordHash(password){const salt=crypto.randomBytes(16),hash=crypto.scryptSync(String(password),salt,64);return `scrypt$${salt.toString('hex')}$${hash.toString('hex')}`;}
-const SELF_REGISTER_ROLES=new Set(['coordinador','supervisor_nacional','gerencia','mantenimiento','supervisor_planta']);
-function publicUser(u){return {email:u.email,nombre:u.nombre,rol:u.rol,zona:u.zona||'',region:u.region||'',planta:u.planta||'',permissions:RBAC[u.rol]||{}};}
-function verifyPassword(p,stored){try{const [v,salt,hash]=String(stored||'').split('$');if(v!=='scrypt')return false;const expected=Buffer.from(hash,'hex'),actual=crypto.scryptSync(String(p||''),Buffer.from(salt,'hex'),expected.length);return crypto.timingSafeEqual(actual,expected);}catch{return false;}}
-function routePolicy(req){const p=String(req.path||'').toLowerCase();let domain=p.startsWith('/api/flota')?'tower':p.startsWith('/api/historico')?'trace':'operation';if(p.includes('audit'))domain='audit';const action=domain==='audit'?'view':(/export|\.xlsx|\.csv/.test(p)?'export':(req.method==='GET'?'view':'edit'));return {domain,action};}
-function enforcePermission(req,res){const x=routePolicy(req),ok=(RBAC[req.user?.rol]?.[x.domain]||[]).includes(x.action);if(ok)return true;res.status(403).json({error:'ACCESO_DENEGADO',detalle:`El rol ${req.user?.rol} no puede ${x.action} en ${x.domain}.`});return false;}
 
 function authToken(user) {
   const payload = Buffer.from(JSON.stringify({ ...user, iat: Date.now() })).toString('base64url');
@@ -1197,20 +1175,16 @@ function decodeToken(token) {
     const expected = crypto.createHmac('sha256', AUTH_SECRET).update(payload).digest('base64url');
     if (sig.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
     const user = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-    if (!user?.email || !user?.nombre || !user?.rol) return null;
+    if (!user?.nombre || !user?.rol) return null;
     if(!Number.isFinite(Number(user.iat)) || Date.now()-Number(user.iat)>TOKEN_TTL_MS)return null;
     return user;
   } catch { return null; }
 }
-function requireAuth(req,res,next){
-  const token=req.headers.authorization?.replace(/^Bearer\s+/i,'');
-  const decoded=decodeToken(token);
-  if(!decoded?.email)return res.status(401).json({error:'Sesión inválida o expirada'});
-  const account=loadUsers().find(u=>normalizeEmail(u.email)===normalizeEmail(decoded.email)&&u.activo!==false);
-  if(!account)return res.status(401).json({error:'Cuenta inactiva o no autorizada'});
-  req.user={...publicUser(account),iat:decoded.iat,fecha:decoded.fecha||''};
-  if(!enforcePermission(req,res))return;
-  next();
+function requireAuth(req, res, next) {
+  const token = req.headers.authorization?.replace(/^Bearer\s+/i, '');
+  const user = decodeToken(token);
+  if (!user) return res.status(401).json({ error: 'SesiÃ³n invÃ¡lida o expirada' });
+  req.user = user; next();
 }
 
 
@@ -1240,8 +1214,8 @@ function buildOperatorRecords(fecha = '') {
     buildOperatorRecords.lastErrors = [{ global:true, error:error.message }]; return [];
   }
   const rawShifts = filterRowsForDate(getTurnos(), safeText(fecha), 'turnos');
-  // Un operador se cuenta una sola vez por día operacional. Si el archivo trae
-  // duplicados para el mismo operador, conservamos el turno más temprano.
+  // Un operador se cuenta una sola vez por dÃ­a operacional. Si el archivo trae
+  // duplicados para el mismo operador, conservamos el turno mÃ¡s temprano.
   const shiftMap = new Map();
   rawShifts.forEach((row, idx) => {
     const key = operatorKey(row) || `row:${idx}`;
@@ -1285,14 +1259,14 @@ function buildOperatorRecords(fecha = '') {
     const planta = pCfg.nombre;
     const turnoRaw = pick(t, FIELDS.turno);
     const turnoMin = parseTimeMinutes(turnoRaw);
-    if (!Number.isFinite(turnoMin)) throw new Error('Turno inválido o ausente');
+    if (!Number.isFinite(turnoMin)) throw new Error('Turno invÃ¡lido o ausente');
     // Guard-rail: el turno mostrado/exportado siempre deriva del campo real de Turnos.
-    // No se permite sustituirlo por Login, Asignación, Citación u otro evento.
+    // No se permite sustituirlo por Login, AsignaciÃ³n, CitaciÃ³n u otro evento.
     if(turnoMin<0||turnoMin>=1440)throw new Error(`Turno fuera de rango: ${safeText(turnoRaw)}`);
 
     const cs = rowsFromMultiIndex(cByKey, t);
-    // La fuente ya fue limitada exclusivamente a operadores con recomendación explícita
-    // de adelantar citación. No se usan otras filas de Citaciones como referencia.
+    // La fuente ya fue limitada exclusivamente a operadores con recomendaciÃ³n explÃ­cita
+    // de adelantar citaciÃ³n. No se usan otras filas de Citaciones como referencia.
     const csAplicables = cs;
     let citacionMin = null;
     for (const c of csAplicables) {
@@ -1301,13 +1275,13 @@ function buildOperatorRecords(fecha = '') {
     }
     const citacionAplicada = citacionMin !== null && csAplicables.length > 0;
     const referenciaMin = citacionAplicada ? citacionMin : turnoMin;
-    const referenciaTipo = citacionAplicada ? 'Citación' : 'Turno';
+    const referenciaTipo = citacionAplicada ? 'CitaciÃ³n' : 'Turno';
 
     const ls = rowsFromLogIndex(logsByKey, logsByNameSignature, t, logStatusGroups);
 
-    // v1.7 — Ventana operacional por turno.
-    // Diurno: 05:00–17:59. Se ignoran eventos de madrugada del turno nocturno anterior.
-    // Nocturno: 18:00–04:59 y se permite cruzar medianoche hacia el día siguiente.
+    // v1.7 â€” Ventana operacional por turno.
+    // Diurno: 05:00â€“17:59. Se ignoran eventos de madrugada del turno nocturno anterior.
+    // Nocturno: 18:00â€“04:59 y se permite cruzar medianoche hacia el dÃ­a siguiente.
     const isNightShift = turnoMin !== null && (turnoMin >= 18*60 || turnoMin < 5*60);
     const targetDate = fecha || rowDateKey(t, 'turnos');
     const dateDiffDays = (a,b) => {
@@ -1335,8 +1309,8 @@ function buildOperatorRecords(fecha = '') {
     });
 
     const shiftAbs = turnoMin;
-    // La puntualidad y selección del LOGIN se miden contra la referencia operacional.
-    // Para citaciones cercanas a medianoche, se ajusta al día relativo más coherente con el turno.
+    // La puntualidad y selecciÃ³n del LOGIN se miden contra la referencia operacional.
+    // Para citaciones cercanas a medianoche, se ajusta al dÃ­a relativo mÃ¡s coherente con el turno.
     let referenceAbs = referenciaMin;
     if (referenciaMin !== null && turnoMin !== null) {
       let d = referenciaMin - turnoMin;
@@ -1347,15 +1321,15 @@ function buildOperatorRecords(fecha = '') {
     const operationalEvents = events.filter(e => {
       if (turnoMin === null) return true;
       if (isNightShift) {
-        // Permite desde 3 h antes del turno hasta 12 h después, incluyendo madrugada siguiente.
+        // Permite desde 3 h antes del turno hasta 12 h despuÃ©s, incluyendo madrugada siguiente.
         return e.absMin >= shiftAbs - 180 && e.absMin <= shiftAbs + 720;
       }
-      // Turno diurno: solo eventos del mismo día entre 05:00 y 17:59.
+      // Turno diurno: solo eventos del mismo dÃ­a entre 05:00 y 17:59.
       if (e.dayOffset !== 0) return false;
       return e.min >= 5*60 && e.min < 18*60;
     }).sort((a,b)=>a.absMin-b.absMin);
 
-    // Escoger LOGIN válido más cercano al turno dentro de una ventana razonable.
+    // Escoger LOGIN vÃ¡lido mÃ¡s cercano al turno dentro de una ventana razonable.
     // Se aceptan hasta 180 min de adelanto y 240 min de atraso para turno diurno;
     // el nocturno usa la ventana operacional completa para no romper el cruce de medianoche.
     let loginCandidates = operationalEvents.filter(e => e.tipo === 'login');
@@ -1373,7 +1347,7 @@ function buildOperatorRecords(fecha = '') {
     const logeoAbs = loginEvent?.absMin ?? null;
     const logeoMin = loginEvent?.min ?? null;
 
-    // La asignación debe pertenecer a la misma secuencia operacional y ocurrir después del logeo.
+    // La asignaciÃ³n debe pertenecer a la misma secuencia operacional y ocurrir despuÃ©s del logeo.
     const assignmentCandidates = operationalEvents.filter(e => e.tipo === 'asignado');
     let assignmentEvent = null;
     if (assignmentCandidates.length && logeoAbs !== null) {
@@ -1385,7 +1359,7 @@ function buildOperatorRecords(fecha = '') {
     const asignacionAbs = assignmentEvent?.absMin ?? null;
     const asignacionMin = assignmentEvent?.min ?? null;
 
-    // Primera carga: primer CARGANDO/CARGADO de la misma secuencia, posterior a asignación/logeo.
+    // Primera carga: primer CARGANDO/CARGADO de la misma secuencia, posterior a asignaciÃ³n/logeo.
     const loadCandidates = operationalEvents.filter(e => e.tipo === 'primera_carga');
     let loadEvent = null;
     if (loadCandidates.length && logeoAbs !== null && asignacionAbs !== null) {
@@ -1398,7 +1372,7 @@ function buildOperatorRecords(fecha = '') {
     const primeraCargaMin = loadEvent?.min ?? null;
 
     // Diferencia real respecto de la REFERENCIA OPERACIONAL:
-    // Citación cuando "Requiere adelantar citación" = Sí; turno en los demás casos.
+    // CitaciÃ³n cuando "Requiere adelantar citaciÃ³n" = SÃ­; turno en los demÃ¡s casos.
     const atraso = logeoAbs === null || referenceAbs === null ? null : (logeoAbs - referenceAbs);
     let categoria = 'sin_logeo';
     if (atraso !== null) {
@@ -1409,7 +1383,7 @@ function buildOperatorRecords(fecha = '') {
     }
     const tiempoMuertoMin = (logeoAbs !== null && asignacionAbs !== null) ? Math.max(0, asignacionAbs - logeoAbs) : null;
     const estado = {
-      a_tiempo:'A tiempo', adelantado:'Adelantado', atraso_leve:'Atraso leve', atraso_critico:'Atraso crítico', sin_logeo:'Sin logeo'
+      a_tiempo:'A tiempo', adelantado:'Adelantado', atraso_leve:'Atraso leve', atraso_critico:'Atraso crÃ­tico', sin_logeo:'Sin logeo'
     }[categoria];
     const estadoOperacional = primeraCargaMin !== null ? 'Primera carga'
       : asignacionMin !== null ? 'Asignado'
@@ -1422,7 +1396,7 @@ function buildOperatorRecords(fecha = '') {
       horaTurno: fmtMinutes(turnoMin), horaCitacion: fmtMinutes(citacionMin), horaReferencia: fmtMinutes(referenciaMin), horaLogeo: fmtMinutes(logeoMin), horaAsignacion: fmtMinutes(asignacionMin), horaPrimeraCarga: fmtMinutes(primeraCargaMin),
       turno: fmtMinutes(turnoMin), citacionHora: fmtMinutes(citacionMin), referenciaHora: fmtMinutes(referenciaMin), logeo: fmtMinutes(logeoMin), asignacion: fmtMinutes(asignacionMin), primeraCarga: fmtMinutes(primeraCargaMin),
       conLogeo: Number.isFinite(logeoMin), asignado: Number.isFinite(asignacionMin), conPrimeraCarga: Number.isFinite(primeraCargaMin),
-      atrasoTurnoMin: atraso, // compatibilidad: ahora representa desviación vs referencia operacional
+      atrasoTurnoMin: atraso, // compatibilidad: ahora representa desviaciÃ³n vs referencia operacional
       desviacionReferenciaMin: atraso,
       adelantoMin: Number.isFinite(atraso) && atraso < 0 ? Math.abs(atraso) : 0,
       tiempoMuertoMin,
@@ -1469,7 +1443,7 @@ function operationalSummary(records){
   if(asignados>conLogeo)errores.push(`Asignados ${asignados} > ConLogeo ${conLogeo}`);
   if(primeraCarga>asignados)errores.push(`PrimeraCarga ${primeraCarga} > Asignados ${asignados}`);
   if(criticos>conLogeo)errores.push(`OperadoresCriticos ${criticos} > ConLogeo ${conLogeo}`);
-  for(const [k,v] of Object.entries({programados,conLogeo,pendientes,asignados,primeraCarga,criticos})){if(!Number.isFinite(v)||v<0)errores.push(`${k} inválido: ${v}`);if(k!=='programados'&&v>programados)errores.push(`${k} ${v} supera Programados ${programados}`);}
+  for(const [k,v] of Object.entries({programados,conLogeo,pendientes,asignados,primeraCarga,criticos})){if(!Number.isFinite(v)||v<0)errores.push(`${k} invÃ¡lido: ${v}`);if(k!=='programados'&&v>programados)errores.push(`${k} ${v} supera Programados ${programados}`);}
   return {totalTurnos:programados,programadosExigibles:programados,totalLogeo:conLogeo,logeadosAlCorte:conLogeo,logeadosConciliados:conLogeo,pendientesIngreso:pendientes,asignados,primeraCarga,operadoresCriticos:criticos,tiempoMuertoPromedioMin:stats.promedio,tiempoMuertoStats:stats,validacion:{ok:errores.length===0,errores}};
 }
 function operationalPlantRows(records){
@@ -1569,30 +1543,18 @@ app.get('/health', (req, res) => res.json({
   historical_records: Array.isArray(historicalWarehouse?.records) ? historicalWarehouse.records.length : 0,
 }));
 
-app.post('/api/auth/register',(req,res)=>{
-  try{
-    const email=normalizeEmail(req.body?.email),password=String(req.body?.password||''),nombre=safeText(req.body?.nombre),cargo=safeText(req.body?.cargo);
-    const region=safeText(req.body?.region||''),planta=safeText(req.body?.planta||''),zona=safeText(req.body?.zona||'');
-    if(!CORPORATE_EMAIL_RE.test(email))return res.status(400).json({error:'Use su correo corporativo @polpaicosoluciones.cl'});
-    if(!nombre||nombre.length<3)return res.status(400).json({error:'Nombre completo requerido'});
-    if(!SELF_REGISTER_ROLES.has(cargo))return res.status(400).json({error:'Cargo no válido'});
-    if(password.length<10)return res.status(400).json({error:'La clave debe tener al menos 10 caracteres'});
-    const users=loadUsers();if(users.some(u=>normalizeEmail(u.email)===email))return res.status(409).json({error:'Este correo ya está registrado'});
-    users.push({email,nombre,cargoSolicitado:cargo,rol:null,zona,region,planta,estado:'pendiente',activo:false,passwordHash:passwordHash(password),creadoEn:nowIso(),updatedAt:nowIso()});saveUsers(users);
-    return res.status(201).json({ok:true,estado:'pendiente',mensaje:'Registro recibido. Un administrador debe validar el cargo y activar la cuenta.'});
-  }catch(err){return res.status(500).json({error:'No fue posible registrar la cuenta',detalle:err.message});}
-});
-app.get('/api/auth/registration-status',(req,res)=>{const email=normalizeEmail(req.query?.email);const u=loadUsers().find(x=>normalizeEmail(x.email)===email);if(!u)return res.status(404).json({error:'Cuenta no encontrada'});return res.json({email:u.email,estado:u.estado||(u.activo?'activo':'pendiente'),cargoSolicitado:u.cargoSolicitado||u.rol||''});});
-
-app.post('/api/auth/login',(req,res)=>{
-  const email=normalizeEmail(req.body?.email),password=String(req.body?.password||''),fecha=safeText(req.body?.fecha||'');
-  if(!CORPORATE_EMAIL_RE.test(email))return res.status(400).json({error:'Use su correo corporativo @polpaicosoluciones.cl'});
-  const account=loadUsers().find(u=>normalizeEmail(u.email)===email);
-  if(!account||!verifyPassword(password,account.passwordHash))return res.status(401).json({error:'Correo o clave incorrectos'});
-  if(account.estado==='pendiente'||account.activo===false)return res.status(403).json({error:'Cuenta pendiente de aprobación por administrador'});
-  if(!RBAC[account.rol])return res.status(403).json({error:'Rol de cuenta inválido'});
-  const user={...publicUser(account),fecha};
-  res.json({token:authToken(user),user});
+app.post('/api/auth/login', (req, res) => {
+  const nombre = safeText(req.body?.nombre);
+  const rol = safeText(req.body?.rol || 'coordinador');
+  const zona = safeText(req.body?.zona || '');
+  const planta = safeText(req.body?.planta || '');
+  const region = safeText(req.body?.region || '');
+  const fecha = safeText(req.body?.fecha || '');
+  if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
+  const allowedRoles = new Set(['admin','gerencia','supervisor_nacional','supervisor_zona','supervisor_planta','coordinador','lectura']);
+  if (!allowedRoles.has(rol)) return res.status(400).json({ error: 'Rol invÃ¡lido' });
+  const user = { nombre, rol, zona, region, planta, fecha };
+  res.json({ token: authToken(user), user });
 });
 
 
@@ -1617,7 +1579,7 @@ function validateIngestionSession(tipo,req,modo,lote,totalLotes){
     activeIngestions.set(tipo,{owner,session,user:safeText(req.user?.nombre),startedAt:Date.now(),updatedAt:Date.now(),totalLotes:Number(totalLotes)});
     return {ok:true,session};
   }
-  if(!current||current.owner!==owner)return {ok:false,current,error:'La sesión de carga no coincide con la carga activa.'};
+  if(!current||current.owner!==owner)return {ok:false,current,error:'La sesiÃ³n de carga no coincide con la carga activa.'};
   current.updatedAt=Date.now();
   return {ok:true,session};
 }
@@ -1634,7 +1596,7 @@ app.post('/api/ingesta', requireAuth, (req, res) => {
       return res.status(400).json({ error: `Tipo desconocido: ${tipo}` });
     }
     if (!Array.isArray(incoming) || incoming.length === 0) {
-      return res.status(400).json({ error: 'El lote no contiene filas válidas para procesar' });
+      return res.status(400).json({ error: 'El lote no contiene filas vÃ¡lidas para procesar' });
     }
 
     const normalized = normalizeRows(incoming);
@@ -1642,7 +1604,7 @@ app.post('/api/ingesta', requireAuth, (req, res) => {
     const result = validateDataset(tipo, normalized);
     if (!result.valid.length) {
       return res.status(400).json({
-        error: 'Ninguna fila del lote superó la validación',
+        error: 'Ninguna fila del lote superÃ³ la validaciÃ³n',
         errores: result.errors.slice(0,10),
       });
     }
@@ -1781,9 +1743,9 @@ app.get('/api/operacion/revision', requireAuth, (req,res)=>{
 
 app.get('/api/ingesta/estado', requireAuth, (req, res) => {
   res.json({
-    turnos: state.datasets.turnos.metadatos || { cantidad:0, subido_por:'—' },
-    citaciones: state.datasets.citaciones.metadatos || { cantidad:0, subido_por:'—' },
-    logeo: state.datasets.logeo.metadatos || { cantidad:0, subido_por:'—' },
+    turnos: state.datasets.turnos.metadatos || { cantidad:0, subido_por:'â€”' },
+    citaciones: state.datasets.citaciones.metadatos || { cantidad:0, subido_por:'â€”' },
+    logeo: state.datasets.logeo.metadatos || { cantidad:0, subido_por:'â€”' },
   });
 });
 
@@ -1807,7 +1769,7 @@ app.get('/api/catalogo/plantas', (req, res) => {
 });
 
 app.get('/api/plantas', requireAuth, (req, res) => {
-  // Catálogo operacional oficial: solo expone las plantas definidas en el maestro.
+  // CatÃ¡logo operacional oficial: solo expone las plantas definidas en el maestro.
   const catalog = [];
   for (const item of masterPlantCatalog().filter(p => MASTER_ZONE_PLANTS[p.zona]?.some(n=>normalizeName(n)===normalizeName(p.nombre)))) {
     const cfg = ensurePlant(item.nombre, item.zona, item.region);
@@ -1823,11 +1785,11 @@ app.put('/api/plantas/:nombre/config', requireAuth, (req, res) => {
   const currentVersion=Number(p._version||1);
   const expectedRaw=req.body?._expectedVersion;
   if(expectedRaw!==undefined&&expectedRaw!==null&&Number(expectedRaw)!==currentVersion){
-    return res.status(409).json({error:'CONFLICTO_CONCURRENCIA',detalle:'La configuración fue modificada por otro usuario.',currentVersion,planta:p});
+    return res.status(409).json({error:'CONFLICTO_CONCURRENCIA',detalle:'La configuraciÃ³n fue modificada por otro usuario.',currentVersion,planta:p});
   }
   const tol_v = Number(req.body?.tol_v), tol_a = Number(req.body?.tol_a), tol_asig = Number(req.body?.tol_asig);
-  if (![tol_v,tol_a,tol_asig].every(Number.isFinite)) return res.status(400).json({ error:'Las tolerancias deben ser numéricas' });
-  if (tol_v < 0 || tol_a < tol_v || tol_asig < 0) return res.status(400).json({ error:'Configuración de tolerancias inválida' });
+  if (![tol_v,tol_a,tol_asig].every(Number.isFinite)) return res.status(400).json({ error:'Las tolerancias deben ser numÃ©ricas' });
+  if (tol_v < 0 || tol_a < tol_v || tol_asig < 0) return res.status(400).json({ error:'ConfiguraciÃ³n de tolerancias invÃ¡lida' });
   Object.assign(p, {
     tol_v: clamp(Math.round(tol_v),0,120),
     tol_a: clamp(Math.round(tol_a),0,240),
@@ -1845,7 +1807,7 @@ app.put('/api/plantas/:nombre/config', requireAuth, (req, res) => {
 
 
 
-// ===== v3.1 · TORRE DE CONTROL DE FLOTA / MANTENIMIENTO =====
+// ===== v3.1 Â· TORRE DE CONTROL DE FLOTA / MANTENIMIENTO =====
 const FLEET_STATUS = new Set(['available','preventive','internal','external','oos','parts','operational_nonrecoverable','nonrecoverable','stale']);
 function normHeaderText(v){return safeText(v).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();}
 function fleetPick(row, aliases){
@@ -1866,8 +1828,8 @@ function fleetPick(row, aliases){
 function fleetStatusFromSource(sourceStatus, activeFlag){
   const s=normHeaderText(sourceStatus), a=normHeaderText(activeFlag);
 
-  // Taxonomía literal del archivo Excel. Estas reglas deben evaluarse antes
-  // de "operativo", "no operativo" y otros estados genéricos.
+  // TaxonomÃ­a literal del archivo Excel. Estas reglas deben evaluarse antes
+  // de "operativo", "no operativo" y otros estados genÃ©ricos.
   if(s.includes('operativo no recuperable')) return 'operational_nonrecoverable';
   if(s.includes('no recuperable')) return 'nonrecoverable';
 
@@ -1890,24 +1852,24 @@ function fleetThirdPartyCategory(...values){
   return tokens.some(v=>v==='tercero'||v==='terceros'||v==='spot');
 }
 function normalizeFleetRow(row, index){
-  const id=fleetPick(row,['Mixer','ID','ID Equipo','Equipo','Código Equipo','Codigo Equipo','Código','Codigo','Unit ID','Unidad']);
-  const number=fleetPick(row,['Número','Numero','N°','Nro','Camión','Camion','Mixer','N° Camión','Numero Camion']);
+  const id=fleetPick(row,['Mixer','ID','ID Equipo','Equipo','CÃ³digo Equipo','Codigo Equipo','CÃ³digo','Codigo','Unit ID','Unidad']);
+  const number=fleetPick(row,['NÃºmero','Numero','NÂ°','Nro','CamiÃ³n','Camion','Mixer','NÂ° CamiÃ³n','Numero Camion']);
   const plate=fleetPick(row,['Patente','Placa','PPU']);
   const brand=fleetPick(row,['Marca','Brand']);
   const model=fleetPick(row,['Modelo','Model']);
-  const year=fleetPick(row,['Año','Ano','Year']);
+  const year=fleetPick(row,['AÃ±o','Ano','Year']);
   const sourceStatus=fleetPick(row,['Estado','Estado Flota','Estado Registro','Status']) || 'Sin estado';
-  const activeFlag=fleetPick(row,['Activo / Inactivo','Activo/Inactivo','Activo','Condición','Condicion']) || 'Sin dato';
-  const plantCode=fleetPick(row,['Código Planta','Codigo Planta','Cod Planta','Centro SAP','LOCAL CMD','Local CMD']);
+  const activeFlag=fleetPick(row,['Activo / Inactivo','Activo/Inactivo','Activo','CondiciÃ³n','Condicion']) || 'Sin dato';
+  const plantCode=fleetPick(row,['CÃ³digo Planta','Codigo Planta','Cod Planta','Centro SAP','LOCAL CMD','Local CMD']);
   // v3.3.2: la columna I del archivo Flota/Terceros es la fuente autoritativa
-  // para la planta asignada del camión. El frontend la envía como campo técnico.
+  // para la planta asignada del camiÃ³n. El frontend la envÃ­a como campo tÃ©cnico.
   const assignedPlantColI=fleetPick(row,['__assigned_plant_col_i']);
-  const rawPlant=assignedPlantColI || fleetPick(row,['Planta','Nombre Planta','Base','Centro','Ubicación','Ubicacion']);
+  const rawPlant=assignedPlantColI || fleetPick(row,['Planta','Nombre Planta','Base','Centro','UbicaciÃ³n','Ubicacion']);
   let plant='';
   try{
     // Primero homologamos exactamente la planta de columna I con el diccionario.
     plant=dictionaryCanonicalPlant(rawPlant) || canonicalPlantName(rawPlant||'');
-    // Solo si columna I viene vacía, permitimos resolver por otros identificadores/códigos.
+    // Solo si columna I viene vacÃ­a, permitimos resolver por otros identificadores/cÃ³digos.
     if(!plant && !assignedPlantColI) plant=resolvePlantFromRow(row) || canonicalPlantName(plantCode||'');
   }catch{ plant=canonicalPlantName(rawPlant||''); }
   if(!plant) plant=rawPlant || 'Sin planta asignada';
@@ -1915,12 +1877,12 @@ function normalizeFleetRow(row, index){
   try{ const dz=dictionaryOperationalZone(rawPlant)||dictionaryOperationalZone(plantCode); if(dz) zone=dz; }catch{}
   if(!zone && plant && plant!=='Sin planta asignada'){ try{zone=inferZona(plant,'');}catch{} }
   if(!zone) zone='Sin zona';
-  const observation=fleetPick(row,['Observación','Observacion','Comentario','Comentarios']);
-  const company=fleetPick(row,['Compañía','Compania','Empresa','Proveedor']);
+  const observation=fleetPick(row,['ObservaciÃ³n','Observacion','Comentario','Comentarios']);
+  const company=fleetPick(row,['CompaÃ±Ã­a','Compania','Empresa','Proveedor']);
   const plantType=fleetPick(row,['Tipo planta','Tipo Planta','Tipo']);
   const sourceSheet=fleetPick(row,['__source_sheet']) || '';
-  const classificationRaw=fleetPick(row,['Clasificación camión','Clasificacion camion','Clasificación','Clasificacion','Macro clasificación','Macro clasificacion']);
-  const ownershipRaw=fleetPick(row,['Tipo flota','Propiedad','Clasificación flota','Clasificacion flota','Categoría','Categoria']);
+  const classificationRaw=fleetPick(row,['ClasificaciÃ³n camiÃ³n','Clasificacion camion','ClasificaciÃ³n','Clasificacion','Macro clasificaciÃ³n','Macro clasificacion']);
+  const ownershipRaw=fleetPick(row,['Tipo flota','Propiedad','ClasificaciÃ³n flota','Clasificacion flota','CategorÃ­a','Categoria']);
   const classification=fleetClassification(classificationRaw||sourceStatus);
   const isThirdParty=fleetThirdPartyCategory(ownershipRaw,company,sourceSheet,plantType);
   const key=(id||number||plate||`ROW${index+1}`)+'-'+(plate||number||index+1);
@@ -1949,7 +1911,7 @@ app.post('/api/flota/ingesta', requireAuth, (req,res)=>{
     if(!rows.length) return res.status(422).json({error:'Archivo de flota sin registros'});
     const normalizedRaw=rows.map((r,i)=>normalizeFleetRow(r,i)).filter(x=>x.id||x.plate||x.number);
     const normalized=[...new Map(normalizedRaw.map(x=>[x.key,x])).values()];
-    if(!normalized.length) return res.status(422).json({error:'No se detectaron equipos válidos en el archivo de flota'});
+    if(!normalized.length) return res.status(422).json({error:'No se detectaron equipos vÃ¡lidos en el archivo de flota'});
     const oldByKey=new Map((state.fleet?.datos||[]).map(x=>[x.key,x]));
     const merged=normalized.map(n=>{
       const old=oldByKey.get(n.key);
@@ -1971,7 +1933,7 @@ app.patch('/api/flota/:key', requireAuth, (req,res)=>{
     if(expectedRaw!==undefined&&expectedRaw!==null&&Number(expectedRaw)!==currentVersion){
       return res.status(409).json({
         error:'CONFLICTO_CONCURRENCIA',
-        detalle:'El equipo fue modificado por otro usuario. Se actualizó la vista con la versión más reciente.',
+        detalle:'El equipo fue modificado por otro usuario. Se actualizÃ³ la vista con la versiÃ³n mÃ¡s reciente.',
         revision:Number(state.fleet?.revision||0),
         currentVersion,
         equipo:sanitizeFleetItem(before)
@@ -1995,7 +1957,7 @@ app.patch('/api/flota/:key', requireAuth, (req,res)=>{
 
       const returnedHome=homePlant!=='Sin planta asignada' && safeText(next.plant)===safeText(homePlant);
       if(returnedHome){
-        // Regla visual: al volver a su planta de origen, elimina la marca de reubicación
+        // Regla visual: al volver a su planta de origen, elimina la marca de reubicaciÃ³n
         // y recupera inmediatamente el color natural correspondiente a su estado.
         next.lastRelocation=null;
       }else{
@@ -2041,9 +2003,9 @@ app.get('/api/bitacora', requireAuth, (req, res) => {
 });
 
 const BITACORA_TIPOS = new Set([
-  'Falta','Permiso medio día','Vacaciones','Licencia médica','Accidente trayecto',
-  'Exámenes ACHS','Capacitación planta','Otras funciones','Dirigente sindical',
-  'Atraso','Problemas en tablet','Permiso día completo','Desvinculado'
+  'Falta','Permiso medio dÃ­a','Vacaciones','Licencia mÃ©dica','Accidente trayecto',
+  'ExÃ¡menes ACHS','CapacitaciÃ³n planta','Otras funciones','Dirigente sindical',
+  'Atraso','Problemas en tablet','Permiso dÃ­a completo','Desvinculado'
 ]);
 function bitacoraDuplicateKey(x){
   return [safeText(x.planta),safeText(x.operador_id),safeText(x.tipo),safeText(x.detalle).toLowerCase()].join('|');
@@ -2079,7 +2041,7 @@ app.post('/api/bitacora', requireAuth, (req, res) => {
 
 app.patch('/api/bitacora/:id', requireAuth, (req,res)=>{
   const index=state.bitacora.findIndex(x=>x.id===req.params.id);
-  if(index<0)return res.status(404).json({error:'Registro de bitácora no encontrado'});
+  if(index<0)return res.status(404).json({error:'Registro de bitÃ¡cora no encontrado'});
   const current=state.bitacora[index];
   const next={...current};
   for(const field of ['planta','operador_id','operador_nombre','tipo','detalle']){
@@ -2088,7 +2050,7 @@ app.patch('/api/bitacora/:id', requireAuth, (req,res)=>{
   if(!next.planta||!next.tipo||!next.detalle)return res.status(400).json({error:'Planta, tipo y detalle son requeridos'});
   if(!BITACORA_TIPOS.has(next.tipo))return res.status(400).json({error:'Tipo de evento no reconocido'});
   const duplicateKey=bitacoraDuplicateKey(next);
-  if(state.bitacora.some((x,i)=>i!==index&&bitacoraDuplicateKey(x)===duplicateKey))return res.status(409).json({error:'Ya existe un registro idéntico'});
+  if(state.bitacora.some((x,i)=>i!==index&&bitacoraDuplicateKey(x)===duplicateKey))return res.status(409).json({error:'Ya existe un registro idÃ©ntico'});
   next.editado_en=nowIso();next.editado_por=req.user.nombre;
   state.bitacora[index]=next;persistState();
   emitRealtime('bitacora:actualizada',next,'bitacora','bitacora_editada',req.user,{id:next.id});
@@ -2123,7 +2085,7 @@ app.get('/api/analisis-operadores', requireAuth, (req, res) => {
     const built = {records:truth.records,errors:truth.errors};
     const records = truth.records.filter(r=>r.planta===planta);
     if (!records.length) return res.json({
-      diagnostico:'ATENCIÓN', diagnosticoLineas:['No hay turnos válidos para esta planta.'],
+      diagnostico:'ATENCIÃ“N', diagnosticoLineas:['No hay turnos vÃ¡lidos para esta planta.'],
       resumen:{ totalOperadores:0, conLogeo:0, sinLogeo:0, adherenciaTurnoPct:null, atrasadosPct:null, atrasadosCriticos:0, adelantadosPct:null, logeadosSinAsignacion:0, esperaAsignacionPromedioMin:null },
       ranking:[], rankingTiempoMuerto:[], logeadosEsperandoAhora:0, operadores:[]
     });
@@ -2137,13 +2099,13 @@ app.get('/api/analisis-operadores', requireAuth, (req, res) => {
     const adherence = round1(conLogeo.length / records.length * 100);
     const cfg = ensurePlant(planta);
     let diagnostico = 'ESTABLE';
-    if (adherence < 70 || criticos.length >= Math.max(2, Math.ceil(records.length*.2))) diagnostico='CRÍTICO';
-    else if (adherence < 90 || esperando > 0 || tm.some(r=>r.tiempoMuertoMin>cfg.tol_asig)) diagnostico='ATENCIÓN';
+    if (adherence < 70 || criticos.length >= Math.max(2, Math.ceil(records.length*.2))) diagnostico='CRÃTICO';
+    else if (adherence < 90 || esperando > 0 || tm.some(r=>r.tiempoMuertoMin>cfg.tol_asig)) diagnostico='ATENCIÃ“N';
     const lines=[];
     if(sinLogeo) lines.push(`${sinLogeo} operador(es) sin logeo registrado.`);
-    if(criticos.length) lines.push(`${criticos.length} operador(es) con atraso crítico.`);
-    if(esperando) lines.push(`${esperando} operador(es) logeados aún sin primera asignación.`);
-    if(tm.length) lines.push(`Tiempo muerto promedio logeo → asignación: ${round1(tm.reduce((s,r)=>s+r.tiempoMuertoMin,0)/tm.length)} min.`);
+    if(criticos.length) lines.push(`${criticos.length} operador(es) con atraso crÃ­tico.`);
+    if(esperando) lines.push(`${esperando} operador(es) logeados aÃºn sin primera asignaciÃ³n.`);
+    if(tm.length) lines.push(`Tiempo muerto promedio logeo â†’ asignaciÃ³n: ${round1(tm.reduce((s,r)=>s+r.tiempoMuertoMin,0)/tm.length)} min.`);
   
     res.json({
       diagnostico,
@@ -2167,7 +2129,7 @@ app.get('/api/analisis-operadores', requireAuth, (req, res) => {
     });
   } catch (err) {
     registrarErrorDetallado({ modulo:'operadores', funcion:'GET /api/analisis-operadores', error:err?.message || String(err), stack:err?.stack, contexto:{ planta:req.query?.planta || '', fecha:req.query?.fecha || '' } });
-    return res.status(422).json({ error:'No fue posible analizar los operadores con los datos disponibles', detalle:err?.message || String(err), mensaje_usuario:'Información incompleta o inválida para la planta seleccionada.' });
+    return res.status(422).json({ error:'No fue posible analizar los operadores con los datos disponibles', detalle:err?.message || String(err), mensaje_usuario:'InformaciÃ³n incompleta o invÃ¡lida para la planta seleccionada.' });
   }
 });
 
@@ -2175,7 +2137,7 @@ app.get('/api/analisis-operadores', requireAuth, (req, res) => {
 
 
 // ============================================================================
-// CCO INTELLIGENCE v3.6 — ETL HISTÓRICO SERVER-SIDE / STREAMING
+// CCO INTELLIGENCE v3.6 â€” ETL HISTÃ“RICO SERVER-SIDE / STREAMING
 // El archivo se sube como binario. XLSX grande se procesa con ExcelJS streaming,
 // evitando convertir 482.000+ filas a JSON en el navegador.
 // ============================================================================
@@ -2189,8 +2151,8 @@ const HIST_JOBS = new Map();
 const HIST_ERROR_REPORTS = new Map();
 const HIST_VALIDATION_TIMEOUT_MS = 10_000; // 10 s sin progreso, no 10 s totales
 const HIST_VALIDATION_STARTUP_TIMEOUT_MS = 60_000; // margen para abrir XLSX grandes
-// Lote lógico de procesamiento. 1.000 reduce ~90% de los cambios de contexto
-// frente a la versión anterior (100) sin bloquear el event loop.
+// Lote lÃ³gico de procesamiento. 1.000 reduce ~90% de los cambios de contexto
+// frente a la versiÃ³n anterior (100) sin bloquear el event loop.
 const HIST_BATCH_SIZE = 1000;
 const HIST_QUEUES = {
   turnos:{busy:false,items:[]},
@@ -2202,11 +2164,11 @@ const HIST_QUEUES = {
 
 const HIST_ETL_HEADER_ALIASES = {
   operador:['operador','nombre operador','nombre_operador','conductor','chofer','nombre de operador','nombre_de_operador','primero empleado','primero_empleado'],
-  operadorId:['id operador','id_operador','id','numero funcionario','número funcionario','numero_funcionario','rut','codigo operador'],
-  planta:['planta','planta original','planta_original','descripcion planta','descripción planta','descripcion_planta','centro','sucursal','base'],
-  camion:['camion','camión','equipo','mixer','patente','numero equipo','número equipo','numero_equipo','n° camion','n_camion'],
+  operadorId:['id operador','id_operador','id','numero funcionario','nÃºmero funcionario','numero_funcionario','rut','codigo operador'],
+  planta:['planta','planta original','planta_original','descripcion planta','descripciÃ³n planta','descripcion_planta','centro','sucursal','base'],
+  camion:['camion','camiÃ³n','equipo','mixer','patente','numero equipo','nÃºmero equipo','numero_equipo','nÂ° camion','n_camion'],
   turno:['hora ingreso','hora_ingreso','turno','inicio turno','inicio_turno','hora turno'],
-  citacion:['hora citacion','hora citación','hora_citacion','citacion','citación','citacion sugerida'],
+  citacion:['hora citacion','hora citaciÃ³n','hora_citacion','citacion','citaciÃ³n','citacion sugerida'],
   fecha:['fecha','date','fecha turno','fecha_turno','fecha programada','fecha_programada','fecha inicio semana','fecha_inicio_semana','hora inicio','hora_inicio'],
   semana:['anosemana','ano_semana','semana','semana iso','semana_iso'],
   estado:[...OP_STATUS.fields.generalState],
@@ -2256,7 +2218,7 @@ function etlHeaderScore(vals,source){
   (vals||[]).forEach((v,i)=>{const c=etlCanonicalHeader(v);if(c&&!recognized.has(c))recognized.set(c,i);});
   const required=HIST_ETL_REQUIRED[source]||[];
   const requiredHits=required.reduce((n,g)=>n+(g.some(x=>recognized.has(x))?1:0),0);
-  const textish=(vals||[]).filter(v=>typeof v==='string'&&/[A-Za-zÁÉÍÓÚáéíóúÑñ]/.test(v)).length;
+  const textish=(vals||[]).filter(v=>typeof v==='string'&&/[A-Za-zÃÃ‰ÃÃ“ÃšÃ¡Ã©Ã­Ã³ÃºÃ‘Ã±]/.test(v)).length;
   return {recognized,requiredHits,requiredTotal:required.length,score:requiredHits*120+recognized.size*25+Math.min(textish,20)};
 }
 function etlHeaders(vals){
@@ -2270,7 +2232,7 @@ function etlObject(headers,vals){
   const o={};for(let i=0;i<headers.length;i++)o[headers[i]]=vals[i]??null;return o;
 }
 function etlLooksMeta(vals,headers){
-  if(etlRowEmpty(vals))return {skip:true,code:'FILA_VACIA',field:'fila',reason:'Fila completamente vacía'};
+  if(etlRowEmpty(vals))return {skip:true,code:'FILA_VACIA',field:'fila',reason:'Fila completamente vacÃ­a'};
   const txt=vals.filter(v=>v!==null&&v!==undefined&&String(v).trim()!=='').map(v=>normalizeName(v));
   const joined=txt.join(' ');
   if(txt.length<=3&&(joined.startsWith('total')||joined.includes('subtotal')||joined.startsWith('comentario')||joined.startsWith('observacion')))
@@ -2338,7 +2300,7 @@ function etlNormalizeRow(source,row,archivo,rowNumber,diag,statusAccumulator=nul
     const end=parseDateKey(histPick(r,HIST_FIELD.turnos.end));
     const shift=histTime(histPick(r,HIST_FIELD.turnos.shift));
     const plant=histResolvePlant(histPick(r,HIST_FIELD.turnos.plant));
-    if(!key){etlReason(diag,rowNumber,'OPERADOR_NO_IDENTIFICABLE','OPERADOR','No se encontró ID ni nombre de operador','rejected');return [];}
+    if(!key){etlReason(diag,rowNumber,'OPERADOR_NO_IDENTIFICABLE','OPERADOR','No se encontrÃ³ ID ni nombre de operador','rejected');return [];}
     if(!start){etlReason(diag,rowNumber,'FECHA_NO_RECONOCIBLE','FECHA','No se pudo interpretar fecha de inicio ni semana','rejected');return [];}
     const out=[];
     for(let i=0;i<7;i++){
@@ -2360,7 +2322,7 @@ function etlNormalizeRow(source,row,archivo,rowNumber,diag,statusAccumulator=nul
 
 
   if(source==='tam'){
-    // Archivo real probado: título fila 1, encabezado fila 2.
+    // Archivo real probado: tÃ­tulo fila 1, encabezado fila 2.
     // CRUCE EXCLUSIVO: ID de columna A + Fecha.
     const id=histPick(r,HIST_FIELD.tam.operatorId);
     const name=safeText(histPick(r,HIST_FIELD.tam.operatorName));
@@ -2373,7 +2335,7 @@ function etlNormalizeRow(source,row,archivo,rowNumber,diag,statusAccumulator=nul
     const salida=histTime(rawSalida);
 
     if(!key){
-      etlReason(diag,rowNumber,'TAM_ID_COLUMNA_A_VACIO','ID','La columna A (ID) está vacía o no es normalizable.','rejected');
+      etlReason(diag,rowNumber,'TAM_ID_COLUMNA_A_VACIO','ID','La columna A (ID) estÃ¡ vacÃ­a o no es normalizable.','rejected');
       return [];
     }
     if(!fecha){
@@ -2389,7 +2351,7 @@ function etlNormalizeRow(source,row,archivo,rowNumber,diag,statusAccumulator=nul
       tamJefatura:safeText(histPick(r,HIST_FIELD.tam.jefe))
     };
 
-    // Celda vacía NO es error de parser. Se consolida por ID + Fecha.
+    // Celda vacÃ­a NO es error de parser. Se consolida por ID + Fecha.
     if(ingreso===null && rawIngreso!==null && rawIngreso!==undefined && String(rawIngreso).trim()!==''){
       rec.quality='parcial';
       rec.qualityIssues.push('TAM_INGRESO_NO_RECONOCIBLE');
@@ -2421,7 +2383,7 @@ function etlNormalizeRow(source,row,archivo,rowNumber,diag,statusAccumulator=nul
     const id=histPick(r,HIST_FIELD.citaciones.operatorId),name=safeText(histPick(r,HIST_FIELD.citaciones.operatorName)),key=histOperatorKey(id,name);
     const fecha=parseDateKey(histPick(r,HIST_FIELD.citaciones.date)),citation=histTime(histPick(r,HIST_FIELD.citaciones.citation));
     const plant=histResolvePlant(histPick(r,HIST_FIELD.citaciones.plant));
-    if(!key){etlReason(diag,rowNumber,'OPERADOR_NO_IDENTIFICABLE','OPERADOR','No se encontró ID ni nombre de operador','rejected');return [];}
+    if(!key){etlReason(diag,rowNumber,'OPERADOR_NO_IDENTIFICABLE','OPERADOR','No se encontrÃ³ ID ni nombre de operador','rejected');return [];}
     if(!fecha){etlReason(diag,rowNumber,'FECHA_NO_RECONOCIBLE','FECHA','Formato de fecha no reconocible','rejected');return [];}
     const rec={...base,fecha,planta:plant,zona:plant?inferZona(plant):'',operadorId:normalizeId(id),operadorNombre:name,operadorKey:key,citacionMin:citation,camion:normalizePlate(histPick(r,HIST_FIELD.citaciones.truck))||safeText(histPick(r,HIST_FIELD.citaciones.truck))};
     if(citation===null){rec.quality='parcial';rec.qualityIssues.push('HORA_CITACION_NO_RECONOCIBLE');}
@@ -2442,7 +2404,7 @@ function etlNormalizeRow(source,row,archivo,rowNumber,diag,statusAccumulator=nul
     const plant=histResolvePlant(histPick(r,HIST_FIELD.gtiempos.plant));
     const zoneRaw=safeText(histPick(r,HIST_FIELD.gtiempos.zone));
     if(!key){etlReason(diag,rowNumber,'OPERADOR_NO_IDENTIFICABLE','ID_Operador','GTIEMPOS sin operador identificable','rejected');return [];}
-    if(!fecha){etlReason(diag,rowNumber,'FECHA_NO_RECONOCIBLE','Fecha','GTIEMPOS sin fecha válida','rejected');return [];}
+    if(!fecha){etlReason(diag,rowNumber,'FECHA_NO_RECONOCIBLE','Fecha','GTIEMPOS sin fecha vÃ¡lida','rejected');return [];}
     if(!plant){etlReason(diag,rowNumber,'PLANTA_NO_HOMOLOGADA','Planta_GTiempos','GTIEMPOS sin planta homologable','partial');}
     const hheeIn=histNumber(histPick(r,HIST_FIELD.gtiempos.overtimeIn))||0;
     const hheeOut=histNumber(histPick(r,HIST_FIELD.gtiempos.overtimeOut))||0;
@@ -2465,7 +2427,7 @@ function etlNormalizeRow(source,row,archivo,rowNumber,diag,statusAccumulator=nul
     }];
   }
 
-  // Status: LOGEO y ASIGNACIÓN usan fuentes de estado distintas.
+  // Status: LOGEO y ASIGNACIÃ“N usan fuentes de estado distintas.
   const dt=histPick(r,HIST_FIELD.status.datetime),fecha=parseDateKey(dt)||parseDateKey(histPick(r,HIST_FIELD.status.date)),eventMin=histTime(dt);
   const generalState=safeText(histPick(r,HIST_FIELD.status.state));
   const loginState=safeText(histPick(r,HIST_FIELD.status.loginState));
@@ -2477,7 +2439,7 @@ function etlNormalizeRow(source,row,archivo,rowNumber,diag,statusAccumulator=nul
 
   if(!kinds.length){
     etlReason(diag,rowNumber,'EVENTO_STATUS_NO_KPI','ESTADO',
-      `Fila sin Login/pre-viaje, Estado asignación=Asignado ni CARGANDO/CARGADO`,'filtered');
+      `Fila sin Login/pre-viaje, Estado asignaciÃ³n=Asignado ni CARGANDO/CARGADO`,'filtered');
     return [];
   }
 
@@ -2535,7 +2497,7 @@ function summarizeTamConsolidation(records,diag){
     operatorDaysWithoutIngreso:missingIngreso,
     operatorDaysWithoutSalida:missingSalida
   };
-  etlLog(diag,`TAM consolidado por ID columna A + Fecha · ${groups.size.toLocaleString('es-CL')} operador/día · ${recovered.toLocaleString('es-CL')} filas con ingreso vacío recuperadas · ${missingIngreso.toLocaleString('es-CL')} operador/día realmente sin ingreso TAM · ${missingSalida.toLocaleString('es-CL')} sin salida TAM.`);
+  etlLog(diag,`TAM consolidado por ID columna A + Fecha Â· ${groups.size.toLocaleString('es-CL')} operador/dÃ­a Â· ${recovered.toLocaleString('es-CL')} filas con ingreso vacÃ­o recuperadas Â· ${missingIngreso.toLocaleString('es-CL')} operador/dÃ­a realmente sin ingreso TAM Â· ${missingSalida.toLocaleString('es-CL')} sin salida TAM.`);
 }
 
 function etlDedupeKey(r){
@@ -2587,15 +2549,15 @@ async function etlProcessXlsx(filePath,source,archivo,job,diag){
           selected=true;diag.sheet=ws.name;diag.headerRow=bestHeader.rowNumber;
           if(source==='status'&&!bestHeader.recognized.has('estadoAsignacion')){
             diag.schemaWarnings=Array.isArray(diag.schemaWarnings)?diag.schemaWarnings:[];
-            diag.schemaWarnings.push('Falta columna Estado asignación: KPI Asignación no se calculará; Logeo y otros eventos compatibles continúan.');
+            diag.schemaWarnings.push('Falta columna Estado asignaciÃ³n: KPI AsignaciÃ³n no se calcularÃ¡; Logeo y otros eventos compatibles continÃºan.');
           }
           diag.columns=bestHeader.values.map(v=>safeText(v)).filter(Boolean);diag.columnCount=diag.columns.length;
           if(source==='tam' && normalizeKey(bestHeader.values?.[0])!=='id'){
-            throw new Error(`Marcaje TAM inválido: el encabezado detectado en fila ${bestHeader.rowNumber} no tiene ID en la columna A.`);
+            throw new Error(`Marcaje TAM invÃ¡lido: el encabezado detectado en fila ${bestHeader.rowNumber} no tiene ID en la columna A.`);
           }
           diag.missing=etlMissingHeaderGroups(bestHeader,source);headers=etlHeaders(bestHeader.values);
-          etlLog(diag,`Hoja principal detectada: ${ws.name} · encabezado fila ${diag.headerRow}.`);
-          etlUpdateJob(job,35,'Estructura validada · procesando registros',diag);
+          etlLog(diag,`Hoja principal detectada: ${ws.name} Â· encabezado fila ${diag.headerRow}.`);
+          etlUpdateJob(job,35,'Estructura validada Â· procesando registros',diag);
           for(const b of buffered){
             if(b.rowNumber<=diag.headerRow)continue;
             diag.rowsFound++;
@@ -2625,7 +2587,7 @@ async function etlProcessXlsx(filePath,source,archivo,job,diag){
         diag.blocksProcessed++;
         diag.rowsStored=source==='status'?statusAcc.size:staged.length;
         const p=Math.min(94,35+Math.floor(Math.log10(Math.max(diag.rowsFound,10))*12));
-        etlUpdateJob(job,p,`Procesando bloque ${diag.blocksProcessed.toLocaleString('es-CL')} · ${diag.rowsFound.toLocaleString('es-CL')} filas · ${diag.rowsStored.toLocaleString('es-CL')} válidos`,diag);
+        etlUpdateJob(job,p,`Procesando bloque ${diag.blocksProcessed.toLocaleString('es-CL')} Â· ${diag.rowsFound.toLocaleString('es-CL')} filas Â· ${diag.rowsStored.toLocaleString('es-CL')} vÃ¡lidos`,diag);
         await yieldEventLoop();
       }
     }
@@ -2633,8 +2595,8 @@ async function etlProcessXlsx(filePath,source,archivo,job,diag){
     if(selected)break;
   }
   if(!selected)throw new Error(source==='turnos'
-    ? 'No se encontró una hoja de Turnos con Operador/ID, Fecha/Semana y Hora de ingreso/Turno. Revise que exista la hoja de detalle operacional.'
-    : 'No se encontró una tabla con las columnas mínimas durante los primeros 10 segundos de validación.');
+    ? 'No se encontrÃ³ una hoja de Turnos con Operador/ID, Fecha/Semana y Hora de ingreso/Turno. Revise que exista la hoja de detalle operacional.'
+    : 'No se encontrÃ³ una tabla con las columnas mÃ­nimas durante los primeros 10 segundos de validaciÃ³n.');
   if(source==='status'){
     for(const rec of statusAcc.values()){
       const dk=etlDedupeKey(rec);if(existing.has(dk)){diag.duplicates++;continue;}existing.add(dk);
@@ -2669,7 +2631,7 @@ async function etlProcessNonXlsx(filePath,ext,source,archivo,job,diag){
   etlUpdateJob(job,25,'Detectando estructura',diag);
   let wb;
   if(ext==='csv'||ext==='txt'){
-    const text=fs.readFileSync(filePath,'utf8');if(!text.trim())throw new Error('El archivo está vacío.');
+    const text=fs.readFileSync(filePath,'utf8');if(!text.trim())throw new Error('El archivo estÃ¡ vacÃ­o.');
     wb=XLSXNode.read(text,{type:'string',raw:true});
   }else wb=XLSXNode.readFile(filePath,{cellDates:false,raw:true});
   const candidates=[];
@@ -2680,9 +2642,9 @@ async function etlProcessNonXlsx(filePath,ext,source,archivo,job,diag){
   }
   markValidationProgress(validationWatchdog,1);
   checkValidationWatchdog(validationWatchdog);
-  const best=etlChooseBest(candidates,source);if(!best)throw new Error('No se encontró ninguna hoja/tabla con datos.');
+  const best=etlChooseBest(candidates,source);if(!best)throw new Error('No se encontrÃ³ ninguna hoja/tabla con datos.');
   diag.sheet=best.sheetName;diag.headerRow=best.bestHeader.rowNumber;diag.columns=best.bestHeader.values.map(v=>safeText(v)).filter(Boolean);diag.columnCount=diag.columns.length;diag.missing=etlMissingHeaderGroups(best.bestHeader,source);
-  if(source==='tam' && normalizeKey(best.bestHeader.values?.[0])!=='id')throw new Error('Marcaje TAM inválido: la columna A debe corresponder a ID.');
+  if(source==='tam' && normalizeKey(best.bestHeader.values?.[0])!=='id')throw new Error('Marcaje TAM invÃ¡lido: la columna A debe corresponder a ID.');
   etlUpdateJob(job,55,'Procesando registros',diag);
   const headers=etlHeaders(best.bestHeader.values),existing=new Set(
     (historicalWarehouse.records||[])
@@ -2699,7 +2661,7 @@ async function etlProcessNonXlsx(filePath,ext,source,archivo,job,diag){
       diag.blocksProcessed++;
       diag.rowsStored=source==='status'?statusAcc.size:staged.length;
       const p=Math.min(94,55+Math.floor(Math.log10(Math.max(diag.rowsFound,10))*10));
-      etlUpdateJob(job,p,`Procesando bloque ${diag.blocksProcessed.toLocaleString('es-CL')} · ${diag.rowsFound.toLocaleString('es-CL')} filas · ${diag.rowsStored.toLocaleString('es-CL')} válidos`,diag);
+      etlUpdateJob(job,p,`Procesando bloque ${diag.blocksProcessed.toLocaleString('es-CL')} Â· ${diag.rowsFound.toLocaleString('es-CL')} filas Â· ${diag.rowsStored.toLocaleString('es-CL')} vÃ¡lidos`,diag);
       await yieldEventLoop();
     }
   }
@@ -2710,7 +2672,7 @@ async function etlProcessNonXlsx(filePath,ext,source,archivo,job,diag){
 
 function replaceHistoricalFileRecords(source,archivo,newRecords,diag){
   const before=historicalWarehouse.records||[];
-  // Base KPI es una instantánea autoritativa: una carga nueva sustituye por
+  // Base KPI es una instantÃ¡nea autoritativa: una carga nueva sustituye por
   // completo la anterior, incluso cuando cambia el nombre del archivo.
   const replaceWholeSource=source==='gtiempos';
   const old=before.filter(r=>r.source===source && (replaceWholeSource||safeText(r.archivo)===safeText(archivo)));
@@ -2745,7 +2707,7 @@ function finalizeDiagRuntime(diag){
 }
 function enqueueHistoricalJob(job){
   const q=HIST_QUEUES[job.source];
-  q.items.push(job);job.queuePosition=q.items.length;job.stage=`En cola · posición ${job.queuePosition}`;
+  q.items.push(job);job.queuePosition=q.items.length;job.stage=`En cola Â· posiciÃ³n ${job.queuePosition}`;
   runHistoricalQueue(job.source);
 }
 async function runHistoricalQueue(source){
@@ -2767,8 +2729,8 @@ function checkValidationWatchdog(watchdog){
   const inactiveExceeded=watchdog.rowsSeen>0 && (now-watchdog.lastProgressAt)>HIST_VALIDATION_TIMEOUT_MS;
   if(startupExceeded||inactiveExceeded){
     const e=new Error(startupExceeded
-      ? 'El archivo demoró demasiado en abrirse. Se superó el límite de 60 segundos sin recibir filas.'
-      : 'La validación se detuvo por más de 10 segundos sin progreso.');
+      ? 'El archivo demorÃ³ demasiado en abrirse. Se superÃ³ el lÃ­mite de 60 segundos sin recibir filas.'
+      : 'La validaciÃ³n se detuvo por mÃ¡s de 10 segundos sin progreso.');
     e.code='VALIDATION_TIMEOUT';throw e;
   }
 }
@@ -2777,36 +2739,36 @@ async function yieldEventLoop(){await new Promise(r=>setImmediate(r));}
 async function processHistoricalUploadJob(job){
   const {source,file}=job;const diag=etlDiagBase(source,file.originalname);job.diagnostic=diag;
   try{
-    etlUpdateJob(job,8,'Etapa 1/4 · archivo recibido',diag);etlLog(diag,`Archivo recibido: ${(file.size/1024/1024).toFixed(2)} MB.`);
+    etlUpdateJob(job,8,'Etapa 1/4 Â· archivo recibido',diag);etlLog(diag,`Archivo recibido: ${(file.size/1024/1024).toFixed(2)} MB.`);
     if(!file?.path||!fs.existsSync(file.path))throw new Error('El archivo no existe en el servidor de procesamiento.');
     const ext=path.extname(file.originalname||'').toLowerCase().replace('.','');
-    etlUpdateJob(job,12,'Etapa 2/4 · validando extensión',diag);
-    if(!['xlsx','xls','csv','txt','pdf'].includes(ext))throw new Error(`Extensión .${ext||'?'} no permitida.`);
-    etlUpdateJob(job,16,'Calculando hash MD5 y revisando caché',diag);
+    etlUpdateJob(job,12,'Etapa 2/4 Â· validando extensiÃ³n',diag);
+    if(!['xlsx','xls','csv','txt','pdf'].includes(ext))throw new Error(`ExtensiÃ³n .${ext||'?'} no permitida.`);
+    etlUpdateJob(job,16,'Calculando hash MD5 y revisando cachÃ©',diag);
     diag.md5=await hashFileMd5(file.path);
     const cacheKey=histCacheKey(source,diag.md5),cached=historicalWarehouse.fileCache?.[cacheKey];
     if(cached){
       diag.status='correcto';diag.fromCache=true;diag.rowsFound=Number(cached.rowsFound||0);diag.rowsStored=Number(cached.rowsStored||0);
       diag.columnCount=Number(cached.columnCount||0);diag.columns=cached.columns||[];diag.sheet=cached.sheet||null;
-      diag.reason=`Archivo ya procesado. Resultado recuperado desde caché MD5 (${diag.md5}).`;
-      diag.finishedAt=nowIso();finalizeDiagRuntime(diag);etlLog(diag,'No se reprocesó el archivo.');
-      etlStoreDiagnostic(publicDiagnostic(diag));etlUpdateJob(job,100,'Finalizado desde caché',diag);persistHistoricalWarehouse();emitRealtime('historico:actualizado',{source,archivo:file.originalname,revision:Number(historicalWarehouse?.revision||0),cache:true},'historico','archivo_cache',job.user,{source});return;
+      diag.reason=`Archivo ya procesado. Resultado recuperado desde cachÃ© MD5 (${diag.md5}).`;
+      diag.finishedAt=nowIso();finalizeDiagRuntime(diag);etlLog(diag,'No se reprocesÃ³ el archivo.');
+      etlStoreDiagnostic(publicDiagnostic(diag));etlUpdateJob(job,100,'Finalizado desde cachÃ©',diag);persistHistoricalWarehouse();emitRealtime('historico:actualizado',{source,archivo:file.originalname,revision:Number(historicalWarehouse?.revision||0),cache:true},'historico','archivo_cache',job.user,{source});return;
     }
     if(ext==='pdf'){
       diag.status='parcial';diag.reason='PDF registrado como lectura informativa. No se usa para KPI estructurados.';diag.finishedAt=nowIso();
       finalizeDiagRuntime(diag);etlStoreDiagnostic(publicDiagnostic(diag));etlUpdateJob(job,100,'PDF registrado',diag);persistHistoricalWarehouse();emitRealtime('historico:actualizado',{source,archivo:file.originalname,revision:Number(historicalWarehouse?.revision||0),pdf:true},'historico','pdf_registrado',job.user,{source});return;
     }
-    etlUpdateJob(job,20,'Etapa 3/4 · validando columnas',diag);
+    etlUpdateJob(job,20,'Etapa 3/4 Â· validando columnas',diag);
     const useFastTamXlsx=ext==='xlsx'&&source==='tam'&&Number(file.size||0)<=5*1024*1024;
     if(useFastTamXlsx){
-      etlLog(diag,'Fast-path TAM activado: XLSX pequeño procesado en memoria para evitar latencia del streaming.');
+      etlLog(diag,'Fast-path TAM activado: XLSX pequeÃ±o procesado en memoria para evitar latencia del streaming.');
       await etlProcessNonXlsx(file.path,ext,source,file.originalname,job,diag);
     }else if(ext==='xlsx')await etlProcessXlsx(file.path,source,file.originalname,job,diag);
     else await etlProcessNonXlsx(file.path,ext,source,file.originalname,job,diag);
-    etlUpdateJob(job,96,'Etapa 4/4 · consolidando resultados',diag);
+    etlUpdateJob(job,96,'Etapa 4/4 Â· consolidando resultados',diag);
     diag.status=diag.rowsStored>0?(diag.rowsPartial||diag.rowsRejected?'parcial':'correcto'):'parcial';
-    if(diag.rowsStored>0)diag.reason=`${diag.rowsStored.toLocaleString('es-CL')} registros recuperados. ${diag.rowsPartial?diag.rowsPartial.toLocaleString('es-CL')+' con cruce parcial. ':''}${diag.rowsRejected?diag.rowsRejected.toLocaleString('es-CL')+' rechazados con causa explícita.':''}`;
-    else diag.reason=`Archivo leído sin registros KPI completos. Rechazados: ${diag.rowsRejected}; filtrados por regla: ${diag.rowsFiltered}.`;
+    if(diag.rowsStored>0)diag.reason=`${diag.rowsStored.toLocaleString('es-CL')} registros recuperados. ${diag.rowsPartial?diag.rowsPartial.toLocaleString('es-CL')+' con cruce parcial. ':''}${diag.rowsRejected?diag.rowsRejected.toLocaleString('es-CL')+' rechazados con causa explÃ­cita.':''}`;
+    else diag.reason=`Archivo leÃ­do sin registros KPI completos. Rechazados: ${diag.rowsRejected}; filtrados por regla: ${diag.rowsFiltered}.`;
     diag.finishedAt=nowIso();finalizeDiagRuntime(diag);
     etlRefreshSourceMeta(source,file.originalname,diag,job.user);
     historicalWarehouse.revision=Number(historicalWarehouse.revision||0)+1;historicalWarehouse.loaded_at=nowIso();historicalDailyCache.revision=-1;
@@ -2819,9 +2781,9 @@ async function processHistoricalUploadJob(job){
     diag.status='error';
     diag.failedStage=diag.currentStage||job.stage||'Procesamiento';
     diag.reason=err?.code==='JOB_CANCELLED'
-      ? 'La carga excedió el tiempo permitido. Verifique el archivo y vuelva a intentar.'
+      ? 'La carga excediÃ³ el tiempo permitido. Verifique el archivo y vuelva a intentar.'
       : err?.code==='VALIDATION_TIMEOUT'
-        ? `Timeout de lectura en ${diag.failedStage}: ${err?.message||'el parser no reportó progreso'}.`
+        ? `Timeout de lectura en ${diag.failedStage}: ${err?.message||'el parser no reportÃ³ progreso'}.`
         : (err?.message||'El archivo no pudo ser procesado.');
     diag.finishedAt=nowIso();etlLog(diag,`Error: ${err?.message||String(err)}`);finalizeDiagRuntime(diag);
     etlStoreDiagnostic(publicDiagnostic(diag));try{persistHistoricalWarehouse();}catch{}
@@ -2833,9 +2795,9 @@ async function processHistoricalUploadJob(job){
 }
 
 // ============================================================================
-// CCO INTELLIGENCE v3.4 — TRAZABILIDAD INTELLIGENCE
-// Base histórica independiente, construida EXCLUSIVAMENTE desde archivos
-// adjuntos en la pestaña Trazabilidad. No consulta Operación Nacional.
+// CCO INTELLIGENCE v3.4 â€” TRAZABILIDAD INTELLIGENCE
+// Base histÃ³rica independiente, construida EXCLUSIVAMENTE desde archivos
+// adjuntos en la pestaÃ±a Trazabilidad. No consulta OperaciÃ³n Nacional.
 // ============================================================================
 const HISTORICAL_SOURCES = {
   turnos: { label:'Turnos' },
@@ -2845,7 +2807,7 @@ const HISTORICAL_SOURCES = {
   gtiempos: { label:'Base KPI GTIEMPOS' },
 };
 // v4.9.0: Trazabilidad expone una sola fuente. Las definiciones antiguas se
-// conservan internamente para no romper datos históricos ni rutas compartidas.
+// conservan internamente para no romper datos histÃ³ricos ni rutas compartidas.
 const HISTORICAL_ACTIVE_SOURCES = new Set(['gtiempos']);
 
 const HIST_FIELD = {
@@ -2855,38 +2817,38 @@ const HIST_FIELD = {
     end:['fecha_fin_semana','fecha fin semana','fin_semana'],
     date:['fecha','date'],
     plant:['planta','planta_original','nombre_planta','descripcion_planta'],
-    operatorId:['id_operador','id operador','id_ operador','numero_funcionario','número funcionario','numero funcionario','id funcionario','id empleado','id'],
+    operatorId:['id_operador','id operador','id_ operador','numero_funcionario','nÃºmero funcionario','numero funcionario','id funcionario','id empleado','id'],
     operatorName:['conductor','operador','nombre_operador','nombre operador'],
     shift:['hora_ingreso','hora ingreso','inicio_turno','turno','hora_turno'],
   },
   citaciones: {
     date:['fecha','date','fecha_citacion','fecha citacion'],
     plant:['planta','nombre_planta','descripcion_planta'],
-    operatorId:['id','id_operador','numero_funcionario','número funcionario'],
+    operatorId:['id','id_operador','numero_funcionario','nÃºmero funcionario'],
     operatorName:['nombre_de_operador','nombre de operador','operador','conductor'],
-    citation:['hora_citacion','hora citacion','citación','citacion'],
-    truck:['n_camion','n° camion','número camion','numero camion','camion','mixer'],
+    citation:['hora_citacion','hora citacion','citaciÃ³n','citacion'],
+    truck:['n_camion','nÂ° camion','nÃºmero camion','numero camion','camion','mixer'],
   },
   status: {
     datetime:['hora_inicio','hora inicio','timestamp','fecha_hora','fecha hora'],
     date:['fecha','date'],
-    plant:['descripcion_planta','descripción planta','planta','nombre_planta'],
-    plantCode:['numero_planta','número planta','codigo_planta','código planta'],
-    operatorId:['numero_funcionario','número funcionario','numero funcionario','id_funcionario','id funcionario','id_operador','id operador','id empleado'],
+    plant:['descripcion_planta','descripciÃ³n planta','planta','nombre_planta'],
+    plantCode:['numero_planta','nÃºmero planta','codigo_planta','cÃ³digo planta'],
+    operatorId:['numero_funcionario','nÃºmero funcionario','numero funcionario','id_funcionario','id funcionario','id_operador','id operador','id empleado'],
     firstName:['primero_empleado','primero empleado','nombre'],
-    lastName:['ultimo_empleado','último empleado','apellido'],
+    lastName:['ultimo_empleado','Ãºltimo empleado','apellido'],
     state:[...OP_STATUS.fields.generalState],
     loginState:[...OP_STATUS.fields.loginState],
     assignmentState:[...OP_STATUS.fields.assignmentState],
-    truck:['numero_equipo','número equipo','equipo','camion','mixer'],
-    ticket:['n_de_tiquete','n° de tiquete','numero_tiquete','número de tiquete'],
+    truck:['numero_equipo','nÃºmero equipo','equipo','camion','mixer'],
+    ticket:['n_de_tiquete','nÂ° de tiquete','numero_tiquete','nÃºmero de tiquete'],
   },
   tam: {
     // Esquema real Marcaje TAM. La clave de cruce sigue siendo ID columna A + Fecha.
     operatorId:['id'],
     operatorName:['nombre'],
     sindicato:['sindicato'],
-    subdivision:['subdivision','subdivisión'],
+    subdivision:['subdivision','subdivisiÃ³n'],
     jefe:['nombre jefe','jefatura','nombre jefatura'],
     date:['fecha'],
     endDate:['fecha fin'],
@@ -2894,16 +2856,16 @@ const HIST_FIELD = {
     out:['a. hora fin','a hora fin','a_hora_fin','fin'],
   },
   gtiempos: {
-    date:['fecha','fecha_operacion','fecha operación','dia','día'],
-    operatorId:['id_operador','id operador','id','numero_funcionario','número funcionario','rut'],
+    date:['fecha','fecha_operacion','fecha operaciÃ³n','dia','dÃ­a'],
+    operatorId:['id_operador','id operador','id','numero_funcionario','nÃºmero funcionario','rut'],
     operatorName:['conductor_gtiempos','conductor gtiempos','conductor','operador'],
     plant:['planta_gtiempos','planta gtiempos','planta'],
     zone:['zona','zona_gtiempos','zona gtiempos'],
-    truck:['camion','camión','mixer','numero_equipo','número equipo','patente'],
+    truck:['camion','camiÃ³n','mixer','numero_equipo','nÃºmero equipo','patente'],
     shift:['hora_turno','hora turno','turno','hora_ingreso','hora ingreso','inicio_turno'],
-    citation:['hora_citacion','hora citación','hora citacion','citacion','citación','citacion_sugerida'],
+    citation:['hora_citacion','hora citaciÃ³n','hora citacion','citacion','citaciÃ³n','citacion_sugerida'],
     login:['hora_logeo','hora logeo','logeo','login','login_previaje','login previaje','hora_inicio_login'],
-    assignment:['hora_asignacion','hora asignación','hora asignacion','asignacion','asignación','primer_asignado','primera_asignacion'],
+    assignment:['hora_asignacion','hora asignaciÃ³n','hora asignacion','asignacion','asignaciÃ³n','primer_asignado','primera_asignacion'],
     firstLoad:['hora_primera_carga','hora primera carga','primera_carga','primera carga','salida_primera_carga'],
     tamIn:['tam_ingreso','tam ingreso','hora_ingreso_tam','hora ingreso tam','a.hora inicio','a hora inicio'],
     tamOut:['tam_salida','tam salida','hora_salida_tam','hora salida tam','a. hora fin','a hora fin'],
@@ -2981,7 +2943,7 @@ function histBaseRecord(source,archivo,rowIndex){
   };
 }
 function historicalNormalizeMany(source,row,archivo='',rowIndex=0){
-  if(!HISTORICAL_SOURCES[source]) throw new Error(`Fuente histórica desconocida: ${source}`);
+  if(!HISTORICAL_SOURCES[source]) throw new Error(`Fuente histÃ³rica desconocida: ${source}`);
   const r=normalizeRows([row||{}])[0]||{};
   if(source==='turnos'){
     const id=histPick(r,HIST_FIELD.turnos.operatorId);
@@ -3090,11 +3052,11 @@ function validateHistoricalRecord(source,rec){
   const errors=[];
   if(!rec) errors.push('Registro no utilizable para este modelo');
   else{
-    if(!rec.fecha) errors.push('Falta fecha válida');
+    if(!rec.fecha) errors.push('Falta fecha vÃ¡lida');
     if(!rec.operadorKey) errors.push('Falta operador identificable');
     if(source==='turnos' && rec.turnoMin===null) errors.push('Falta hora de turno');
-    if(source==='citaciones' && rec.citacionMin===null) errors.push('Falta hora de citación');
-    if(source==='status' && (!rec.eventoKind||rec.eventoMin===null)) errors.push('Falta evento histórico utilizable');
+    if(source==='citaciones' && rec.citacionMin===null) errors.push('Falta hora de citaciÃ³n');
+    if(source==='status' && (!rec.eventoKind||rec.eventoMin===null)) errors.push('Falta evento histÃ³rico utilizable');
     if(source==='gtiempos' && !rec.planta) errors.push('Falta planta GTIEMPOS');
   }
   return errors;
@@ -3144,8 +3106,8 @@ function historicalCanonicalOperatorKey(r,uniqueNameToId){
   const explicit=r?.operadorKey||histOperatorKey(r?.operadorId,r?.operadorNombre||r?.operador);
   const nn=normalizeName(r?.operadorNombre||r?.operador||'');
   const canonical=nn?uniqueNameToId.get(nn):null;
-  // Si el mismo nombre aparece asociado de forma única a un ID real,
-  // todas las fuentes usan ese ID canónico. Si es ambiguo, conserva la clave fuente.
+  // Si el mismo nombre aparece asociado de forma Ãºnica a un ID real,
+  // todas las fuentes usan ese ID canÃ³nico. Si es ambiguo, conserva la clave fuente.
   return canonical||explicit;
 }
 
@@ -3176,7 +3138,7 @@ function getHistoricalDailyIndex(){
     if(r.operadorNombre&&!d.operadorNombre)d.operadorNombre=r.operadorNombre;
     if(r.camion&&!d.camion)d.camion=r.camion;
     if(r.planta){
-      // Status tiene prioridad para ubicación real del día; después Turnos.
+      // Status tiene prioridad para ubicaciÃ³n real del dÃ­a; despuÃ©s Turnos.
       if(source==='status'||!d.planta){d.planta=r.planta;d.zona=r.zona||inferZona(r.planta);}
     }
     if(source==='turnos'&&r.turnoMin!==null){
@@ -3208,7 +3170,7 @@ function getHistoricalDailyIndex(){
     }
 
     if(source==='status'){
-      // v3.6: Status ya viene consolidado por operador/día.
+      // v3.6: Status ya viene consolidado por operador/dÃ­a.
       if(r.loginMin!==null&&r.loginMin!==undefined&&(d.loginMin===null||r.loginMin<d.loginMin))d.loginMin=r.loginMin;
       if(r.asignacionMin!==null&&r.asignacionMin!==undefined&&(d.asignacionMin===null||r.asignacionMin<d.asignacionMin))d.asignacionMin=r.asignacionMin;
       if(r.primeraCargaMin!==null&&r.primeraCargaMin!==undefined&&(d.primeraCargaMin===null||r.primeraCargaMin<d.primeraCargaMin))d.primeraCargaMin=r.primeraCargaMin;
@@ -3275,7 +3237,7 @@ function histStats(values){
   return {n:v.length,promedio:round1(avg),mediana:round1(med),min:round1(v[0]),max:round1(v.at(-1)),p90:round1(p90)};
 }
 function histMetricPct(ok,total){return total?round1(ok/total*100):null;}
-function histClassGeneral(v){if(v===null)return 'Sin datos';if(v>=90)return 'Excelente';if(v>=80)return 'Buena';if(v>=70)return 'Regular';return 'Crítica';}
+function histClassGeneral(v){if(v===null)return 'Sin datos';if(v>=90)return 'Excelente';if(v>=80)return 'Buena';if(v>=70)return 'Regular';return 'CrÃ­tica';}
 function histMetricsForMode(rows,cfg,mode='logeo'){
   const base=histMetrics(rows,cfg);
   if(String(mode||'logeo')==='citacion'){
@@ -3380,14 +3342,14 @@ function histReadOnlyMetricRowsAudited(metrics,audit,quality,mode='logeo'){
   const pct=(ok,n)=>n?round1(ok/n*100):null,coverage=n=>total?round1(n/total*100):null;
   const row=(key,label,value,unit,a)=>{const n=Number(a?.n||0),ok=a?.ok!==undefined?Number(a.ok):null;return {key,label,value,unit,numerator:ok,denominator:n,missing:Math.max(0,total-n),coveragePct:coverage(n),auditedPct:ok!==null?pct(ok,n):null,exactMatch:ok===null||value==null?true:pct(ok,n)===value};};
   if(mode==='citacion')return [
-    row('adherenciaCitacion','Adherencia a la Citación',metrics.adherenciaCitacion,'%',audit.adherenciaCitacion),
-    row('turnVsCitation','Turno vs Citación',metrics.turnVsCitation,'%',audit.turnVsCitation),
+    row('adherenciaCitacion','Adherencia a la CitaciÃ³n',metrics.adherenciaCitacion,'%',audit.adherenciaCitacion),
+    row('turnVsCitation','Turno vs CitaciÃ³n',metrics.turnVsCitation,'%',audit.turnVsCitation),
     {...row('tiempoMuerto','Tiempo Muerto',metrics.tiempoMuerto?.promedio,' min',audit.tiempoMuerto),numerator:null,auditedPct:null,exactMatch:true},
-    {...row('atrasoCitacion','Atraso a la Citación',metrics.atrasoCitacion?.promedio,' min',audit.atrasoCitacion),numerator:audit.atrasoCitacion?.late??null,auditedPct:null,exactMatch:true}
+    {...row('atrasoCitacion','Atraso a la CitaciÃ³n',metrics.atrasoCitacion?.promedio,' min',audit.atrasoCitacion),numerator:audit.atrasoCitacion?.late??null,auditedPct:null,exactMatch:true}
   ];
   return [
     row('adherenciaTurno','Adherencia al Turno',metrics.adherenciaTurno,'%',audit.adherenciaTurno),
-    row('turnVsAssignment','Turno vs Asignación',metrics.turnVsAssignment,'%',audit.turnVsAssignment),
+    row('turnVsAssignment','Turno vs AsignaciÃ³n',metrics.turnVsAssignment,'%',audit.turnVsAssignment),
     {...row('tiempoMuerto','Tiempo Muerto',metrics.tiempoMuerto?.promedio,' min',audit.tiempoMuerto),numerator:null,auditedPct:null,exactMatch:true},
     {...row('atrasoTurno','Atraso al Turno',metrics.atrasoTurno?.promedio,' min',audit.atrasoTurno),numerator:audit.atrasoTurno?.late??null,auditedPct:null,exactMatch:true},
     {...row('tamVsLogeo','TAM vs Logeo',metrics.tamVsLogeo?.promedio,' min',audit.tamVsLogeo),numerator:null,auditedPct:null,exactMatch:true}
@@ -3396,14 +3358,14 @@ function histReadOnlyMetricRowsAudited(metrics,audit,quality,mode='logeo'){
 
 function histReadOnlyMetricRows(metrics,mode='logeo'){
   const rows=[],push=(key,label,value,n,unit='%')=>rows.push({key,label,value,n:Number(n||0),unit});
-  if(mode==='logeo'){push('adherenciaTurno','Adherencia al Turno',metrics.adherenciaTurno,metrics.adherenciaTurnoN);push('turnVsAssignment','Turno vs Asignación',metrics.turnVsAssignment,metrics.turnVsAssignmentN);push('tiempoMuerto','Tiempo Muerto',metrics.tiempoMuerto?.promedio,metrics.tiempoMuerto?.n,' min');push('atrasoTurno','Atraso al Turno',metrics.atrasoTurno?.promedio,metrics.atrasoTurno?.n,' min');push('tamVsLogeo','TAM vs Logeo',metrics.tamVsLogeo?.promedio,metrics.tamVsLogeo?.n,' min');}
-  else{push('adherenciaCitacion','Adherencia a la Citación',metrics.adherenciaCitacion,metrics.adherenciaCitacionN);push('turnVsCitation','Turno vs Citación',metrics.turnVsCitation,metrics.turnVsCitationN);push('tiempoMuerto','Tiempo Muerto',metrics.tiempoMuerto?.promedio,metrics.tiempoMuerto?.n,' min');push('atrasoCitacion','Atraso a la Citación',metrics.atrasoCitacion?.promedio,metrics.atrasoCitacion?.n,' min');}
+  if(mode==='logeo'){push('adherenciaTurno','Adherencia al Turno',metrics.adherenciaTurno,metrics.adherenciaTurnoN);push('turnVsAssignment','Turno vs AsignaciÃ³n',metrics.turnVsAssignment,metrics.turnVsAssignmentN);push('tiempoMuerto','Tiempo Muerto',metrics.tiempoMuerto?.promedio,metrics.tiempoMuerto?.n,' min');push('atrasoTurno','Atraso al Turno',metrics.atrasoTurno?.promedio,metrics.atrasoTurno?.n,' min');push('tamVsLogeo','TAM vs Logeo',metrics.tamVsLogeo?.promedio,metrics.tamVsLogeo?.n,' min');}
+  else{push('adherenciaCitacion','Adherencia a la CitaciÃ³n',metrics.adherenciaCitacion,metrics.adherenciaCitacionN);push('turnVsCitation','Turno vs CitaciÃ³n',metrics.turnVsCitation,metrics.turnVsCitationN);push('tiempoMuerto','Tiempo Muerto',metrics.tiempoMuerto?.promedio,metrics.tiempoMuerto?.n,' min');push('atrasoCitacion','Atraso a la CitaciÃ³n',metrics.atrasoCitacion?.promedio,metrics.atrasoCitacion?.n,' min');}
   return rows;
 }
 function histReadOnlyEvidence(query,adapter,metrics,quality){const from=safeText(query.from),to=safeText(query.to);return {revision:Number(historicalWarehouse?.revision||0),generatedAt:nowIso(),filters:{from,to,mode:adapter.mode,zonas:String(query.zonas||'').split(',').filter(Boolean),operators:String(query.operators||'').split(',').filter(Boolean),plants:adapter.selectedPlants},files:historicalFilesUsed(from,to),recordsUsed:adapter.analysisRows.length,metricBase:histReadOnlyMetricRows(metrics,adapter.mode),quality};}
-function histReadOnlySummary(metrics,adapter,quality,plants,zones,prevMetrics){const primary=adapter.mode==='citacion'?'adherenciaCitacion':'adherenciaTurno',label=adapter.mode==='citacion'?'adherencia a la citación':'adherencia al turno',cur=metrics[primary],prev=prevMetrics?.[primary],delta=cur!=null&&prev!=null?round1(cur-prev):null,bp=[...(plants||[])].filter(x=>x[primary]!=null).sort((a,b)=>b[primary]-a[primary])[0]||null,bz=[...(zones||[])].filter(x=>x[primary]!=null).sort((a,b)=>b[primary]-a[primary])[0]||null,out=[];out.push(cur==null?`No existen comparaciones suficientes para calcular ${label} en el alcance seleccionado.`:`El resultado agregado de ${label} es ${cur}% sobre ${Number(metrics[primary+'N']||0).toLocaleString('es-CL')} comparaciones válidas.`);if(delta!=null)out.push(`La variación frente al período anterior equivalente es ${delta>0?'+':''}${delta} puntos porcentuales.`);if(bp)out.push(`La planta con mayor resultado agregado dentro del filtro es ${bp.name} (${bp[primary]}%).`);if(bz)out.push(`La zona con mayor resultado agregado es ${bz.name} (${bz[primary]}%).`);out.push(`La cobertura del evento ${adapter.mode.toUpperCase()} es ${quality.eventCoveragePct==null?'sin base':quality.eventCoveragePct+'%'} sobre ${quality.rows.toLocaleString('es-CL')} operador/día analizados.`);return out;}
-function histReadOnlyAlerts(metrics,adapter,quality,plants){const out=[],primary=adapter.mode==='citacion'?'adherenciaCitacion':'adherenciaTurno';if(!quality.rows)out.push('No existen registros para el alcance seleccionado.');if(quality.eventCoveragePct!=null&&quality.eventCoveragePct<100)out.push(`Cobertura ${adapter.mode.toUpperCase()}: ${quality.eventCoveragePct}% (${Number(quality.eventValid||0).toLocaleString('es-CL')} de ${quality.rows.toLocaleString('es-CL')} operador/día). Los registros sin evento se informan y no se convierten en cumplimiento ni incumplimiento.`);const noMetric=(plants||[]).filter(x=>x[primary]==null).length;if(noMetric)out.push(`${noMetric} planta(s) con evento disponible no tienen cruces suficientes para calcular la adherencia principal.`);if(quality.duplicatesDetected>0)out.push(`Se detectaron ${quality.duplicatesDetected} claves operador/día repetidas en el adaptador de lectura.`);return out;}
-function histReadOnlyQuestionAnswer(question,ctx){const q=safeText(question).toLowerCase(),primary=ctx.mode==='citacion'?'adherenciaCitacion':'adherenciaTurno',label=ctx.mode==='citacion'?'adherencia a la citación':'adherencia al turno',plants=(ctx.plants||[]).filter(x=>x[primary]!=null),zones=(ctx.zones||[]).filter(x=>x[primary]!=null);if(!q)return {answer:'Escriba una consulta sobre los resultados filtrados.',evidence:[]};if(q.includes('mejor planta')||q.includes('mayor planta')){const x=[...plants].sort((a,b)=>b[primary]-a[primary])[0];return x?{answer:`La planta con mayor ${label} en el alcance seleccionado es ${x.name}, con ${x[primary]}%.`,evidence:[`Planta=${x.name}`,`${label}=${x[primary]}%`]}:{answer:'No existen plantas con cruces suficientes para responder.',evidence:[]};}if(q.includes('menor planta')||q.includes('peor planta')){const x=[...plants].sort((a,b)=>a[primary]-b[primary])[0];return x?{answer:`La planta con menor ${label} en el alcance seleccionado es ${x.name}, con ${x[primary]}%. El dato se presenta para revisión del proceso, no como evaluación laboral.`,evidence:[`Planta=${x.name}`,`${label}=${x[primary]}%`]}:{answer:'No existen plantas con cruces suficientes para responder.',evidence:[]};}if(q.includes('zona')){const x=[...zones].sort((a,b)=>b[primary]-a[primary]);return x.length?{answer:`Por zona, ${x.map(v=>`${v.name}: ${v[primary]}%`).join(' · ')}.`,evidence:x.map(v=>`${v.name}=${v[primary]}%`)}:{answer:'No existen zonas con cruces suficientes para responder.',evidence:[]};}if(q.includes('tiempo muerto')){const m=ctx.metrics.tiempoMuerto;return m?.n?{answer:`El tiempo muerto promedio es ${m.promedio} min, mediana ${m.mediana} min y P90 ${m.p90} min, sobre ${m.n} registros válidos.`,evidence:[`n=${m.n}`,`promedio=${m.promedio}`,`mediana=${m.mediana}`,`P90=${m.p90}`]}:{answer:'No existen registros válidos suficientes para tiempo muerto.',evidence:[]};}if(q.includes('calidad')||q.includes('cobertura'))return {answer:`La cobertura ${ctx.mode.toUpperCase()} es ${ctx.quality.eventCoveragePct==null?'sin base':ctx.quality.eventCoveragePct+'%'}. Se analizaron ${ctx.quality.rows} operador/día, ${ctx.quality.operators} operadores y ${ctx.quality.plants} plantas.`,evidence:[`filas=${ctx.quality.rows}`,`operadores=${ctx.quality.operators}`,`plantas=${ctx.quality.plants}`,`cobertura=${ctx.quality.eventCoveragePct}`]};if(q.includes('adherencia')){const v=ctx.metrics[primary],a=ctx.metricAudit?.[primary],n=Number(a?.n||ctx.metrics[primary+'N']||0),ok=a?.ok;return v!=null?{answer:`La ${label} agregada es ${v}%. Cumplen ${Number(ok??0).toLocaleString('es-CL')} de ${n.toLocaleString('es-CL')} comparaciones válidas. Los registros sin cruce no se clasifican como cumplimiento ni incumplimiento.`,evidence:[`${label}=${v}%`,`cumplen=${ok??0}`,`comparaciones_validas=${n}`,`sin_base=${a?.missing??0}`]}:{answer:`No existen comparaciones suficientes para calcular ${label}.`,evidence:[]};}if(q.includes('archiv')||q.includes('fuente')){const names=(ctx.evidence?.files||[]).map(f=>`${f.source}: ${f.archivo}`).slice(0,12);return {answer:names.length?`Fuentes utilizadas: ${names.join(' · ')}.`:'No hay archivos asociados al período filtrado.',evidence:names};}return {answer:'La consulta no coincide con una intención analítica soportada. Puede preguntar por adherencia, mejor/menor planta, zonas, tiempo muerto, cobertura/calidad o archivos fuente.',evidence:[]};}
+function histReadOnlySummary(metrics,adapter,quality,plants,zones,prevMetrics){const primary=adapter.mode==='citacion'?'adherenciaCitacion':'adherenciaTurno',label=adapter.mode==='citacion'?'adherencia a la citaciÃ³n':'adherencia al turno',cur=metrics[primary],prev=prevMetrics?.[primary],delta=cur!=null&&prev!=null?round1(cur-prev):null,bp=[...(plants||[])].filter(x=>x[primary]!=null).sort((a,b)=>b[primary]-a[primary])[0]||null,bz=[...(zones||[])].filter(x=>x[primary]!=null).sort((a,b)=>b[primary]-a[primary])[0]||null,out=[];out.push(cur==null?`No existen comparaciones suficientes para calcular ${label} en el alcance seleccionado.`:`El resultado agregado de ${label} es ${cur}% sobre ${Number(metrics[primary+'N']||0).toLocaleString('es-CL')} comparaciones vÃ¡lidas.`);if(delta!=null)out.push(`La variaciÃ³n frente al perÃ­odo anterior equivalente es ${delta>0?'+':''}${delta} puntos porcentuales.`);if(bp)out.push(`La planta con mayor resultado agregado dentro del filtro es ${bp.name} (${bp[primary]}%).`);if(bz)out.push(`La zona con mayor resultado agregado es ${bz.name} (${bz[primary]}%).`);out.push(`La cobertura del evento ${adapter.mode.toUpperCase()} es ${quality.eventCoveragePct==null?'sin base':quality.eventCoveragePct+'%'} sobre ${quality.rows.toLocaleString('es-CL')} operador/dÃ­a analizados.`);return out;}
+function histReadOnlyAlerts(metrics,adapter,quality,plants){const out=[],primary=adapter.mode==='citacion'?'adherenciaCitacion':'adherenciaTurno';if(!quality.rows)out.push('No existen registros para el alcance seleccionado.');if(quality.eventCoveragePct!=null&&quality.eventCoveragePct<100)out.push(`Cobertura ${adapter.mode.toUpperCase()}: ${quality.eventCoveragePct}% (${Number(quality.eventValid||0).toLocaleString('es-CL')} de ${quality.rows.toLocaleString('es-CL')} operador/dÃ­a). Los registros sin evento se informan y no se convierten en cumplimiento ni incumplimiento.`);const noMetric=(plants||[]).filter(x=>x[primary]==null).length;if(noMetric)out.push(`${noMetric} planta(s) con evento disponible no tienen cruces suficientes para calcular la adherencia principal.`);if(quality.duplicatesDetected>0)out.push(`Se detectaron ${quality.duplicatesDetected} claves operador/dÃ­a repetidas en el adaptador de lectura.`);return out;}
+function histReadOnlyQuestionAnswer(question,ctx){const q=safeText(question).toLowerCase(),primary=ctx.mode==='citacion'?'adherenciaCitacion':'adherenciaTurno',label=ctx.mode==='citacion'?'adherencia a la citaciÃ³n':'adherencia al turno',plants=(ctx.plants||[]).filter(x=>x[primary]!=null),zones=(ctx.zones||[]).filter(x=>x[primary]!=null);if(!q)return {answer:'Escriba una consulta sobre los resultados filtrados.',evidence:[]};if(q.includes('mejor planta')||q.includes('mayor planta')){const x=[...plants].sort((a,b)=>b[primary]-a[primary])[0];return x?{answer:`La planta con mayor ${label} en el alcance seleccionado es ${x.name}, con ${x[primary]}%.`,evidence:[`Planta=${x.name}`,`${label}=${x[primary]}%`]}:{answer:'No existen plantas con cruces suficientes para responder.',evidence:[]};}if(q.includes('menor planta')||q.includes('peor planta')){const x=[...plants].sort((a,b)=>a[primary]-b[primary])[0];return x?{answer:`La planta con menor ${label} en el alcance seleccionado es ${x.name}, con ${x[primary]}%. El dato se presenta para revisiÃ³n del proceso, no como evaluaciÃ³n laboral.`,evidence:[`Planta=${x.name}`,`${label}=${x[primary]}%`]}:{answer:'No existen plantas con cruces suficientes para responder.',evidence:[]};}if(q.includes('zona')){const x=[...zones].sort((a,b)=>b[primary]-a[primary]);return x.length?{answer:`Por zona, ${x.map(v=>`${v.name}: ${v[primary]}%`).join(' Â· ')}.`,evidence:x.map(v=>`${v.name}=${v[primary]}%`)}:{answer:'No existen zonas con cruces suficientes para responder.',evidence:[]};}if(q.includes('tiempo muerto')){const m=ctx.metrics.tiempoMuerto;return m?.n?{answer:`El tiempo muerto promedio es ${m.promedio} min, mediana ${m.mediana} min y P90 ${m.p90} min, sobre ${m.n} registros vÃ¡lidos.`,evidence:[`n=${m.n}`,`promedio=${m.promedio}`,`mediana=${m.mediana}`,`P90=${m.p90}`]}:{answer:'No existen registros vÃ¡lidos suficientes para tiempo muerto.',evidence:[]};}if(q.includes('calidad')||q.includes('cobertura'))return {answer:`La cobertura ${ctx.mode.toUpperCase()} es ${ctx.quality.eventCoveragePct==null?'sin base':ctx.quality.eventCoveragePct+'%'}. Se analizaron ${ctx.quality.rows} operador/dÃ­a, ${ctx.quality.operators} operadores y ${ctx.quality.plants} plantas.`,evidence:[`filas=${ctx.quality.rows}`,`operadores=${ctx.quality.operators}`,`plantas=${ctx.quality.plants}`,`cobertura=${ctx.quality.eventCoveragePct}`]};if(q.includes('adherencia')){const v=ctx.metrics[primary],a=ctx.metricAudit?.[primary],n=Number(a?.n||ctx.metrics[primary+'N']||0),ok=a?.ok;return v!=null?{answer:`La ${label} agregada es ${v}%. Cumplen ${Number(ok??0).toLocaleString('es-CL')} de ${n.toLocaleString('es-CL')} comparaciones vÃ¡lidas. Los registros sin cruce no se clasifican como cumplimiento ni incumplimiento.`,evidence:[`${label}=${v}%`,`cumplen=${ok??0}`,`comparaciones_validas=${n}`,`sin_base=${a?.missing??0}`]}:{answer:`No existen comparaciones suficientes para calcular ${label}.`,evidence:[]};}if(q.includes('archiv')||q.includes('fuente')){const names=(ctx.evidence?.files||[]).map(f=>`${f.source}: ${f.archivo}`).slice(0,12);return {answer:names.length?`Fuentes utilizadas: ${names.join(' Â· ')}.`:'No hay archivos asociados al perÃ­odo filtrado.',evidence:names};}return {answer:'La consulta no coincide con una intenciÃ³n analÃ­tica soportada. Puede preguntar por adherencia, mejor/menor planta, zonas, tiempo muerto, cobertura/calidad o archivos fuente.',evidence:[]};}
 
 function histPreviousRange(from,to){
   if(!from||!to)return null;
@@ -3457,17 +3419,17 @@ function histInsights(metrics,plants,zones,ops){
   const insights=[],alerts=[];
   const validPlants=plants.filter(x=>x.adherenciaGeneral!==null).sort((a,b)=>b.adherenciaGeneral-a.adherenciaGeneral);
   const validZones=zones.filter(x=>x.adherenciaGeneral!==null).sort((a,b)=>b.adherenciaGeneral-a.adherenciaGeneral);
-  if(validPlants[0])insights.push(`Mejor planta del período: ${validPlants[0].name} (${validPlants[0].adherenciaGeneral}% índice general).`);
+  if(validPlants[0])insights.push(`Mejor planta del perÃ­odo: ${validPlants[0].name} (${validPlants[0].adherenciaGeneral}% Ã­ndice general).`);
   if(validPlants.at(-1))insights.push(`Planta con mayor oportunidad de mejora: ${validPlants.at(-1).name} (${validPlants.at(-1).adherenciaGeneral}%).`);
   if(validZones[0])insights.push(`Mejor zona: ${validZones[0].name} (${validZones[0].adherenciaGeneral}%).`);
-  const dead=histRank(ops,'tiempoMuerto.promedio','desc',3);if(dead.length)insights.push(`Mayor tiempo muerto promedio: ${dead.map(x=>`${x.operador} ${x.tiempoMuerto.promedio} min`).join(' · ')}.`);
+  const dead=histRank(ops,'tiempoMuerto.promedio','desc',3);if(dead.length)insights.push(`Mayor tiempo muerto promedio: ${dead.map(x=>`${x.operador} ${x.tiempoMuerto.promedio} min`).join(' Â· ')}.`);
   const recurrent=ops.filter(x=>Number(x.atrasoTurno.porcentaje)>=50&&x.atrasoTurno.n>=2).sort((a,b)=>b.atrasoTurno.porcentaje-a.atrasoTurno.porcentaje).slice(0,5);
-  if(recurrent.length)alerts.push(`Reincidencia en atraso de turno: ${recurrent.map(x=>`${x.operador} (${x.atrasoTurno.porcentaje}%)`).join(' · ')}.`);
+  if(recurrent.length)alerts.push(`Reincidencia en atraso de turno: ${recurrent.map(x=>`${x.operador} (${x.atrasoTurno.porcentaje}%)`).join(' Â· ')}.`);
   const deterioro=ops.filter(x=>x.variacionGeneral!==null&&x.variacionGeneral<=-10).sort((a,b)=>a.variacionGeneral-b.variacionGeneral).slice(0,5);
-  if(deterioro.length)alerts.push(`Deterioro vs período anterior: ${deterioro.map(x=>`${x.operador} (${x.variacionGeneral} pp)`).join(' · ')}.`);
-  if(metrics.adherenciaGeneral!==null&&metrics.adherenciaGeneral<70)alerts.push(`Índice general operacional crítico: ${metrics.adherenciaGeneral}%.`);
-  if(!insights.length)insights.push('No existen datos suficientes para generar hallazgos comparativos en el período seleccionado.');
-  if(!alerts.length)alerts.push('Sin alertas críticas con los umbrales actuales.');
+  if(deterioro.length)alerts.push(`Deterioro vs perÃ­odo anterior: ${deterioro.map(x=>`${x.operador} (${x.variacionGeneral} pp)`).join(' Â· ')}.`);
+  if(metrics.adherenciaGeneral!==null&&metrics.adherenciaGeneral<70)alerts.push(`Ãndice general operacional crÃ­tico: ${metrics.adherenciaGeneral}%.`);
+  if(!insights.length)insights.push('No existen datos suficientes para generar hallazgos comparativos en el perÃ­odo seleccionado.');
+  if(!alerts.length)alerts.push('Sin alertas crÃ­ticas con los umbrales actuales.');
   return {insights,alerts};
 }
 
@@ -3475,8 +3437,8 @@ function histInsights(metrics,plants,zones,ops){
 app.post('/api/historico/upload',requireAuth,historicalUpload.single('file'),(req,res)=>{
   try{
     const source=safeText(req.body?.source);
-    if(!HISTORICAL_ACTIVE_SOURCES.has(source)){if(req.file?.path)try{fs.unlinkSync(req.file.path)}catch{};return res.status(400).json({error:'Trazabilidad Histórica acepta únicamente Base KPI GTIEMPOS'});}
-    if(!req.file)return res.status(400).json({error:'No se recibió archivo'});
+    if(!HISTORICAL_ACTIVE_SOURCES.has(source)){if(req.file?.path)try{fs.unlinkSync(req.file.path)}catch{};return res.status(400).json({error:'Trazabilidad HistÃ³rica acepta Ãºnicamente Base KPI GTIEMPOS'});}
+    if(!req.file)return res.status(400).json({error:'No se recibiÃ³ archivo'});
     const id=crypto.randomUUID(),job={id,source,file:req.file,user:req.user?.nombre||'Sistema',progress:5,stage:'Archivo recibido',createdAt:nowIso(),updatedAt:nowIso(),diagnostic:null,error:null};
     HIST_JOBS.set(id,job);
     enqueueHistoricalJob(job);
@@ -3484,13 +3446,13 @@ app.post('/api/historico/upload',requireAuth,historicalUpload.single('file'),(re
   }catch(err){return res.status(422).json({error:'No fue posible recibir el archivo',detalle:err?.message||String(err)});}
 });
 app.get('/api/historico/job/:id',requireAuth,(req,res)=>{
-  const job=HIST_JOBS.get(req.params.id);if(!job)return res.status(404).json({error:'Proceso no encontrado o ya expiró'});
+  const job=HIST_JOBS.get(req.params.id);if(!job)return res.status(404).json({error:'Proceso no encontrado o ya expirÃ³'});
   return res.json({ok:true,id:job.id,source:job.source,progress:job.progress,stage:job.stage,queuePosition:job.queuePosition||0,diagnostic:publicDiagnostic(job.diagnostic),error:job.error,done:job.progress>=100});
 });
 app.post('/api/historico/job/:id/cancel',requireAuth,(req,res)=>{
   const job=HIST_JOBS.get(req.params.id);
-  if(!job)return res.status(404).json({error:'Proceso no encontrado o ya expiró'});
-  job.cancelled=true;job.error='La carga excedió el tiempo permitido. Verifique el archivo y vuelva a intentar.';
+  if(!job)return res.status(404).json({error:'Proceso no encontrado o ya expirÃ³'});
+  job.cancelled=true;job.error='La carga excediÃ³ el tiempo permitido. Verifique el archivo y vuelva a intentar.';
   job.stage='Cancelado por timeout';job.updatedAt=nowIso();
   return res.json({ok:true,id:job.id,cancelled:true});
 });
@@ -3498,7 +3460,7 @@ app.post('/api/historico/job/:id/cancel',requireAuth,(req,res)=>{
 app.post('/api/historico/ingesta',requireAuth,(req,res)=>{
   try{
     const source=safeText(req.body?.source),incoming=req.body?.datos,archivo=safeText(req.body?.archivo||'archivo'),modo=safeText(req.body?.modo||'append').toLowerCase(),finalizar=req.body?.finalizar===true;
-    if(!HISTORICAL_SOURCES[source])return res.status(400).json({error:`Fuente histórica inválida: ${source}`});
+    if(!HISTORICAL_SOURCES[source])return res.status(400).json({error:`Fuente histÃ³rica invÃ¡lida: ${source}`});
     if(!Array.isArray(incoming)||!incoming.length)return res.status(400).json({error:'El archivo no contiene filas para procesar'});
     if(!Array.isArray(historicalWarehouse.records))historicalWarehouse.records=[];
     if(modo==='replace'){historicalWarehouse.records=historicalWarehouse.records.filter(r=>(r.source||r.fuente)!==source);historicalWarehouse.sources[source]={};}
@@ -3538,12 +3500,12 @@ app.post('/api/historico/ingesta',requireAuth,(req,res)=>{
     return res.json({ok:true,source,archivo,loteRecibido:normalized.length,loteGuardado:valid.length,expandidos:expanded,ignorados:ignored,duplicados:duplicates,rechazados:errors.length,meta:historicalWarehouse.sources[source]});
   }catch(err){
     registrarErrorDetallado({modulo:'historico',funcion:'POST /api/historico/ingesta',error:err?.message||String(err),stack:err?.stack});
-    return res.status(422).json({error:'No fue posible consolidar el archivo histórico',detalle:err?.message||String(err)});
+    return res.status(422).json({error:'No fue posible consolidar el archivo histÃ³rico',detalle:err?.message||String(err)});
   }
 });
-app.post('/api/historico/finalizar',requireAuth,(req,res)=>{try{persistHistoricalWarehouse();emitRealtime('historico:actualizado',{revision:Number(historicalWarehouse?.revision||0)},'historico','finalizado',req.user);return res.json({ok:true,revision:Number(historicalWarehouse?.revision||0)});}catch(err){return res.status(500).json({error:'No se pudo persistir la base histórica',detalle:err?.message||String(err)});}});
+app.post('/api/historico/finalizar',requireAuth,(req,res)=>{try{persistHistoricalWarehouse();emitRealtime('historico:actualizado',{revision:Number(historicalWarehouse?.revision||0)},'historico','finalizado',req.user);return res.json({ok:true,revision:Number(historicalWarehouse?.revision||0)});}catch(err){return res.status(500).json({error:'No se pudo persistir la base histÃ³rica',detalle:err?.message||String(err)});}});
 app.delete('/api/historico/fuente/:source',requireAuth,(req,res)=>{
-  const source=safeText(req.params.source);if(!HISTORICAL_SOURCES[source])return res.status(400).json({error:'Fuente inválida'});
+  const source=safeText(req.params.source);if(!HISTORICAL_SOURCES[source])return res.status(400).json({error:'Fuente invÃ¡lida'});
   historicalWarehouse.records=(historicalWarehouse.records||[]).filter(r=>(r.source||r.fuente)!==source);
   historicalWarehouse.sources[source]={};historicalWarehouse.revision=Number(historicalWarehouse.revision||0)+1;historicalDailyCache.revision=-1;persistHistoricalWarehouse();
   emitRealtime('historico:actualizado',{source,revision:Number(historicalWarehouse.revision||0)},'historico','fuente_eliminada',req.user,{source});
@@ -3578,12 +3540,12 @@ function recomputeHistoricalSourceMeta(source){
 app.delete('/api/historico/archivo',requireAuth,(req,res)=>{
   try{
     const source=safeText(req.query.source),archivo=safeText(req.query.archivo);
-    if(!HISTORICAL_SOURCES[source])return res.status(400).json({error:'Fuente histórica inválida'});
+    if(!HISTORICAL_SOURCES[source])return res.status(400).json({error:'Fuente histÃ³rica invÃ¡lida'});
     if(!archivo)return res.status(400).json({error:'Debe indicar el archivo a eliminar'});
     const expectedRevision=req.query.expectedRevision!==undefined?Number(req.query.expectedRevision):null;
     const currentRevision=Number(historicalWarehouse?.revision||0);
     if(Number.isFinite(expectedRevision)&&expectedRevision!==currentRevision){
-      return res.status(409).json({error:'CONFLICTO_CONCURRENCIA',detalle:'La base histórica cambió antes de eliminar el archivo. Actualice la vista e intente nuevamente.',currentRevision});
+      return res.status(409).json({error:'CONFLICTO_CONCURRENCIA',detalle:'La base histÃ³rica cambiÃ³ antes de eliminar el archivo. Actualice la vista e intente nuevamente.',currentRevision});
     }
     const before=(historicalWarehouse.records||[]).length;
     historicalWarehouse.records=(historicalWarehouse.records||[]).filter(r=>!((r.source||r.fuente)===source&&safeText(r.archivo)===archivo));
@@ -3596,18 +3558,18 @@ app.delete('/api/historico/archivo',requireAuth,(req,res)=>{
     historicalWarehouse.loaded_at=nowIso();historicalDailyCache.revision=-1;persistHistoricalWarehouse();
     emitRealtime('historico:actualizado',{source,archivo,removed,revision:Number(historicalWarehouse.revision||0)},'historico','archivo_eliminado',req.user,{source});
     return res.json({ok:true,source,archivo,removed,meta:historicalWarehouse.sources[source],revision:Number(historicalWarehouse.revision||0)});
-  }catch(err){return res.status(422).json({error:'No fue posible eliminar el archivo histórico',detalle:err?.message||String(err)});}
+  }catch(err){return res.status(422).json({error:'No fue posible eliminar el archivo histÃ³rico',detalle:err?.message||String(err)});}
 });
 
 
 app.get('/api/historico/errores/:diagId.xlsx',requireAuth,async(req,res)=>{
   try{
     const rep=HIST_ERROR_REPORTS.get(req.params.diagId);
-    if(!rep)return res.status(404).json({error:'El detalle de errores ya expiró o no existe'});
+    if(!rep)return res.status(404).json({error:'El detalle de errores ya expirÃ³ o no existe'});
     const wb=new ExcelJS.Workbook(),ws=wb.addWorksheet('Errores');
     ws.columns=[
       {header:'Archivo',key:'file',width:32},{header:'Fuente',key:'source',width:18},{header:'Fila',key:'row',width:12},
-      {header:'Campo',key:'field',width:24},{header:'Código',key:'code',width:30},{header:'Motivo',key:'reason',width:70},{header:'Tipo',key:'kind',width:16}
+      {header:'Campo',key:'field',width:24},{header:'CÃ³digo',key:'code',width:30},{header:'Motivo',key:'reason',width:70},{header:'Tipo',key:'kind',width:16}
     ];
     for(const x of rep.rows)ws.addRow({file:rep.file,source:rep.source,...x});
     const buf=await wb.xlsx.writeBuffer();
@@ -3684,7 +3646,7 @@ function latestCommonHistoricalDate(mode='logeo'){
   });
   if(compatible.length)return compatible.at(-1);
 
-  // Fallback: última fecha con registros consolidados del modo.
+  // Fallback: Ãºltima fecha con registros consolidados del modo.
   const relevant=dates.filter(d=>{
     const x=byDate.get(d);
     return normalizedMode==='citacion' ? x.citacion>0 : (x.turno>0||x.login>0);
@@ -3733,7 +3695,7 @@ function historicalQaE2E(query={}){
   };
 
   add('RANGE_HAS_ROWS',rows.length>0,
-    rows.length?`Período con ${rows.length} operador/día consolidados.`:`El período ${from||'—'} → ${to||'—'} no contiene filas consolidadas.`,
+    rows.length?`PerÃ­odo con ${rows.length} operador/dÃ­a consolidados.`:`El perÃ­odo ${from||'â€”'} â†’ ${to||'â€”'} no contiene filas consolidadas.`,
     'error',{from,to,availableMin:idx.rows[0]?.fecha||null,availableMax:idx.rows.at(-1)?.fecha||null});
 
   for(const [source,a] of Object.entries(sourceAudit)){
@@ -3744,22 +3706,22 @@ function historicalQaE2E(query={}){
   }
 
   add('OPERATOR_PRESENT',rows.length===0||rows.every(r=>!!r.operadorKey),
-    'Todos los registros del período deben tener operador identificable.','error');
+    'Todos los registros del perÃ­odo deben tener operador identificable.','error');
   add('DATE_PRESENT',rows.length===0||rows.every(r=>!!r.fecha),
-    'Todos los registros del período deben tener fecha válida.','error');
+    'Todos los registros del perÃ­odo deben tener fecha vÃ¡lida.','error');
   add('PLANT_COVERAGE',rows.length===0||fieldCounts.planta>0,
-    fieldCounts.planta?`${fieldCounts.planta} operador/día con planta.`:'No existen plantas conciliadas en el período.','warn');
+    fieldCounts.planta?`${fieldCounts.planta} operador/dÃ­a con planta.`:'No existen plantas conciliadas en el perÃ­odo.','warn');
 
   add('LOGEO_CROSS',mode!=='logeo'||rows.length===0||crosses.turnoLogin>0,
-    mode!=='logeo'?'No aplica en modo Citación.':`${crosses.turnoLogin} cruces Turno ↔ Logeo.`,
+    mode!=='logeo'?'No aplica en modo CitaciÃ³n.':`${crosses.turnoLogin} cruces Turno â†” Logeo.`,
     'error');
   add('CITATION_CROSS',mode!=='citacion'||rows.length===0||crosses.citacionLogin>0,
-    mode!=='citacion'?'No aplica en modo Logeo.':`${crosses.citacionLogin} cruces Citación ↔ Logeo.`,
+    mode!=='citacion'?'No aplica en modo Logeo.':`${crosses.citacionLogin} cruces CitaciÃ³n â†” Logeo.`,
     'error');
   add('ASSIGNMENT_CROSS',rows.length===0||fieldCounts.asignacion===0||crosses.turnoAsignacion>0,
-    `${crosses.turnoAsignacion} cruces Turno ↔ Asignación.`,'warn');
+    `${crosses.turnoAsignacion} cruces Turno â†” AsignaciÃ³n.`,'warn');
   add('TAM_CROSS',rows.length===0||fieldCounts.tamIngreso===0||crosses.tamLogin>0,
-    `${crosses.tamLogin} cruces TAM ↔ Logeo.`,'warn');
+    `${crosses.tamLogin} cruces TAM â†” Logeo.`,'warn');
 
   const pctMetrics={
     turnVsCitation:metrics.turnVsCitation,
@@ -3778,7 +3740,7 @@ function historicalQaE2E(query={}){
   const rankingMetric=mode==='citacion'?'adherenciaCitacion':'adherenciaTurno';
   const eligible=operatorGroups.filter(o=>o[rankingMetric]!==null&&o[rankingMetric]!==undefined);
   add('RANKING_ELIGIBLE',expectedRankingBase===0||eligible.length>0,
-    expectedRankingBase===0?'Sin base válida para ranking.':`${eligible.length} operadores elegibles para ranking.`,
+    expectedRankingBase===0?'Sin base vÃ¡lida para ranking.':`${eligible.length} operadores elegibles para ranking.`,
     'error',{expectedRankingBase});
 
   const trend=aggregateHistoricalEnterprise(rows,safeText(query.granularity)||'week',cfg,mode);
@@ -3960,7 +3922,7 @@ function historicalValidPlantsByMode(mode='logeo',from='',to=''){
     .sort((a,b)=>a.zona.localeCompare(b.zona,'es')||a.planta.localeCompare(b.planta,'es'));
 }
 function historicalRawFilesForKeys(source,keys,from='',to=''){
-  // Todos los campos históricos activos provienen de la Base KPI única.
+  // Todos los campos histÃ³ricos activos provienen de la Base KPI Ãºnica.
   source='gtiempos';
   const set=new Set(keys);
   const rows=(historicalWarehouse.records||[]).filter(r=>(r.source||r.fuente)===source&&(!from||r.fecha>=from)&&(!to||r.fecha<=to)&&set.has(`${r.fecha}|${r.operadorKey}`));
@@ -3970,14 +3932,14 @@ function historicalKpiAudit(query={},cfg=histCfg(query)){
   const rows=histFilterBase(query),from=safeText(query.from),to=safeText(query.to),mode=String(query.mode||'logeo')==='citacion'?'citacion':'logeo',sourceAudit=Object.fromEntries(Object.keys(HISTORICAL_SOURCES).map(s=>[s,historicalSourceProcessingAudit(s)])),diff=(a,b)=>histMinutesDiff(a,b);
   for(const legacy of ['turnos','citaciones','status','tam'])sourceAudit[legacy]=sourceAudit.gtiempos;
   const defs={
-    adherenciaTurno:{label:'Adherencia al Turno',sources:['turnos','status'],marks:['turnoMin','loginMin'],formula:`Cumplen / comparaciones válidas × 100; cumple si LOGIN−TURNO está entre -${cfg.tolTurnBefore} y +${cfg.tolTurnAfter} min.`,calc(rs){let ok=0,n=0;for(const r of rs){const d=diff(r.loginMin,r.turnoMin);if(d===null)continue;n++;if(d>=-cfg.tolTurnBefore&&d<=cfg.tolTurnAfter)ok++;}return {value:n?round1(ok/n*100):null,used:n,numerator:ok};}},
-    turnVsAssignment:{label:'Turno vs Asignación',sources:['turnos','status'],marks:['turnoMin','asignacionMin'],formula:`Cumplen / comparaciones válidas × 100; cumple si ASIGNACIÓN−TURNO está entre -${cfg.tolAssignmentBefore} y +${cfg.tolAssignmentAfter} min.`,calc(rs){let ok=0,n=0;for(const r of rs){const d=diff(r.asignacionMin,r.turnoMin);if(d===null)continue;n++;if(d>=-cfg.tolAssignmentBefore&&d<=cfg.tolAssignmentAfter)ok++;}return {value:n?round1(ok/n*100):null,used:n,numerator:ok};}},
-    tiempoMuerto:{label:'Tiempo Muerto',sources:mode==='citacion'?['citaciones','status']:['status'],marks:[mode==='citacion'?'citacionMin':'loginMin','asignacionMin'],formula:`Promedio de ${mode==='citacion'?'ASIGNACIÓN−CITACIÓN':'ASIGNACIÓN−LOGEO'} para diferencias entre 0 y 720 min.`,calc(rs){const vals=[];for(const r of rs){const d=diff(r.asignacionMin,r[mode==='citacion'?'citacionMin':'loginMin']);if(d!==null&&d>=0&&d<=720)vals.push(d);}return {value:histStats(vals).promedio,used:vals.length,numerator:null};}},
-    atrasoTurno:{label:'Atraso al Turno',sources:['turnos','status'],marks:['turnoMin','loginMin'],formula:'Promedio de LOGIN−TURNO únicamente para diferencias positivas (atrasos).',calc(rs){const vals=[];let cross=0;for(const r of rs){const d=diff(r.loginMin,r.turnoMin);if(d===null)continue;cross++;if(d>0)vals.push(d);}return {value:histStats(vals).promedio,used:vals.length,validCrosses:cross,numerator:null};}},
-    adherenciaCitacion:{label:'Adherencia a la Citación',sources:['citaciones','status'],marks:['citacionMin','loginMin'],formula:`Cumplen / comparaciones válidas × 100; cumple si LOGIN−CITACIÓN está entre -${cfg.tolCitationBefore} y +${cfg.tolCitationAfter} min.`,calc(rs){let ok=0,n=0;for(const r of rs){const d=diff(r.loginMin,r.citacionMin);if(d===null)continue;n++;if(d>=-cfg.tolCitationBefore&&d<=cfg.tolCitationAfter)ok++;}return {value:n?round1(ok/n*100):null,used:n,numerator:ok};}},
-    turnVsCitation:{label:'Turno vs Citación',sources:['turnos','citaciones'],marks:['turnoMin','citacionMin'],formula:`Cumplen / comparaciones válidas × 100; cumple si CITACIÓN−TURNO está entre -${cfg.tolTurnCitationBefore} y +${cfg.tolTurnCitationAfter} min.`,calc(rs){let ok=0,n=0;for(const r of rs){const d=diff(r.citacionMin,r.turnoMin);if(d===null)continue;n++;if(d>=-cfg.tolTurnCitationBefore&&d<=cfg.tolTurnCitationAfter)ok++;}return {value:n?round1(ok/n*100):null,used:n,numerator:ok};}},
-    atrasoCitacion:{label:'Atraso a la Citación',sources:['citaciones','status'],marks:['citacionMin','loginMin'],formula:'Promedio de LOGIN−CITACIÓN únicamente para diferencias positivas (atrasos).',calc(rs){const vals=[];let cross=0;for(const r of rs){const d=diff(r.loginMin,r.citacionMin);if(d===null)continue;cross++;if(d>0)vals.push(d);}return {value:histStats(vals).promedio,used:vals.length,validCrosses:cross,numerator:null};}},
-    tamVsLogeo:{label:'TAM vs Logeo',sources:['tam','status'],marks:['tamIngresoMin','loginMin'],formula:'Promedio de LOGIN−INGRESO TAM sobre cruces válidos del mismo operador + fecha.',calc(rs){const vals=[];for(const r of rs){const d=diff(r.loginMin,r.tamIngresoMin);if(d!==null)vals.push(d);}return {value:histStats(vals).promedio,used:vals.length,numerator:null};}}
+    adherenciaTurno:{label:'Adherencia al Turno',sources:['turnos','status'],marks:['turnoMin','loginMin'],formula:`Cumplen / comparaciones vÃ¡lidas Ã— 100; cumple si LOGINâˆ’TURNO estÃ¡ entre -${cfg.tolTurnBefore} y +${cfg.tolTurnAfter} min.`,calc(rs){let ok=0,n=0;for(const r of rs){const d=diff(r.loginMin,r.turnoMin);if(d===null)continue;n++;if(d>=-cfg.tolTurnBefore&&d<=cfg.tolTurnAfter)ok++;}return {value:n?round1(ok/n*100):null,used:n,numerator:ok};}},
+    turnVsAssignment:{label:'Turno vs AsignaciÃ³n',sources:['turnos','status'],marks:['turnoMin','asignacionMin'],formula:`Cumplen / comparaciones vÃ¡lidas Ã— 100; cumple si ASIGNACIÃ“Nâˆ’TURNO estÃ¡ entre -${cfg.tolAssignmentBefore} y +${cfg.tolAssignmentAfter} min.`,calc(rs){let ok=0,n=0;for(const r of rs){const d=diff(r.asignacionMin,r.turnoMin);if(d===null)continue;n++;if(d>=-cfg.tolAssignmentBefore&&d<=cfg.tolAssignmentAfter)ok++;}return {value:n?round1(ok/n*100):null,used:n,numerator:ok};}},
+    tiempoMuerto:{label:'Tiempo Muerto',sources:mode==='citacion'?['citaciones','status']:['status'],marks:[mode==='citacion'?'citacionMin':'loginMin','asignacionMin'],formula:`Promedio de ${mode==='citacion'?'ASIGNACIÃ“Nâˆ’CITACIÃ“N':'ASIGNACIÃ“Nâˆ’LOGEO'} para diferencias entre 0 y 720 min.`,calc(rs){const vals=[];for(const r of rs){const d=diff(r.asignacionMin,r[mode==='citacion'?'citacionMin':'loginMin']);if(d!==null&&d>=0&&d<=720)vals.push(d);}return {value:histStats(vals).promedio,used:vals.length,numerator:null};}},
+    atrasoTurno:{label:'Atraso al Turno',sources:['turnos','status'],marks:['turnoMin','loginMin'],formula:'Promedio de LOGINâˆ’TURNO Ãºnicamente para diferencias positivas (atrasos).',calc(rs){const vals=[];let cross=0;for(const r of rs){const d=diff(r.loginMin,r.turnoMin);if(d===null)continue;cross++;if(d>0)vals.push(d);}return {value:histStats(vals).promedio,used:vals.length,validCrosses:cross,numerator:null};}},
+    adherenciaCitacion:{label:'Adherencia a la CitaciÃ³n',sources:['citaciones','status'],marks:['citacionMin','loginMin'],formula:`Cumplen / comparaciones vÃ¡lidas Ã— 100; cumple si LOGINâˆ’CITACIÃ“N estÃ¡ entre -${cfg.tolCitationBefore} y +${cfg.tolCitationAfter} min.`,calc(rs){let ok=0,n=0;for(const r of rs){const d=diff(r.loginMin,r.citacionMin);if(d===null)continue;n++;if(d>=-cfg.tolCitationBefore&&d<=cfg.tolCitationAfter)ok++;}return {value:n?round1(ok/n*100):null,used:n,numerator:ok};}},
+    turnVsCitation:{label:'Turno vs CitaciÃ³n',sources:['turnos','citaciones'],marks:['turnoMin','citacionMin'],formula:`Cumplen / comparaciones vÃ¡lidas Ã— 100; cumple si CITACIÃ“Nâˆ’TURNO estÃ¡ entre -${cfg.tolTurnCitationBefore} y +${cfg.tolTurnCitationAfter} min.`,calc(rs){let ok=0,n=0;for(const r of rs){const d=diff(r.citacionMin,r.turnoMin);if(d===null)continue;n++;if(d>=-cfg.tolTurnCitationBefore&&d<=cfg.tolTurnCitationAfter)ok++;}return {value:n?round1(ok/n*100):null,used:n,numerator:ok};}},
+    atrasoCitacion:{label:'Atraso a la CitaciÃ³n',sources:['citaciones','status'],marks:['citacionMin','loginMin'],formula:'Promedio de LOGINâˆ’CITACIÃ“N Ãºnicamente para diferencias positivas (atrasos).',calc(rs){const vals=[];let cross=0;for(const r of rs){const d=diff(r.loginMin,r.citacionMin);if(d===null)continue;cross++;if(d>0)vals.push(d);}return {value:histStats(vals).promedio,used:vals.length,validCrosses:cross,numerator:null};}},
+    tamVsLogeo:{label:'TAM vs Logeo',sources:['tam','status'],marks:['tamIngresoMin','loginMin'],formula:'Promedio de LOGINâˆ’INGRESO TAM sobre cruces vÃ¡lidos del mismo operador + fecha.',calc(rs){const vals=[];for(const r of rs){const d=diff(r.loginMin,r.tamIngresoMin);if(d!==null)vals.push(d);}return {value:histStats(vals).promedio,used:vals.length,numerator:null};}}
   };
   const out={};
   for(const [key,def] of Object.entries(defs)){
@@ -3986,7 +3948,7 @@ function historicalKpiAudit(query={},cfg=histCfg(query)){
     const calc=def.calc(candidates),keys=candidates.map(r=>`${r.fecha}|${r.operadorKey}`),sourceFiles={};
     for(const s of def.sources)sourceFiles[s]=historicalRawFilesForKeys(s,keys,from,to);
     const sourceExists=def.sources.every(s=>(sourceAudit[s]?.recordsStored||0)>0),filesExist=def.sources.every(s=>(sourceFiles[s]||[]).length>0),ready=sourceExists&&filesExist&&calc.used>0,validRows=calc.validCrosses??calc.used,dates=candidates.map(r=>r.fecha).filter(Boolean).sort();
-    out[key]={key,label:def.label,formula:def.formula,sources:def.sources,sourceFiles,value:ready?calc.value:null,numerator:calc.numerator,recordsUsed:ready?calc.used:0,validCrosses:ready?validRows:0,candidates:rows.length,discarded:Math.max(0,rows.length-validRows),minDate:dates[0]||null,maxDate:dates.at(-1)||null,plants:[...new Set(candidates.map(r=>r.planta).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es')),operators:new Set(candidates.map(r=>r.operadorKey).filter(Boolean)).size,ready,reason:ready?'':(!sourceExists?'Archivo origen no disponible.':!filesExist?'No existe evidencia de archivo origen para los cruces del período.':'KPI no calculado por ausencia de datos válidos.'),discardedReasons:Object.entries(reasons).filter(([,n])=>n>0).map(([code,count])=>({code,count}))};
+    out[key]={key,label:def.label,formula:def.formula,sources:def.sources,sourceFiles,value:ready?calc.value:null,numerator:calc.numerator,recordsUsed:ready?calc.used:0,validCrosses:ready?validRows:0,candidates:rows.length,discarded:Math.max(0,rows.length-validRows),minDate:dates[0]||null,maxDate:dates.at(-1)||null,plants:[...new Set(candidates.map(r=>r.planta).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es')),operators:new Set(candidates.map(r=>r.operadorKey).filter(Boolean)).size,ready,reason:ready?'':(!sourceExists?'Archivo origen no disponible.':!filesExist?'No existe evidencia de archivo origen para los cruces del perÃ­odo.':'KPI no calculado por ausencia de datos vÃ¡lidos.'),discardedReasons:Object.entries(reasons).filter(([,n])=>n>0).map(([code,count])=>({code,count}))};
   }
   return {mode,from,to,revision:Number(historicalWarehouse?.revision||0),generatedAt:nowIso(),sourceAudit,kpis:out,tam:sourceAudit.tam||historicalSourceProcessingAudit('tam'),status:sourceAudit.status||historicalSourceProcessingAudit('status'),citationPlants:historicalValidPlantsByMode('citacion',from,to),logeoPlants:historicalValidPlantsByMode('logeo',from,to)};
 }
@@ -4012,13 +3974,13 @@ function validateHistoricalDashboardModel(rows,mode='logeo'){
     ['Operador / RUT','operadorKey'],['Fecha','fecha'],['Planta','planta'],['Zona','zona'],['Turno','turnoMin'],
     ['Status Break / Logeo','loginMin'],['Marcaje TAM','tamIngresoMin']
   ];
-  if(mode==='citacion')requirements.push(['Citación','citacionMin']);
-  for(const [label,field] of requirements)if(!has(field))issues.push(`Falta información consolidada: ${label}`);
+  if(mode==='citacion')requirements.push(['CitaciÃ³n','citacionMin']);
+  for(const [label,field] of requirements)if(!has(field))issues.push(`Falta informaciÃ³n consolidada: ${label}`);
   const linkedRows=rows.filter(r=>
     r.operadorKey&&r.fecha&&r.turnoMin!==null&&
     (mode==='citacion'?r.citacionMin!==null:r.loginMin!==null)
   ).length;
-  if(rows.length&&linkedRows!==rows.length)warnings.push(`Diferencia encontrada entre datos procesados y KPI calculables: ${rows.length-linkedRows} operador/día sin cruce completo.`);
+  if(rows.length&&linkedRows!==rows.length)warnings.push(`Diferencia encontrada entre datos procesados y KPI calculables: ${rows.length-linkedRows} operador/dÃ­a sin cruce completo.`);
   return {ready:issues.length===0,issues,warnings,processedRows:rows.length,kpiLinkedRows:linkedRows,difference:Math.max(0,rows.length-linkedRows)};
 }
 function operatorDelayProfile(items,cfg){
@@ -4064,7 +4026,7 @@ function buildAdvancedOperatorRankings(rows,cfg){
 function histCrossLabel(r){
   const p=[];
   if(r.turnoMin!==null&&r.turnoMin!==undefined)p.push('Turno');
-  if(r.citacionMin!==null&&r.citacionMin!==undefined)p.push('Citación');
+  if(r.citacionMin!==null&&r.citacionMin!==undefined)p.push('CitaciÃ³n');
   if(r.loginMin!==null&&r.loginMin!==undefined||r.asignacionMin!==null&&r.asignacionMin!==undefined||r.primeraCargaMin!==null&&r.primeraCargaMin!==undefined)p.push('Status');
   if(r.tamIngresoMin!==null&&r.tamIngresoMin!==undefined||r.tamSalidaMin!==null&&r.tamSalidaMin!==undefined)p.push('TAM');
   return p.join(' + ')||'Sin fuente';
@@ -4081,7 +4043,7 @@ app.get('/api/historico/health-check',requireAuth,(req,res)=>{
       files:historicalFilesUsed?historicalFilesUsed(safeText(req.query.from),safeText(req.query.to)):[]
     });
   }catch(err){
-    return res.status(422).json({ok:false,error:'No fue posible auditar el modelo histórico',detalle:err?.message||String(err)});
+    return res.status(422).json({ok:false,error:'No fue posible auditar el modelo histÃ³rico',detalle:err?.message||String(err)});
   }
 });
 
@@ -4089,12 +4051,12 @@ app.get('/api/historico/health-check',requireAuth,(req,res)=>{
 
 app.get('/api/historico/qa-e2e',requireAuth,(req,res)=>{
   try{return res.json({ok:true,qa:historicalQaE2E(req.query)});}
-  catch(err){return res.status(422).json({error:'No fue posible ejecutar QA E2E histórico',detalle:err?.message||String(err)});}
+  catch(err){return res.status(422).json({error:'No fue posible ejecutar QA E2E histÃ³rico',detalle:err?.message||String(err)});}
 });
 
 app.get('/api/historico/plantas-validas',requireAuth,(req,res)=>{
   try{const mode=String(req.query.mode||'logeo')==='citacion'?'citacion':'logeo',from=safeText(req.query.from),to=safeText(req.query.to),plants=historicalValidPlantsByMode(mode,from,to);return res.json({ok:true,mode,from,to,plants,revision:Number(historicalWarehouse?.revision||0)});}
-  catch(err){return res.status(422).json({error:'No fue posible construir las plantas válidas del modo seleccionado',detalle:err?.message||String(err)});}
+  catch(err){return res.status(422).json({error:'No fue posible construir las plantas vÃ¡lidas del modo seleccionado',detalle:err?.message||String(err)});}
 });
 
 app.get('/api/historico/fuentes',requireAuth,(req,res)=>{
@@ -4119,7 +4081,7 @@ app.get('/api/historico/fuentes',requireAuth,(req,res)=>{
       loaded:true,
       source:'config/plant-dictionary.json',
       canonicalPlants:Array.isArray(PLANT_DICTIONARY?.plants)?PLANT_DICTIONARY.plants.length:Object.keys(PLANT_DICTIONARY?.plants||{}).length,
-      note:'La homologación de planta se ejecuta después de leer cada fila; un timeout de apertura XLSX ocurre antes de esta etapa.'
+      note:'La homologaciÃ³n de planta se ejecuta despuÃ©s de leer cada fila; un timeout de apertura XLSX ocurre antes de esta etapa.'
     }
   });
 });
@@ -4151,13 +4113,13 @@ function historicalEndToEndHealth(query={}){
   out.readyCitacion=out.crosses.citacionLogin>0;
   out.readyTam=out.crosses.turnoTam>0||out.crosses.tamLogin>0;
   out.readyDashboard=out.rows>0&&(out.readyLogeo||out.readyCitacion||out.readyTam);
-  out.reason=out.readyDashboard?'Modelo histórico cruzado y calculable.':'No existen cruces suficientes en el período seleccionado.';
+  out.reason=out.readyDashboard?'Modelo histÃ³rico cruzado y calculable.':'No existen cruces suficientes en el perÃ­odo seleccionado.';
   return out;
 }
 
 app.get('/api/historico/read-adapter',requireAuth,(req,res)=>{
   try{const cfg=histCfg(req.query),adapter=histReadOnlyAdapterQuery(req.query),metrics=histMetrics(adapter.analysisRows,cfg),prevRange=histPreviousRange(safeText(req.query.from),safeText(req.query.to)),prevQuery={...req.query,from:prevRange?.from||'',to:prevRange?.to||''},prevAdapter=prevRange?histReadOnlyAdapterQuery(prevQuery):{analysisRows:[]},prevMetrics=histMetrics(prevAdapter.analysisRows,cfg),plants=histGroupMetrics(adapter.analysisRows,'planta',cfg,prevAdapter.analysisRows,adapter.mode),zones=histGroupMetrics(adapter.analysisRows,'zona',cfg,prevAdapter.analysisRows,adapter.mode),operators=histOperatorGroups(adapter.analysisRows,cfg,prevAdapter.analysisRows,adapter.mode),quality=histReadOnlyQuality(adapter.analysisRows,adapter.mode),metricAudit=histReadOnlyMetricAudit(adapter.analysisRows,cfg,adapter.mode),auditedMetricRows=histReadOnlyMetricRowsAudited(metrics,metricAudit,quality,adapter.mode),evidence=histReadOnlyEvidence(req.query,adapter,metrics,quality),summary=histReadOnlySummary(metrics,adapter,quality,plants,zones,prevMetrics),alerts=histReadOnlyAlerts(metrics,adapter,quality,plants),primary=adapter.mode==='citacion'?'adherenciaCitacion':'adherenciaTurno',cur=metrics[primary],prev=prevMetrics[primary];return res.json({ok:true,readOnly:true,mode:adapter.mode,eligiblePlants:adapter.eligiblePlants,selectedPlants:adapter.selectedPlants,metrics,metricRows:histReadOnlyMetricRows(metrics,adapter.mode),auditedMetricRows,metricAudit,adherence:{primary,current:cur,previous:prev,delta:cur!=null&&prev!=null?round1(cur-prev):null},comparisons:{plants:plants.sort((a,b)=>(b[primary]??-1)-(a[primary]??-1)),zones:zones.sort((a,b)=>(b[primary]??-1)-(a[primary]??-1)),operators:operators.sort((a,b)=>(b[primary]??-1)-(a[primary]??-1)).slice(0,25)},quality,summary,alerts,evidence,previousRange:prevRange});}
-  catch(err){registrarErrorDetallado({modulo:'historico-readonly',funcion:'GET /api/historico/read-adapter',error:err?.message||String(err),stack:err?.stack});return res.status(422).json({error:'No fue posible construir el adaptador histórico de solo lectura',detalle:err?.message||String(err)});}
+  catch(err){registrarErrorDetallado({modulo:'historico-readonly',funcion:'GET /api/historico/read-adapter',error:err?.message||String(err),stack:err?.stack});return res.status(422).json({error:'No fue posible construir el adaptador histÃ³rico de solo lectura',detalle:err?.message||String(err)});}
 });
 app.post('/api/historico/read-assistant',requireAuth,express.json({limit:'64kb'}),(req,res)=>{
   try{const query=req.body?.query||{},question=safeText(req.body?.question||''),cfg=histCfg(query),adapter=histReadOnlyAdapterQuery(query),metrics=histMetrics(adapter.analysisRows,cfg),plants=histGroupMetrics(adapter.analysisRows,'planta',cfg,[],adapter.mode),zones=histGroupMetrics(adapter.analysisRows,'zona',cfg,[],adapter.mode),quality=histReadOnlyQuality(adapter.analysisRows,adapter.mode),metricAudit=histReadOnlyMetricAudit(adapter.analysisRows,cfg,adapter.mode),evidence=histReadOnlyEvidence(query,adapter,metrics,quality),result=histReadOnlyQuestionAnswer(question,{mode:adapter.mode,metrics,plants,zones,quality,evidence,metricAudit});return res.json({ok:true,readOnly:true,question,answer:result.answer,evidence:result.evidence,audit:{revision:evidence.revision,generatedAt:evidence.generatedAt,recordsUsed:evidence.recordsUsed,filters:evidence.filters}});}
@@ -4213,7 +4175,7 @@ app.get('/api/historico/detail-export',requireAuth,(req,res)=>{
       'Turno','Adherencia Turno','Citacion','Adherencia Citacion','Ingreso TAM','Logeo','Primera Asignacion','Primera Carga','Salida TAM','Cruce',
       'Tiene Turno','Tiene Citacion','Tiene TAM','Tiene Logeo','Tiene Asignacion','Tiene Primera Carga',
       'Dif Logeo-Turno min','Dif Logeo-Citacion min','Dif Asignacion-Turno min',
-      mode==='citacion'?'Tiempo Muerto Citacion→Asignacion min':'Tiempo Muerto Logeo→Asignacion min',
+      mode==='citacion'?'Tiempo Muerto Citacionâ†’Asignacion min':'Tiempo Muerto Logeoâ†’Asignacion min',
       'Dif Logeo-TAM min'
     ];
 
@@ -4237,7 +4199,7 @@ app.get('/api/historico/detail-export',requireAuth,(req,res)=>{
     return res.send('\uFEFF'+lines.join('\n'));
   }catch(err){
     registrarErrorDetallado({modulo:'historico',funcion:'GET /api/historico/detail-export',error:err?.message||String(err),stack:err?.stack});
-    return res.status(422).json({error:'No fue posible exportar el detalle histórico',detalle:err?.message||String(err)});
+    return res.status(422).json({error:'No fue posible exportar el detalle histÃ³rico',detalle:err?.message||String(err)});
   }
 });
 
@@ -4279,7 +4241,7 @@ app.get('/api/historico/adherencia-export',requireAuth,(req,res)=>{
     return res.send('\uFEFF'+lines.join('\n'));
   }catch(err){
     registrarErrorDetallado({modulo:'historico',funcion:'GET /api/historico/adherencia-export',error:err?.message||String(err),stack:err?.stack});
-    return res.status(422).json({error:'No fue posible exportar la adherencia histórica',detalle:err?.message||String(err)});
+    return res.status(422).json({error:'No fue posible exportar la adherencia histÃ³rica',detalle:err?.message||String(err)});
   }
 });
 
@@ -4288,18 +4250,18 @@ app.get('/api/historico/audit-export.xlsx',requireAuth,async(req,res)=>{
     const cfg=histCfg(req.query);let rows=histFilterBase(req.query);const week=safeText(req.query.week||'');if(week)rows=rows.filter(r=>historicalPeriodKey(r.fecha,'week')===week);const audit=historicalKpiAudit(req.query,cfg);
     const wb=new ExcelJS.Workbook();wb.creator='CCO Intelligence';wb.created=new Date();
     const detail=wb.addWorksheet('TRAZABILIDAD');
-    detail.addRow(['Fecha','Zona','Planta','Operador','ID','Turno','Citación','Ingreso TAM','Logeo','Primera Asignación','Primera Carga','Salida TAM','Cruce','Tiene Turno','Tiene Citación','Tiene TAM','Tiene Logeo','Tiene Asignación','Tiene Primera Carga']);
+    detail.addRow(['Fecha','Zona','Planta','Operador','ID','Turno','CitaciÃ³n','Ingreso TAM','Logeo','Primera AsignaciÃ³n','Primera Carga','Salida TAM','Cruce','Tiene Turno','Tiene CitaciÃ³n','Tiene TAM','Tiene Logeo','Tiene AsignaciÃ³n','Tiene Primera Carga']);
     for(const r of rows)detail.addRow([r.fecha,r.zona,r.planta,r.operadorNombre,r.operadorId,fmtMinutes(r.turnoMin),fmtMinutes(r.citacionMin),fmtMinutes(r.tamIngresoMin),fmtMinutes(r.loginMin),fmtMinutes(r.asignacionMin),fmtMinutes(r.primeraCargaMin),fmtMinutes(r.tamSalidaMin),histCrossLabel(r),r.turnoMin!=null?'SI':'NO',r.citacionMin!=null?'SI':'NO',r.tamIngresoMin!=null?'SI':'NO',r.loginMin!=null?'SI':'NO',r.asignacionMin!=null?'SI':'NO',r.primeraCargaMin!=null?'SI':'NO']);
-    const sheet=wb.addWorksheet('AUDITORÍA KPI');
-    sheet.addRow(['KPI','Estado','Valor','Fórmula aplicada','Registros utilizados','Cruces válidos','Registros descartados','Archivo origen','Fecha mínima','Fecha máxima','Plantas encontradas','Operadores encontrados','Fecha cálculo','Motivo descarte / bloqueo']);
-    for(const a of Object.values(audit.kpis)){const files=a.sources.flatMap(s=>(a.sourceFiles?.[s]||[]).map(f=>`${HISTORICAL_SOURCES[s]?.label||s}: ${f}`)),discard=(a.discardedReasons||[]).map(x=>`${x.code}: ${x.count}`).join(' · ');sheet.addRow([a.label,a.ready?'CALCULADO':'NO CALCULADO',a.ready&&a.value!=null?a.value:'',a.formula,a.recordsUsed,a.validCrosses,a.discarded,files.join(' | '),a.minDate||'',a.maxDate||'',a.plants.length,a.operators,audit.generatedAt,a.ready?(discard||'Sin descartes que bloqueen el KPI.'):(a.reason+(discard?` · ${discard}`:''))]);}
+    const sheet=wb.addWorksheet('AUDITORÃA KPI');
+    sheet.addRow(['KPI','Estado','Valor','FÃ³rmula aplicada','Registros utilizados','Cruces vÃ¡lidos','Registros descartados','Archivo origen','Fecha mÃ­nima','Fecha mÃ¡xima','Plantas encontradas','Operadores encontrados','Fecha cÃ¡lculo','Motivo descarte / bloqueo']);
+    for(const a of Object.values(audit.kpis)){const files=a.sources.flatMap(s=>(a.sourceFiles?.[s]||[]).map(f=>`${HISTORICAL_SOURCES[s]?.label||s}: ${f}`)),discard=(a.discardedReasons||[]).map(x=>`${x.code}: ${x.count}`).join(' Â· ');sheet.addRow([a.label,a.ready?'CALCULADO':'NO CALCULADO',a.ready&&a.value!=null?a.value:'',a.formula,a.recordsUsed,a.validCrosses,a.discarded,files.join(' | '),a.minDate||'',a.maxDate||'',a.plants.length,a.operators,audit.generatedAt,a.ready?(discard||'Sin descartes que bloqueen el KPI.'):(a.reason+(discard?` Â· ${discard}`:''))]);}
     const srcSheet=wb.addWorksheet('ORIGEN DATOS KPI');
-    srcSheet.addRow(['Fuente','Archivos','Procesados','Válidos','Rechazados','Filtrados','Parciales','Fecha mínima','Fecha máxima','Plantas','Operadores','Motivos']);
-    for(const s of Object.values(audit.sourceAudit))srcSheet.addRow([s.label,s.files.join(' | '),s.processed,s.valid,s.rejected,s.filtered,s.partial,s.minDate||'',s.maxDate||'',s.plants.length,s.operators,(s.reasons||[]).map(x=>`${x.code}: ${x.count} (${x.reason})`).join(' · ')]);
+    srcSheet.addRow(['Fuente','Archivos','Procesados','VÃ¡lidos','Rechazados','Filtrados','Parciales','Fecha mÃ­nima','Fecha mÃ¡xima','Plantas','Operadores','Motivos']);
+    for(const s of Object.values(audit.sourceAudit))srcSheet.addRow([s.label,s.files.join(' | '),s.processed,s.valid,s.rejected,s.filtered,s.partial,s.minDate||'',s.maxDate||'',s.plants.length,s.operators,(s.reasons||[]).map(x=>`${x.code}: ${x.count} (${x.reason})`).join(' Â· ')]);
     [detail,sheet,srcSheet].forEach(ws=>{ws.views=[{state:'frozen',ySplit:1}];ws.getRow(1).font={bold:true};ws.columns.forEach(c=>{c.width=Math.max(12,Math.min(60,Number(c.width||18)));});});
     const filename=`trazabilidad_auditable_${safeText(req.query.from||'inicio')}_${safeText(req.query.to||'fin')}.xlsx`;
     res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');res.setHeader('Content-Disposition',`attachment; filename="${filename.replace(/[^a-zA-Z0-9._-]/g,'_')}"`);res.setHeader('Cache-Control','no-store');await wb.xlsx.write(res);res.end();
-  }catch(err){registrarErrorDetallado({modulo:'historico',funcion:'GET /api/historico/audit-export.xlsx',error:err?.message||String(err),stack:err?.stack});if(!res.headersSent)res.status(422).json({error:'No fue posible exportar la auditoría KPI',detalle:err?.message||String(err)});}
+  }catch(err){registrarErrorDetallado({modulo:'historico',funcion:'GET /api/historico/audit-export.xlsx',error:err?.message||String(err),stack:err?.stack});if(!res.headersSent)res.status(422).json({error:'No fue posible exportar la auditorÃ­a KPI',detalle:err?.message||String(err)});}
 });
 
 app.get('/api/historico/dashboard-enterprise',requireAuth,(req,res)=>{
@@ -4328,12 +4290,12 @@ app.get('/api/historico/dashboard-enterprise',requireAuth,(req,res)=>{
     const rankingCritical=rankedAsc.filter(x=>!topKeys.has(x.key)).slice(0,10);
     const operatorRanking={
       metric:rankingMetric,
-      label:mode==='citacion'?'Adherencia a Citación':'Adherencia al Turno',
+      label:mode==='citacion'?'Adherencia a CitaciÃ³n':'Adherencia al Turno',
       totalEligible:rankedBase.length,
       top:rankingTop,
       critical:rankingCritical,
       reason:rankedBase.length?'':(mode==='citacion'
-        ?'No existen operadores con Citación + LOGIN suficientes para calcular adherencia a citación.'
+        ?'No existen operadores con CitaciÃ³n + LOGIN suficientes para calcular adherencia a citaciÃ³n.'
         :'No existen operadores con Turno + LOGIN suficientes para calcular adherencia al turno.')
     };
     const rankings={
@@ -4355,7 +4317,7 @@ app.get('/api/historico/dashboard-enterprise',requireAuth,(req,res)=>{
     const advancedRankings=buildAdvancedOperatorRankings(rows,cfg);
     return res.json({
       ok:true,source:'historicalWarehouse:file-attachments-only',from,to,previousRange:prevRange,granularity,cfg,mode,empty:rows.length===0,
-      mensaje:rows.length?'':'NO SE ENCONTRARON DATOS PARA EL PERÍODO SELECCIONADO',
+      mensaje:rows.length?'':'NO SE ENCONTRARON DATOS PARA EL PERÃODO SELECCIONADO',
       metrics,trend,rankings,operatorRanking,advancedRankings,plants,zones,byPlant,heatmap,findings,coverage,integrity,filesUsed,e2eHealth,kpiAudit,qaE2E,
       recommendedDate:latestCommonHistoricalDate(mode),
       recommendedDateByMode:{
@@ -4412,14 +4374,14 @@ function snapshotSourceAudit(fecha) {
 }
 
 function validarOperacionDiaria(payload, fecha) {
-  if(!payload||typeof payload!=='object')throw new Error('Payload diario inválido');
+  if(!payload||typeof payload!=='object')throw new Error('Payload diario invÃ¡lido');
   if(!fecha||payload.fecha!==fecha)throw new Error('La fecha del reporte no coincide con la fecha operacional activa');
   const r=payload.resumen||{},p=Number(r.programadosExigibles),l=Number(r.totalLogeo),pend=Number(r.pendientesIngreso),a=Number(r.asignados),c=Number(r.primeraCarga),crit=Number(r.operadoresCriticos);
-  for(const [k,v] of Object.entries({programados:p,conLogeo:l,pendientes:pend,asignados:a,primeraCarga:c,criticos:crit}))if(!Number.isFinite(v)||v<0)throw new Error(`KPI ${k} inválido: ${v}`);
+  for(const [k,v] of Object.entries({programados:p,conLogeo:l,pendientes:pend,asignados:a,primeraCarga:c,criticos:crit}))if(!Number.isFinite(v)||v<0)throw new Error(`KPI ${k} invÃ¡lido: ${v}`);
   if(p!==l+pend)throw new Error(`Programados ${p} debe ser igual a ConLogeo ${l} + Pendientes ${pend}`);
   if(a>l)throw new Error(`Asignados ${a} no puede superar ConLogeo ${l}`);
   if(c>a)throw new Error(`PrimeraCarga ${c} no puede superar Asignados ${a}`);
-  if(crit>l)throw new Error(`OperadoresCríticos ${crit} no puede superar ConLogeo ${l}`);
+  if(crit>l)throw new Error(`OperadoresCrÃ­ticos ${crit} no puede superar ConLogeo ${l}`);
   const fechaAudit=operationalDateAudit(fecha);
   if(!fechaAudit.valido)throw new Error(fechaAudit.errores.join(' | '));
   const fuentes=r.fuentes||sourceCoverageForDate(fecha);
@@ -4430,8 +4392,8 @@ function validarTrazabilidadHistorica(rows) {
   if (!Array.isArray(rows)) throw new TypeError('historicalSnapshots debe ser un arreglo');
   const errores=[];
   for (const [i,snap] of rows.entries()) {
-    if (!snap || typeof snap !== 'object') { errores.push(`Snapshot ${i+1} inválido`); continue; }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(snap.fecha||''))) errores.push(`Snapshot ${i+1} sin fecha válida`);
+    if (!snap || typeof snap !== 'object') { errores.push(`Snapshot ${i+1} invÃ¡lido`); continue; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(snap.fecha||''))) errores.push(`Snapshot ${i+1} sin fecha vÃ¡lida`);
     if (!snap.resumen || typeof snap.resumen !== 'object') errores.push(`Snapshot ${i+1} sin resumen`);
     if (!Array.isArray(snap.porPlanta)) errores.push(`Snapshot ${i+1} sin apertura por planta`);
   }
@@ -4447,7 +4409,7 @@ function validarConsistenciaHistorica(rows) {
     const pend=Number(r.pendientesIngreso ?? Math.max(0,p-l));
     const a=Number(r.asignados ?? 0);
     const c=Number(r.primeraCarga ?? 0);
-    if ([p,l,pend,a,c].some(x=>!Number.isFinite(x) || x<0)) errores.push(`${snap?.fecha||'sin fecha'}: KPI histórico inválido`);
+    if ([p,l,pend,a,c].some(x=>!Number.isFinite(x) || x<0)) errores.push(`${snap?.fecha||'sin fecha'}: KPI histÃ³rico invÃ¡lido`);
     if (l>p) errores.push(`${snap?.fecha||'sin fecha'}: Logeados > Programados`);
     if (pend!==Math.max(0,p-l)) errores.push(`${snap?.fecha||'sin fecha'}: Pendientes inconsistente`);
     if (a>l) errores.push(`${snap?.fecha||'sin fecha'}: Asignados > Logeados`);
@@ -4552,7 +4514,7 @@ app.get('/api/operacion/fecha-audit.csv', requireAuth, (req,res)=>{
   try{
     const fecha=safeText(req.query.fecha||req.user.fecha||''),a=operationalDateAudit(fecha);
     const cell=v=>`"${String(v??'').replace(/"/g,'""')}"`;
-    const head=['Fuente','Archivo','Registros','Registros válidos fecha','Registros descartados fecha','Fecha mínima','Fecha máxima','Registros período','Contiene fecha seleccionada','Estado','Período analizado'];
+    const head=['Fuente','Archivo','Registros','Registros vÃ¡lidos fecha','Registros descartados fecha','Fecha mÃ­nima','Fecha mÃ¡xima','Registros perÃ­odo','Contiene fecha seleccionada','Estado','PerÃ­odo analizado'];
     const lines=[head.map(cell).join(';')];
     for(const s of a.fuentes){
       lines.push([s.fuente,s.archivo,s.registros,s.registrosValidosFecha,s.registrosDescartadosFecha,s.fechaMin,s.fechaMax,s.registrosPeriodo,s.contieneFecha?'SI':'NO',s.estado,a.fechaSeleccionada].map(cell).join(';'));
@@ -4561,7 +4523,7 @@ app.get('/api/operacion/fecha-audit.csv', requireAuth, (req,res)=>{
     res.setHeader('Content-Disposition',`attachment; filename="auditoria_fechas_${a.fechaSeleccionada||'fecha'}.csv"`);
     return res.send('\uFEFF'+lines.join('\n'));
   }catch(err){
-    return res.status(422).json({error:'No fue posible exportar auditoría de fechas',detalle:err?.message||String(err)});
+    return res.status(422).json({error:'No fue posible exportar auditorÃ­a de fechas',detalle:err?.message||String(err)});
   }
 });
 
@@ -4569,7 +4531,7 @@ app.get('/api/operacion/auditoria-total', requireAuth, (req,res)=>{
   try{
     const fecha=safeText(req.query.fecha||req.user.fecha||''),truth=buildOperationalTruth(fecha,effectiveScope(req));
     return res.json({ok:truth.summary.validacion.ok,fecha,motor:'operador_programado_dia',kpi:truth.summary,conciliacionLogin:truth.reconciliation,modosConciliacion:truth.reconciliationModes,loginAudit:truth.audit,erroresConstruccion:truth.errors,registros:truth.records.map(r=>({operadorId:r.id,operador:r.nombre,planta:r.planta,turno:r.turnoMin,login:r.logeoMin,asignacion:r.asignacionMin,primeraCarga:r.primeraCargaMin,tiempoMuerto:r.tiempoMuertoMin,categoria:r.categoria,trazabilidad:r.trazabilidad||null}))});
-  }catch(err){return res.status(422).json({error:'No fue posible ejecutar auditoría operacional',detalle:err?.message||String(err)});}
+  }catch(err){return res.status(422).json({error:'No fue posible ejecutar auditorÃ­a operacional',detalle:err?.message||String(err)});}
 });
 app.get('/api/operacion/export.csv', requireAuth, (req,res)=>{
   try{
@@ -4577,7 +4539,7 @@ app.get('/api/operacion/export.csv', requireAuth, (req,res)=>{
     const head=['Fecha','Zona','Planta','Operador','ID','Turno','Login','Asignacion','Primera Carga','Tiempo Muerto min','Categoria','Archivo Turno','Fila Turno','Archivo Login','Fila Login','Archivo Asignacion','Fila Asignacion','Archivo Primera Carga','Fila Primera Carga'],lines=[head.map(cell).join(';')];
     for(const r of truth.records){const t=r.trazabilidad||{};lines.push([fecha,r.zona,r.planta,r.nombre,r.id,fmtMinutes(r.turnoMin),fmtMinutes(r.logeoMin),fmtMinutes(r.asignacionMin),fmtMinutes(r.primeraCargaMin),r.tiempoMuertoMin,r.categoria,t.turno?.archivo,t.turno?.fila,t.login?.archivo,t.login?.fila,t.asignacion?.archivo,t.asignacion?.fila,t.primeraCarga?.archivo,t.primeraCarga?.fila].map(cell).join(';'));}
     res.setHeader('Content-Type','text/csv; charset=utf-8');res.setHeader('Content-Disposition',`attachment; filename="operacion_auditable_${fecha||'fecha'}.csv"`);return res.send('\uFEFF'+lines.join('\n'));
-  }catch(err){return res.status(422).json({error:'No fue posible exportar la operación auditable',detalle:err?.message||String(err)});}
+  }catch(err){return res.status(422).json({error:'No fue posible exportar la operaciÃ³n auditable',detalle:err?.message||String(err)});}
 });
 app.get('/api/operacion/login-audit', requireAuth, (req,res)=>{
   try{
@@ -4600,7 +4562,7 @@ app.get('/api/reporte', requireAuth, (req, res) => {
       const loginAudit = truth.audit;
       const records = truth.records;
       const plantNames = [...new Set(records.map(r=>r.planta))];
-      if (!plantNames.length) return respuestaSinDatos(res, 'Sin información disponible para el período seleccionado', {
+      if (!plantNames.length) return respuestaSinDatos(res, 'Sin informaciÃ³n disponible para el perÃ­odo seleccionado', {
         fecha, generado_por:req.user?.nombre || 'Sistema', generado_en:nowIso(),
         resumen:{ totalTurnos:0, programadosExigibles:0, totalCitaciones:0, operadoresConCitacion:0, operadoresPorTurno:0, cumplimientoReferenciaPct:null, cumplimientoCitacionPct:null, cumplimientoTurnoPct:null, totalLogeo:0, logeadosAlCorte:0, pendientesIngreso:0, asignados:0, primeraCarga:0, operadoresCriticos:0, tiempoMuertoPromedioMin:null, adelantadosPct:null, adelantadosCantidad:0, filasSinReconocer:0 },
         porPlanta:[], rankingAdelantados:[], rankingTiempoMuertoNacional:[], erroresConstruccion:Array.isArray(built.errors)?built.errors:[]
@@ -4682,7 +4644,7 @@ app.get('/api/reporte', requireAuth, (req, res) => {
       if(fechaAudit.advertencias.length){
         payload.advertencias=[...(payload.advertencias||[]),{
           codigo:'DIFERENCIAS_FECHA',
-          mensaje:'Se detectaron diferencias menores entre archivos. El reporte se generó utilizando la información disponible. '+fechaAudit.advertencias.join(' ')
+          mensaje:'Se detectaron diferencias menores entre archivos. El reporte se generÃ³ utilizando la informaciÃ³n disponible. '+fechaAudit.advertencias.join(' ')
         }];
       }
       try {
@@ -4690,7 +4652,7 @@ app.get('/api/reporte', requireAuth, (req, res) => {
       } catch (validationErr) {
         registrarErrorDetallado({ modulo:'operacion', funcion:'validarOperacionDiaria', error:validationErr?.message||String(validationErr), stack:validationErr?.stack, contexto:{fecha} });
         return res.status(422).json({
-          error:'No fue posible validar la operación diaria',
+          error:'No fue posible validar la operaciÃ³n diaria',
           detalle:validationErr?.message||String(validationErr),
           fecha,
           diagnostico_fechas:operationalDateAudit(fecha)
@@ -4699,7 +4661,7 @@ app.get('/api/reporte', requireAuth, (req, res) => {
       return res.json(payload);
   } catch (err) {
     registrarErrorDetallado({ modulo:'reporte', funcion:'GET /api/reporte', error:err?.message || String(err), stack:err?.stack, contexto:{ query:req.query, usuario:req.user?.nombre || '' } });
-    return res.status(422).json({ error:'No fue posible procesar el reporte con los datos disponibles', detalle:err?.message || String(err), mensaje_usuario:'Información incompleta o inválida. Revise los archivos cargados.', version:'3.0.0' });
+    return res.status(422).json({ error:'No fue posible procesar el reporte con los datos disponibles', detalle:err?.message || String(err), mensaje_usuario:'InformaciÃ³n incompleta o invÃ¡lida. Revise los archivos cargados.', version:'3.0.0' });
   }
 });
 
@@ -4714,7 +4676,7 @@ app.post('/api/historico/snapshot', requireAuth, (req,res) => {
     if (req.user?.zona) records=records.filter(r=>r?.zona===req.user.zona);
     if (req.user?.region) records=records.filter(r=>r?.region===req.user.region);
     if (req.user?.planta) records=records.filter(r=>r?.planta===req.user.planta);
-    if (!records.length) return res.status(422).json({error:'No existen datos diarios válidos para crear snapshot',fecha});
+    if (!records.length) return res.status(422).json({error:'No existen datos diarios vÃ¡lidos para crear snapshot',fecha});
     const porPlanta=recordsToPlantRows(records);
     const tmAll=records.filter(r=>hasMinute(r?.tiempoMuertoMin));
     const cit=records.filter(r=>r?.citacionAplicada);
@@ -4744,10 +4706,10 @@ app.post('/api/historico/snapshot', requireAuth, (req,res) => {
     state.audit.unshift({id:crypto.randomUUID(),action:'snapshot_historico_creado',fecha,snapshot_id:result.snapshotId,user:req.user?.nombre||'Sistema',timestamp:nowIso()});
     persistState();
     emitRealtime('historico:snapshot_creado',{fecha,snapshotId:result.snapshotId,revision:Number(historicalWarehouse?.revision||0)},'historico','snapshot_creado',req.user,{fecha});
-    return res.json({ok:true,...result,mensaje:`Snapshot histórico ${fecha} guardado correctamente`});
+    return res.json({ok:true,...result,mensaje:`Snapshot histÃ³rico ${fecha} guardado correctamente`});
   } catch(err) {
     registrarErrorDetallado({modulo:'historico',funcion:'POST /api/historico/snapshot',error:err?.message||String(err),stack:err?.stack,contexto:{fecha:req.body?.fecha||req.query?.fecha||''}});
-    return res.status(422).json({error:'No fue posible crear el snapshot histórico',detalle:err?.message||String(err)});
+    return res.status(422).json({error:'No fue posible crear el snapshot histÃ³rico',detalle:err?.message||String(err)});
   }
 });
 
@@ -4825,7 +4787,7 @@ function loginSourceAudit(fecha='',builtRecords=[]){
     loginMostradoKpi:afterDate.length,
     noContabilizadosPorFecha:Math.max(0,afterNormalize.length-afterDate.length),
     diferenciaCruceVsFuente:Math.max(0,afterDate.length-crossed),
-    regla:'KPI Login = filas válidas de Status con LOGIN/PRE-VIAJE para la fecha activa; no depende del cruce con Turnos.'
+    regla:'KPI Login = filas vÃ¡lidas de Status con LOGIN/PRE-VIAJE para la fecha activa; no depende del cruce con Turnos.'
   };
 }
 
@@ -4866,13 +4828,13 @@ function operationalDateAudit(fecha){
   const errores=[],advertencias=[];
   for(const s of sources){
     if(s.registros===0)advertencias.push(`${s.fuente}: archivo sin datos.`);
-    else if(s.registrosValidosFecha===0)advertencias.push(`${s.fuente}: no se detectó una fecha operacional utilizable.`);
-    else if(!s.contieneFecha)advertencias.push(`${s.fuente}: no existen registros que cubran ${target}. Rango detectado ${s.fechaMin||'—'} → ${s.fechaMax||'—'}.`);
+    else if(s.registrosValidosFecha===0)advertencias.push(`${s.fuente}: no se detectÃ³ una fecha operacional utilizable.`);
+    else if(!s.contieneFecha)advertencias.push(`${s.fuente}: no existen registros que cubran ${target}. Rango detectado ${s.fechaMin||'â€”'} â†’ ${s.fechaMax||'â€”'}.`);
   }
 
   const turnos=sources.find(s=>s.fuente==='turnos');
   if(!turnos?.registros)errores.push('Turnos: archivo sin datos.');
-  else if(!turnos.contieneFecha)errores.push(`Turnos: la fecha ${target} no pertenece a la semana/rango cargado (${turnos.fechaMin||'—'} → ${turnos.fechaMax||'—'}).`);
+  else if(!turnos.contieneFecha)errores.push(`Turnos: la fecha ${target} no pertenece a la semana/rango cargado (${turnos.fechaMin||'â€”'} â†’ ${turnos.fechaMax||'â€”'}).`);
 
   return {
     fechaSeleccionada:target,
@@ -4923,7 +4885,7 @@ function aggregatePlantHistoricalRows(items) {
 }
 
 app.get('/api/historico/dashboard', requireAuth, (req,res) => {
-  return res.status(410).json({error:'Endpoint histórico anterior descontinuado en v3.0',detalle:'Use /api/historico/dashboard-enterprise'});
+  return res.status(410).json({error:'Endpoint histÃ³rico anterior descontinuado en v3.0',detalle:'Use /api/historico/dashboard-enterprise'});
 });
 
 app.get('/api/audit', requireAuth, (req,res)=>res.json(state.audit.slice(0,500)));
@@ -4959,7 +4921,7 @@ if (require.main === module && process.env.CCO_TEST_MODE !== '1') {
   server.listen(PORT, () => {
     console.log(`[CCO][startup] CCO Intelligence v${APP_VERSION} activo en puerto ${PORT}`);
     console.log(`[CCO][startup] Diccionario plantas: ${PLANT_DICTIONARY.plants.length} plantas, ${PLANT_DICTIONARY_LOOKUP.size} alias resolubles, ${Object.keys(PLANT_DICTIONARY.conflicts||{}).length} alias ambiguos`);
-    if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producción.');
+    if (NODE_ENV === 'production' && AUTH_SECRET === 'cco-dev-secret-change-me') console.warn('[CCO][security] Configure AUTH_SECRET en producciÃ³n.');
   });
 }
 
