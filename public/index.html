@@ -563,6 +563,15 @@ table{border-collapse:separate!important;border-spacing:0!important}
   <button type="button" id="quickHistorico" class="secondary" onclick="console.log('Botón ejecutado correctamente'); cambiarModulo('historico',true)">📈 Trazabilidad Histórica</button>
   <button type="button" id="quickTorre" class="secondary" onclick="console.log('Botón ejecutado correctamente'); cambiarModulo('torre',true)">🚛 Torre de Control</button>
   <button type="button" id="adminUsersBtn" class="secondary" style="display:none" onclick="abrirAdminUsuarios()">👥 Usuarios</button>
+  <button type="button" id="changePasswordBtn" class="secondary" style="display:none" onclick="abrirCambioClave()">🔐 Mi clave</button>
+</div>
+<div id="changePasswordPanel" class="card" style="display:none;margin-top:10px;margin-bottom:12px;max-width:520px">
+  <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">Cambiar mi clave</h2><button type="button" class="secondary" onclick="cerrarCambioClave()">Cerrar</button></div>
+  <label>Clave actual</label><input id="cpCurrent" type="password" autocomplete="current-password">
+  <label>Nueva clave</label><input id="cpNew" type="password" autocomplete="new-password" minlength="10">
+  <label>Confirmar nueva clave</label><input id="cpConfirm" type="password" autocomplete="new-password" minlength="10">
+  <button type="button" onclick="guardarCambioClave()">Actualizar clave</button>
+  <div id="cpMsg" class="errbox" style="display:none"></div>
 </div>
 <div id="adminUsersPanel" class="card" style="display:none;margin-top:10px;margin-bottom:12px">
   <div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><div><h2 style="margin:0">Administración de usuarios</h2><div class="small">Aprobación y control de accesos CCO.</div></div><button type="button" class="secondary" onclick="cerrarAdminUsuarios()">Cerrar</button></div>
@@ -1179,6 +1188,7 @@ function entrar(){
       document.getElementById('scopeFecha').value = hoyKey;
       document.getElementById('scopeFechaLabel').textContent = hoyLabelCL;
       document.getElementById('adminUsersBtn').style.display=['admin','supervisor_nacional'].includes(user.rol)?'':'none';
+      document.getElementById('changePasswordBtn').style.display='';
       iniciar();
     })
     .catch(err=>mostrarErrorGate(err.message||'No fue posible iniciar sesión.'));
@@ -1191,6 +1201,10 @@ function cambiarFechaOperacional(){
   const hidden=document.getElementById('scopeFecha'); if(hidden) hidden.value=hoyKey;
   const lbl=document.getElementById('scopeFechaLabel'); if(lbl) lbl.textContent=hoyLabelCL;
 }
+
+function abrirCambioClave(){document.getElementById('changePasswordPanel').style.display='block';document.getElementById('cpMsg').style.display='none';document.getElementById('changePasswordPanel').scrollIntoView({behavior:'smooth',block:'start'});}
+function cerrarCambioClave(){document.getElementById('changePasswordPanel').style.display='none';['cpCurrent','cpNew','cpConfirm'].forEach(id=>document.getElementById(id).value='');}
+async function guardarCambioClave(){const msg=document.getElementById('cpMsg'),currentPassword=document.getElementById('cpCurrent').value,newPassword=document.getElementById('cpNew').value,confirm=document.getElementById('cpConfirm').value;msg.style.display='none';if(newPassword!==confirm){msg.textContent='Las nuevas claves no coinciden.';msg.style.display='block';return;}if(newPassword.length<10){msg.textContent='La nueva clave debe tener al menos 10 caracteres.';msg.style.display='block';return;}try{const r=await fetch(API+'/api/auth/change-password',{method:'POST',headers:authHeaders(),body:JSON.stringify({currentPassword,newPassword})}),d=await r.json();if(!r.ok)throw new Error(d.error||'No fue posible actualizar la clave');msg.textContent=d.mensaje;msg.style.display='block';msg.style.background='#ecf9f2';msg.style.color='#217047';msg.style.borderColor='#b8e5cc';['cpCurrent','cpNew','cpConfirm'].forEach(id=>document.getElementById(id).value='');}catch(e){msg.textContent=e.message;msg.style.display='block';}}
 
 async function abrirAdminUsuarios(){document.getElementById('adminUsersPanel').style.display='block';await cargarAdminUsuarios();document.getElementById('adminUsersPanel').scrollIntoView({behavior:'smooth',block:'start'});}
 function cerrarAdminUsuarios(){document.getElementById('adminUsersPanel').style.display='none';}
