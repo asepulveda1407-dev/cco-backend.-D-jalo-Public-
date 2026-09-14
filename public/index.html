@@ -526,28 +526,13 @@ table{border-collapse:separate!important;border-spacing:0!important}
   <p class="small" style="text-align:left;margin:4px 0 0">
     El servidor se detecta automáticamente desde esta misma dirección web. No necesitas configurar URLs manualmente.
   </p>
-  <label>Nombre</label>
-  <input id="gNombre" placeholder="Ej: Alberto Sepúlveda">
-  <label>Rol operativo</label>
-  <select id="gRol">
-    <option value="supervisor_nacional">Supervisor Nacional</option>
-    <option value="gerencia">Gerencia</option>
-    <option value="supervisor_planta">Supervisor Planta</option>
-    <option value="coordinador">Coordinador</option>
-    <option value="mantencion">Mantención</option>
-  </select>
+  <label>Correo corporativo</label>
+  <input id="gEmail" type="email" autocomplete="username" placeholder="javier.castro@polpaicosoluciones.cl">
+  <label>Clave personal</label>
+  <input id="gPassword" type="password" autocomplete="current-password" placeholder="Ingrese su clave personal">
   <label>Fecha operacional</label>
   <div class="pill" style="display:inline-block;margin:2px 0 8px">Hoy · <span id="gFechaLabel">—</span></div>
   <input id="gFecha" type="hidden">
-  <label>Zona</label>
-  <select id="gZona" onchange="cargarRegionesLogin();cargarPlantasLogin()">
-    <option value="">Todas las zonas</option>
-    <option value="Norte">Norte</option><option value="Centro">Centro</option><option value="Sur">Zona Sur</option>
-  </select>
-  <label>Región / subzona <span class="small">(disponible para Zona Centro)</span></label>
-  <select id="gRegion" onchange="cargarPlantasLogin()"><option value="">Todas las regiones</option></select>
-  <label>Planta <span class="small">(se actualiza según zona y región)</span></label>
-  <select id="gPlanta"><option value="">Todas las plantas</option></select>
   <button onclick="entrar()">Entrar</button>
   <div id="gateErr" class="errbox"></div>
   <p class="small">Acceso operacional en tiempo real. Los cambios de configuración, bitácora e ingesta se sincronizan entre usuarios conectados.</p>
@@ -631,7 +616,7 @@ table{border-collapse:separate!important;border-spacing:0!important}
             <div><label>Zona</label><select id="towerZoneFilter"><option value="all">Todas las zonas</option></select></div>
             <div><label>Planta</label><select id="towerPlantFilter"><option value="all">Todas las plantas</option></select></div>
             <div><label>Estado</label><select id="towerStatusFilter"><option value="all">Todos los estados</option></select></div>
-            <div><label>Clasificación camión</label><div class="hist-ms" id="towerClassMs"></div></div>
+            <div><label>Clasificación camión</label><select id="towerClassFilter" multiple size="2" aria-label="Clasificación del camión"><option value="operativo">Operativo</option><option value="operativo_recuperable">Operativo recuperable</option></select><small id="towerClassActive">Todas las clasificaciones</small></div>
             <div><label>Buscar equipo</label><input id="towerSearch" placeholder="ID, número, patente o marca"></div>
             <button type="button" class="secondary" id="towerReset">Limpiar</button>
           </div>
@@ -684,6 +669,50 @@ table{border-collapse:separate!important;border-spacing:0!important}
     </div>
 
     <div class="hist-upload-grid">
+      <div class="hist-drop-card" data-source="turnos" id="drop_turnos" hidden>
+        <div class="hist-drop-icon">🗓️</div><b>Turnos</b>
+        <div class="small">Programación semanal/diaria por operador y planta</div>
+        <input type="file" id="histFiles_turnos" multiple accept=".xlsx,.xls,.csv,.txt,.pdf" hidden>
+        <button type="button" class="secondary hist-file-btn" data-source="turnos">Seleccionar archivos</button>
+        <div class="hist-progress" id="histProgress_turnos" aria-label="Progreso de carga">
+          <div class="hist-progress-bar" id="histProgressBar_turnos" style="width:0%"></div>
+          <span id="histProgressText_turnos">0% · Esperando archivo</span>
+        </div>
+        <div class="hist-source-status" id="histSource_turnos">Sin datos</div><div class="hist-file-list" id="histFileList_turnos"></div>
+      </div>
+      <div class="hist-drop-card" data-source="citaciones" id="drop_citaciones" hidden>
+        <div class="hist-drop-icon">⏰</div><b>Citaciones</b>
+        <div class="small">Hora citada, operador, camión y fecha</div>
+        <input type="file" id="histFiles_citaciones" multiple accept=".xlsx,.xls,.csv,.txt,.pdf" hidden>
+        <button type="button" class="secondary hist-file-btn" data-source="citaciones">Seleccionar archivos</button>
+        <div class="hist-progress" id="histProgress_citaciones" aria-label="Progreso de carga">
+          <div class="hist-progress-bar" id="histProgressBar_citaciones" style="width:0%"></div>
+          <span id="histProgressText_citaciones">0% · Esperando archivo</span>
+        </div>
+        <div class="hist-source-status" id="histSource_citaciones">Sin datos</div><div class="hist-file-list" id="histFileList_citaciones"></div>
+      </div>
+      <div class="hist-drop-card" data-source="status" id="drop_status" hidden>
+        <div class="hist-drop-icon">🚦</div><b>Status Black / StatusBreakdown</b>
+        <div class="small">LOGIN, ASIGNADO y primera carga</div>
+        <input type="file" id="histFiles_status" multiple accept=".xlsx,.xls,.csv,.txt,.pdf" hidden>
+        <button type="button" class="secondary hist-file-btn" data-source="status">Seleccionar archivos</button>
+        <div class="hist-progress" id="histProgress_status" aria-label="Progreso de carga">
+          <div class="hist-progress-bar" id="histProgressBar_status" style="width:0%"></div>
+          <span id="histProgressText_status">0% · Esperando archivo</span>
+        </div>
+        <div class="hist-source-status" id="histSource_status">Sin datos</div><div class="hist-file-list" id="histFileList_status"></div>
+      </div>
+      <div class="hist-drop-card" data-source="tam" id="drop_tam" hidden>
+        <div class="hist-drop-icon">🪪</div><b>Marcaje TAM</b>
+        <div class="small">Cruce obligatorio por ID columna A + Fecha · ingreso y salida TAM</div>
+        <input type="file" id="histFiles_tam" multiple accept=".xlsx,.xls,.csv,.txt,.pdf" hidden>
+        <button type="button" class="secondary hist-file-btn" data-source="tam">Seleccionar archivos</button>
+        <div class="hist-progress" id="histProgress_tam" aria-label="Progreso de carga">
+          <div class="hist-progress-bar" id="histProgressBar_tam" style="width:0%"></div>
+          <span id="histProgressText_tam">0% · Esperando archivo</span>
+        </div>
+        <div class="hist-source-status" id="histSource_tam">Sin datos</div><div class="hist-file-list" id="histFileList_tam"></div>
+      </div>
       <div class="hist-drop-card" data-source="gtiempos" id="drop_gtiempos">
         <div class="hist-drop-icon">📊</div><b>Base KPI GTIEMPOS</b>
         <div class="small">Horas trabajadas · vueltas · HHEE · volumen · zona · planta</div>
@@ -1107,13 +1136,13 @@ function cargarPlantasLogin(){
   if(region) params.set('region', region);
   const url = API+'/api/catalogo/plantas'+(params.toString() ? '?'+params.toString() : '');
   fetch(url)
-    .then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+    .then(async r=>{const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||('HTTP '+r.status));return d;})
     .then(list=>{
       sel.innerHTML = '<option value="">Todas las plantas</option>' + list.map(p=>`<option value="${p.nombre}">${p.nombre}${p.region && p.region!==p.zona ? ' · '+p.region : ''}</option>`).join('');
       if([...sel.options].some(o=>o.value===anterior)) sel.value = anterior;
     }).catch(err=>{ registrarErrorDetalladoUI('catalogo','cargarPlantasLogin',err); sel.innerHTML='<option value="">No se pudieron cargar plantas</option>'; });
 }
-setTimeout(()=>{ cargarRegionesLogin(); cargarPlantasLogin(); },0);
+
 
 function mostrarErrorGate(msg){
   const box = document.getElementById('gateErr');
@@ -1123,19 +1152,17 @@ function mostrarErrorGate(msg){
 
 function entrar(){
   API = document.getElementById('gApi').value.trim().replace(/\/+$/,'');
-  const nombre = document.getElementById('gNombre').value.trim();
-  const rol = document.getElementById('gRol').value;
-  const zona = document.getElementById('gZona').value;
-  const region = document.getElementById('gRegion').value;
-  const planta = document.getElementById('gPlanta').value;
+  const email=document.getElementById('gEmail').value.trim().toLowerCase();
+  const password=document.getElementById('gPassword').value;
   const fecha = hoyKey;
   document.getElementById('gateErr').style.display='none';
   if(!API){ mostrarErrorGate('Ingresa la URL del backend.'); return; }
-  if(!nombre){ mostrarErrorGate('Ingresa un nombre.'); return; }
+  if(!email.endsWith('@polpaicosoluciones.cl')){mostrarErrorGate('Ingresa tu correo corporativo.');return;}
+  if(!password){mostrarErrorGate('Ingresa tu clave personal.');return;}
 
 
   fetch(API+'/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({nombre,rol,zona,region,planta,fecha})})
+    body:JSON.stringify({email,password,fecha})})
     .then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
     .then(data=>{
       token = data.token; user = {...data.user, fecha:hoyKey};
@@ -1147,10 +1174,7 @@ function entrar(){
       document.getElementById('scopeFechaLabel').textContent = hoyLabelCL;
       iniciar();
     })
-    .catch(()=> mostrarErrorGate(
-      'No se pudo conectar a '+API+'. Verifica que el backend esté corriendo y que la URL sea correcta ' +
-      'Contacta al administrador si el servicio no está disponible.'
-    ));
+    .catch(err=>mostrarErrorGate(err.message||'No fue posible iniciar sesión.'));
 }
 
 function cambiarFechaOperacional(){
@@ -2820,28 +2844,6 @@ function descargarImagenReporte(){
 
 // ===== v3.1 · Torre de Control de Flota =====
 let towerFleet=[],towerSelectedKey=null,towerRevision=0;
-const towerClassSelected=new Set();
-const TOWER_CLASS_OPTIONS=[{value:'operativo',label:'Operativo'},{value:'operativo_recuperable',label:'Operativo recuperable'}];
-function initTowerClassMs(){
-  const root=document.getElementById('towerClassMs');if(!root)return;
-  const itemMap=new Map(TOWER_CLASS_OPTIONS.map(x=>[x.value,x.label]));
-  root.innerHTML=`<button type="button" class="hist-ms-btn">Todas las clasificaciones</button><div class="hist-ms-picked"></div><div class="hist-ms-menu"><div class="hist-ms-actions"><button type="button" data-act="all" class="secondary">Seleccionar todo</button><button type="button" data-act="clear" class="secondary">Limpiar</button></div><div class="hist-ms-options"></div></div>`;
-  const btn=root.querySelector('.hist-ms-btn'),picked=root.querySelector('.hist-ms-picked'),options=root.querySelector('.hist-ms-options');
-  const label=()=>{
-    const vals=[...towerClassSelected];
-    btn.textContent=vals.length?vals.map(v=>itemMap.get(v)||v).join(' + '):'Todas las clasificaciones';
-    picked.innerHTML=vals.map(v=>`<span class="hist-ms-chip">${escapeHtml(itemMap.get(v)||v)}<button type="button" data-remove="${encodeURIComponent(v)}" title="Quitar">×</button></span>`).join('');
-    picked.querySelectorAll('[data-remove]').forEach(b=>b.onclick=e=>{e.stopPropagation();towerClassSelected.delete(decodeURIComponent(b.dataset.remove||''));draw();label();renderTorre();});
-  };
-  const draw=()=>{
-    options.innerHTML=TOWER_CLASS_OPTIONS.map(x=>`<label class="hist-ms-option"><input type="checkbox" value="${x.value}" ${towerClassSelected.has(x.value)?'checked':''}><span>${x.label}</span></label>`).join('');
-    options.querySelectorAll('input').forEach(cb=>cb.onchange=()=>{cb.checked?towerClassSelected.add(cb.value):towerClassSelected.delete(cb.value);label();renderTorre();});
-  };
-  btn.onclick=e=>{e.stopPropagation();document.querySelectorAll('.hist-ms.open').forEach(x=>{if(x!==root)x.classList.remove('open')});root.classList.toggle('open')};
-  root.querySelector('[data-act="all"]').onclick=()=>{TOWER_CLASS_OPTIONS.forEach(x=>towerClassSelected.add(x.value));draw();label();renderTorre();};
-  root.querySelector('[data-act="clear"]').onclick=()=>{towerClassSelected.clear();draw();label();renderTorre();};
-  draw();label();
-}
 const TOWER_STATUS_LABELS={available:'Disponible',preventive:'Mantención Preventiva',internal:'Taller Interno',external:'Taller Externo',oos:'Fuera de Servicio',parts:'Esperando Repuestos',operational_nonrecoverable:'Operativo no recuperable',nonrecoverable:'No recuperable',stale:'Sin Actualización'};
 const TOWER_MAINT_STATUS=new Set(['preventive','internal','external','parts']);
 function towerEsc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
@@ -2860,7 +2862,9 @@ function towerRelocationTitle(t){
 
 function towerFiltered(){
   const z=document.getElementById('towerZoneFilter')?.value||'all',p=document.getElementById('towerPlantFilter')?.value||'all',st=document.getElementById('towerStatusFilter')?.value||'all',q=(document.getElementById('towerSearch')?.value||'').toLowerCase().trim();
-  return towerFleet.filter(t=>(z==='all'||t.zone===z)&&(p==='all'||t.plant===p)&&(st==='all'||t.status===st)&&(!towerClassSelected.size||towerClassSelected.has(t.classification))&&(!q||[t.id,t.number,t.plate,t.brand,t.plant].join(' ').toLowerCase().includes(q)));
+  const classSelect=document.getElementById('towerClassFilter');
+  const classes=new Set([...(classSelect?.selectedOptions||[])].map(o=>o.value));
+  return towerFleet.filter(t=>(z==='all'||t.zone===z)&&(p==='all'||t.plant===p)&&(st==='all'||t.status===st)&&(!classes.size||classes.has(t.classification))&&(!q||[t.id,t.number,t.plate,t.brand,t.plant].join(' ').toLowerCase().includes(q)));
 }
 function towerKpiEligible(list){return list.filter(x=>x.isThirdParty!==true);}
 function towerCounts(list=towerFleet){const eligible=towerKpiEligible(list),total=eligible.length,available=eligible.filter(x=>x.status==='available'||x.status==='operational_nonrecoverable').length,maint=eligible.filter(x=>TOWER_MAINT_STATUS.has(x.status)).length,oos=eligible.filter(x=>x.status==='oos').length,parts=eligible.filter(x=>x.status==='parts').length;return{total,available,maint,oos,parts,pct:total?available/total*100:0};}
@@ -2887,7 +2891,7 @@ function renderTowerTables(list=towerFiltered()){
   const kpiList=towerKpiEligible(list),groups={};kpiList.forEach(t=>(groups[t.plant||'Sin planta asignada']??=[]).push(t));const rows=Object.entries(groups).sort((a,b)=>a[0].localeCompare(b[0],'es'));document.getElementById('towerPlantCount').textContent=`${rows.length} plantas`;document.getElementById('towerPlantTable').innerHTML=rows.map(([plant,arr])=>{const c=towerCounts(arr);return `<tr><td>${towerEsc(arr[0]?.zone||'—')}</td><td><b>${towerEsc(plant)}</b></td><td>${c.total}</td><td>${c.available}</td><td>${c.maint}</td><td>${c.oos}</td><td>${c.pct.toFixed(1)}%</td></tr>`}).join('')||'<tr><td colspan="7" class="history-empty">Sin datos para los filtros seleccionados.</td></tr>';
   const by={};kpiList.forEach(t=>by[t.status]=(by[t.status]||0)+1);document.getElementById('towerStateTable').innerHTML=Object.entries(by).sort((a,b)=>b[1]-a[1]).map(([st,n])=>`<tr><td><span class="tower-status-pill ${st}">${towerEsc(TOWER_STATUS_LABELS[st]||st)}</span></td><td>${n}</td><td>${kpiList.length?(n/kpiList.length*100).toFixed(1):'0.0'}%</td></tr>`).join('')||'<tr><td colspan="3" class="history-empty">Sin datos.</td></tr>';
 }
-function renderTorre(){poblarTowerFiltros();const list=towerFiltered();renderTowerKpis(list);renderTowerPlants();renderTowerDetail();renderTowerTables(list);}
+function renderTorre(){poblarTowerFiltros();const list=towerFiltered();renderTowerKpis(list);renderTowerPlants();renderTowerDetail();renderTowerTables(list);const active=document.getElementById('towerClassActive'),sel=document.getElementById('towerClassFilter');if(active&&sel){const labels=[...sel.selectedOptions].map(o=>o.textContent);active.textContent=labels.length?labels.join(' + '):'Todas las clasificaciones';}}
 function seleccionarTowerEquipo(key){towerSelectedKey=key;renderTowerPlants();renderTowerDetail();}
 async function cargarTorreFlota(){
   try{towerSetStatus('Sincronizando flota...');const r=await fetch(API+'/api/flota',{headers:authHeaders()});const data=await leerRespuestaApiSegura(r);towerFleet=Array.isArray(data.datos)?data.datos:[];towerRevision=Number(data.revision||0);document.getElementById('towerRevision').textContent=towerFleet.length?`Rev. ${towerRevision} · ${towerFleet.length} equipos`:'Sin flota cargada';if(towerFleet.length&&!towerSelectedKey)towerSelectedKey=towerFleet[0].key;const m=data.metadatos||{};towerSetStatus(towerFleet.length?`${towerFleet.length} equipos · ${m.archivo||'fuente cargada'} · ${m.cargado_en?new Date(m.cargado_en).toLocaleString('es-CL'):''}`:'Seleccione el archivo de flota.','ok');renderTorre();}catch(err){towerSetStatus('No se pudo cargar flota: '+(err.message||err),'err');}
@@ -2948,7 +2952,7 @@ async function actualizarTowerEquipo(key,patch){
 function abrirTowerEditor(){const t=towerSelected();if(!t)return;document.getElementById('towerEditTitle').textContent=`Editar · ${t.id||t.number}`;towerEditStatus.value=t.status||'stale';const plants=[...new Set(towerFleet.map(x=>x.plant).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));towerEditPlant.innerHTML=plants.map(x=>`<option value="${towerEsc(x)}">${towerEsc(x)}</option>`).join('');if(!plants.includes(t.plant))towerEditPlant.insertAdjacentHTML('afterbegin',`<option value="${towerEsc(t.plant)}">${towerEsc(t.plant)}</option>`);towerEditPlant.value=t.plant;towerEditWorkshop.value=t.workshop||'';towerEditResponsible.value=t.responsible||'';towerEditEta.value=(t.eta||'').slice(0,16);towerEditProgress.value=Number(t.progress||0);towerEditCause.value=t.cause||'';towerEditObservation.value=t.observation||'';towerEditMsg.textContent='';towerEditModal.classList.add('open');towerEditModal.setAttribute('aria-hidden','false');}
 function cerrarTowerEditor(){towerEditModal.classList.remove('open');towerEditModal.setAttribute('aria-hidden','true');}
 async function guardarTowerEditor(){const t=towerSelected();if(!t)return;try{towerEditMsg.textContent='Guardando...';await actualizarTowerEquipo(t.key,{status:towerEditStatus.value,plant:towerEditPlant.value,workshop:towerEditWorkshop.value,responsible:towerEditResponsible.value,eta:towerEditEta.value,progress:Number(towerEditProgress.value||0),cause:towerEditCause.value,observation:towerEditObservation.value});towerEditMsg.textContent='Cambio guardado.';cerrarTowerEditor();renderTorre();}catch(err){towerEditMsg.textContent='Error: '+(err.message||err);}}
-function initTower(){document.getElementById('towerFleetFile')?.addEventListener('change',e=>{const f=e.target.files?.[0];if(f)procesarTowerFleetFile(f);e.target.value='';});['towerZoneFilter','towerPlantFilter','towerStatusFilter'].forEach(id=>document.getElementById(id)?.addEventListener('change',renderTorre));initTowerClassMs();document.getElementById('towerSearch')?.addEventListener('input',renderTorre);document.getElementById('towerReset')?.addEventListener('click',()=>{towerZoneFilter.value='all';towerPlantFilter.value='all';towerStatusFilter.value='all';towerClassSelected.clear();initTowerClassMs();towerSearch.value='';renderTorre();});document.getElementById('towerEditModal')?.addEventListener('click',e=>{if(e.target.id==='towerEditModal')cerrarTowerEditor();});}
+function initTower(){document.getElementById('towerFleetFile')?.addEventListener('change',e=>{const f=e.target.files?.[0];if(f)procesarTowerFleetFile(f);e.target.value='';});['towerZoneFilter','towerPlantFilter','towerStatusFilter','towerClassFilter'].forEach(id=>document.getElementById(id)?.addEventListener('change',renderTorre));document.getElementById('towerSearch')?.addEventListener('input',renderTorre);document.getElementById('towerReset')?.addEventListener('click',()=>{towerZoneFilter.value='all';towerPlantFilter.value='all';towerStatusFilter.value='all';[...towerClassFilter.options].forEach(o=>o.selected=false);towerSearch.value='';renderTorre();});document.getElementById('towerEditModal')?.addEventListener('click',e=>{if(e.target.id==='towerEditModal')cerrarTowerEditor();});}
 window.towerDragStart=towerDragStart;window.towerDragOver=towerDragOver;window.towerDragLeave=towerDragLeave;window.towerDrop=towerDrop;window.seleccionarTowerEquipo=seleccionarTowerEquipo;window.abrirTowerEditor=abrirTowerEditor;window.cerrarTowerEditor=cerrarTowerEditor;window.guardarTowerEditor=guardarTowerEditor;window.cargarTorreFlota=cargarTorreFlota;
 
 
@@ -2977,9 +2981,17 @@ function inicializarModulos(){
   initHistIntelligence();
   initTower();
 }
-function initModuleTabs(){inicializarModulos();cambiarModulo('operacion',false);}
+function initModuleTabs(){inicializarModulos();const a=applyAccessControl();const first=a.operacion?'operacion':a.historico?'historico':a.torre?'torre':null;if(first)cambiarModulo(first,false);}
+function can(domain,action){return !!(user?.permissions?.[domain]||[]).includes(action);}
+function applyAccessControl(){
+ const access={operacion:can('operation','view'),historico:can('trace','view'),torre:can('tower','view')};
+ const ids={quickOperacion:'operacion',quickHistorico:'historico',quickTorre:'torre',tabOperacion:'operacion',tabHistorico:'historico',tabTorre:'torre'};
+ Object.entries(ids).forEach(([id,m])=>{const e=document.getElementById(id);if(e)e.style.display=access[m]?'':'none';});
+ document.querySelectorAll('button,input[type=file]').forEach(e=>{const x=((e.textContent||'')+' '+(e.id||'')+' '+(e.getAttribute('onclick')||'')).toLowerCase(),scope=e.closest('#towerPanel,#towerEditModal')?'tower':e.closest('#historicoPanel')?'trace':'operation';let action=/export|descarg|copiar|correo/.test(x)?'export':/guardar|registr|editar|file|upload|remove|eliminar|carg/.test(x)?'edit':null;if(action&&!can(scope,action)){e.disabled=true;e.title='Acción no permitida para su rol';}});
+ return access;
+}
 function cambiarModulo(modulo,scrollTop=false){
-  const permitidos=new Set(['operacion','historico','torre']);if(!permitidos.has(modulo))return;
+  const permitidos=new Set(['operacion','historico','torre']);if(!permitidos.has(modulo))return;const access=applyAccessControl();if(!access[modulo])return;
   const hist=modulo==='historico',tower=modulo==='torre',op=modulo==='operacion';
   if(typeof updateSystemStatus==='function')updateSystemStatus({module:hist?'Trazabilidad':tower?'Torre de Control':'Operación Nacional',stage:'Listo',errorDetail:'',errors:0});
   document.querySelectorAll('.operation-view').forEach(el=>el.style.display=op?'':'none');
@@ -2998,9 +3010,9 @@ function cambiarModulo(modulo,scrollTop=false){
 function histKey(v){return String(v??'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');}
 
 const HIST_FIELD_ALIASES={
-  operador:['operador','nombre_operador','nombre operador','conductor','conductor_gtiempos','conductor gtiempos','chofer','nombre_de_operador','nombre de operador','primero_empleado'],
+  operador:['operador','nombre_operador','nombre operador','conductor','chofer','nombre_de_operador','nombre de operador','primero_empleado'],
   operador_id:['id_operador','id operador','id','numero_funcionario','número funcionario','numero funcionario','rut','codigo_operador'],
-  planta:['planta','planta_gtiempos','planta gtiempos','planta_original','nombre_planta','nombre planta','descripcion_planta','descripción planta','centro','sucursal','base'],
+  planta:['planta','planta_original','nombre_planta','nombre planta','descripcion_planta','descripción planta','centro','sucursal','base'],
   camion:['camion','camión','equipo','mixer','patente','numero_equipo','número equipo','n_camion','n° camion'],
   turno:['hora_ingreso','hora ingreso','turno','inicio_turno','hora_turno'],
   citacion:['hora_citacion','hora citacion','citacion','citación','citacion_sugerida'],
