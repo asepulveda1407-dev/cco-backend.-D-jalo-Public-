@@ -19,11 +19,12 @@ const PORT = Number(process.env.PORT || 10000);
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const APP_ORIGIN = process.env.APP_ORIGIN || '';
 const AUTH_SECRET = process.env.AUTH_SECRET || 'cco-dev-secret-change-me';
-const TOKEN_TTL_MS = Math.max(15*60*1000, Number(process.env.TOKEN_TTL_MS || 12*60*60*1000));
-const DATA_FILE = path.resolve(process.env.DATA_FILE || path.join(__dirname, 'data', 'cco-state.json'));
+const TOKEN_TTL_MS = Math.max(15*60*1000, Number(process.env.TOKEN_TTL_MS || 7*24*60*60*1000));
+const PERSIST_DIR = path.resolve(process.env.PERSIST_DIR || path.join(__dirname, 'data'));
+const DATA_FILE = path.resolve(process.env.DATA_FILE || path.join(PERSIST_DIR, 'cco-state.json'));
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const PLANT_DICTIONARY_FILE = path.join(__dirname, 'config', 'plant-dictionary.json');
-const HISTORICAL_FILE = path.resolve(process.env.HISTORICAL_FILE || path.join(__dirname, 'data', 'cco-historical.json'));
+const HISTORICAL_FILE = path.resolve(process.env.HISTORICAL_FILE || path.join(PERSIST_DIR, 'cco-historical.json'));
 
 const app = express();
 const server = http.createServer(app);
@@ -1164,7 +1165,7 @@ function validateDataset(type, rows) {
 }
 
 
-const USERS_FILE=path.resolve(process.env.USERS_FILE||path.join(__dirname,'config','users.json'));
+const USERS_FILE=path.resolve(process.env.USERS_FILE||path.join(PERSIST_DIR,'users.json'));
 const CORPORATE_EMAIL_RE=/^[a-z0-9._%+-]+@polpaicosoluciones\.cl$/i;
 const RBAC=Object.freeze({
  admin:{operation:['view','edit','export'],tower:['view','edit','export'],trace:['view','edit','export'],audit:['view']},
@@ -1558,6 +1559,9 @@ function systemArchitectureAudit(){
 }
 
 app.get('/api/system/audit', requireAuth, (req,res)=>res.json(systemArchitectureAudit()));
+
+function operationalDateCL(){const d=new Date();const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Santiago',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(d);const v=Object.fromEntries(parts.map(x=>[x.type,x.value]));return `${v.year}-${v.month}-${v.day}`;}
+app.get('/api/session/context',requireAuth,(req,res)=>res.json({serverDate:operationalDateCL(),requestedDate:safeText(req.user?.fecha||''),tokenTtlMs:TOKEN_TTL_MS,persistenceDir:PERSIST_DIR}));
 
 app.get('/health', (req, res) => res.json({
   ok: true,
