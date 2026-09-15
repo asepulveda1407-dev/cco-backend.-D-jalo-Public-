@@ -1593,8 +1593,12 @@ app.post('/api/auth/admin-reset-password',(req,res)=>{
     const a=Buffer.from(resetKey),b=Buffer.from(configured);
     if(a.length!==b.length||!crypto.timingSafeEqual(a,b))return res.status(403).json({error:'Código de recuperación incorrecto'});
     if(newPassword.length<10)return res.status(400).json({error:'La nueva clave debe tener al menos 10 caracteres'});
-    const users=loadUsers();const i=users.findIndex(u=>normalizeEmail(u.email)===email);
-    if(i<0)return res.status(404).json({error:'La cuenta administradora aún no está registrada'});
+    const users=loadUsers();let i=users.findIndex(u=>normalizeEmail(u.email)===email);
+    if(i<0){
+      users.push({email,nombre:'Alberto Sepulveda Ortiz',cargoSolicitado:'admin',rol:'admin',zona:'',region:'',planta:'',estado:'activo',activo:true,passwordHash:makePasswordHash(newPassword),creadoEn:nowIso(),updatedAt:nowIso()});
+      saveUsers(users);
+      return res.json({ok:true,mensaje:'Cuenta administradora creada y activada. Ya puedes iniciar sesión con la nueva clave.'});
+    }
     users[i].passwordHash=makePasswordHash(newPassword);users[i].rol='admin';users[i].estado='activo';users[i].activo=true;users[i].cargoSolicitado=users[i].cargoSolicitado||'admin';users[i].updatedAt=nowIso();saveUsers(users);
     return res.json({ok:true,mensaje:'Clave restablecida. La cuenta administradora quedó activa.'});
   }catch(err){console.error('[CCO][AUTH][ADMIN_RESET]',err);return res.status(500).json({error:'No fue posible restablecer la clave'});}
